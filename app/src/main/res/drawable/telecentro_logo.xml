@@ -1,0 +1,15 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="120dp"
+    android:height="50dp"
+    android:viewportWidth="120"
+    android:viewportHeight="50">
+
+    <!-- Solo ícono (triángulo + T). El texto "TELECENTRO" lo renderizamos como texto real en el PDF -->
+    <path
+        android:fillColor="#00A8E8"
+        android:pathData="M5,5 L50,25 L5,45 Z" />
+
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M16,17 L39,17 L39,22 L30,22 L30,34 L25,34 L25,22 L16,22 Z" />
+</vector>
