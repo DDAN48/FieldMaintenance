@@ -4,6 +4,8 @@ import android.content.Context
 import android.net.Uri
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.content.ContentResolver
+import android.os.ParcelFileDescriptor
 import androidx.core.content.ContextCompat
 import com.example.fieldmaintenance.R
 import com.example.fieldmaintenance.data.model.*
@@ -38,8 +40,12 @@ import net.lingala.zip4j.ZipFile
 import java.io.File
 import java.io.ByteArrayOutputStream
 import java.io.FileOutputStream
+import java.io.OutputStream
+import java.io.FileInputStream
+import java.io.FileOutputStream as JFileOutputStream
 import java.text.SimpleDateFormat
 import java.util.*
+import kotlin.math.abs
 
 class ExportManager(private val context: Context, private val repository: MaintenanceRepository) {
     private val gson: Gson = GsonBuilder().setPrettyPrinting().create()
@@ -59,6 +65,10 @@ class ExportManager(private val context: Context, private val repository: Mainte
         val event = safeFilePart(report.eventName.ifBlank { "evento" })
         val dt = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(now)
         return "${node}_${event}_$dt"
+    }
+
+    fun exportDisplayName(report: MaintenanceReport, extensionWithDot: String, now: Date = Date()): String {
+        return "${exportBaseName(report, now)}$extensionWithDot"
     }
     
     private fun assetSortKey(a: Asset): String {
@@ -503,6 +513,105 @@ class ExportManager(private val context: Context, private val repository: Mainte
             document.add(Paragraph(headerLine).setBold())
             document.add(Paragraph(" "))
 
+            // For NODE: print "Ajuste de Nodo" on a full page BEFORE photos (as first subtitle after header)
+            if (asset.type == AssetType.NODE) {
+                document.add(Paragraph("Ajuste de Nodo").setBold())
+
+                val nodeAdj = runCatching { repository.getNodeAdjustmentOne(asset.id) }.getOrNull()
+                if (nodeAdj != null) {
+                    // Plan snapshot
+                    val planRows = listOfNotNull(
+                        nodeAdj.planNode?.takeIf { it.isNotBlank() }?.let { listOf("Nodo" to null, it to null) },
+                        nodeAdj.planContractor?.takeIf { it.isNotBlank() }?.let { listOf("Contratista" to null, it to null) },
+                        nodeAdj.planTechnology?.takeIf { it.isNotBlank() }?.let { listOf("Tecnología" to null, it to null) },
+                        nodeAdj.planPoDirecta?.takeIf { it.isNotBlank() }?.let { listOf("PO Directa" to null, it to null) },
+                        nodeAdj.planPoRetorno?.takeIf { it.isNotBlank() }?.let { listOf("PO Retorno" to null, it to null) },
+                        nodeAdj.planDistanciaSfp?.takeIf { it.isNotBlank() }?.let { listOf("Distancia SFP" to null, it to null) },
+                    )
+                    if (planRows.isNotEmpty()) {
+                        addTable(
+                            document,
+                            title = "Datos del Plan",
+                            headers = listOf("Campo", "Valor"),
+                            rows = planRows,
+                            colWidths = floatArrayOf(35f, 65f)
+                        )
+                    }
+
+                    val tech = nodeAdj.planTechnology.orEmpty().trim()
+                    val isLegacy = tech.equals("legacy", ignoreCase = true)
+                    val green = DeviceRgb(46, 125, 50)
+                    val red = DeviceRgb(183, 28, 28)
+                    fun okCell(ok: Boolean): Pair<String, com.itextpdf.kernel.colors.Color?> =
+                        (if (ok) "Confirmado" else "Pendiente") to (if (ok) green else red)
+
+                    if (!isLegacy) {
+                        addTable(
+                            document,
+                            title = "Validación (No Legacy)",
+                            headers = listOf("Item", "Estado"),
+                            rows = listOf(
+                                listOf(
+                                    "Asegure con HUB y operador que los parámetros estén correctos." to null,
+                                    okCell(nodeAdj.nonLegacyConfirmed)
+                                )
+                            ),
+                            colWidths = floatArrayOf(75f, 25f)
+                        )
+                    } else {
+                        // DIRECTA
+                        val txOk = nodeAdj.tx1310Confirmed || nodeAdj.tx1550Confirmed
+                        addTable(
+                            document,
+                            title = "DIRECTA",
+                            headers = listOf("Item", "Estado"),
+                            rows = listOf(
+                                listOf("Con Tx de 1310nm instalados en HUB colocar Pad de 9" to null, okCell(nodeAdj.tx1310Confirmed)),
+                                listOf("Con Tx de 1550nm instalados en HUB colocar Pad de 10" to null, okCell(nodeAdj.tx1550Confirmed)),
+                                listOf("Pads TX (uno de los dos)" to null, okCell(txOk)),
+                                listOf("Confirmo PO" to null, okCell(nodeAdj.poConfirmed)),
+                            ),
+                            colWidths = floatArrayOf(75f, 25f)
+                        )
+
+                        // PO range helper (best-effort parse)
+                        val poVal = Regex("[-+]?[0-9]*\\.?[0-9]+").find(nodeAdj.planPoDirecta.orEmpty())?.value?.toDoubleOrNull()
+                        if (poVal != null) {
+                            val inRange = poVal in 0.8..1.2
+                            val color = if (inRange) green else red
+                            document.add(
+                                Paragraph("PO Directa (Plan): ${CiscoHfcAmpCalculator.format1(poVal)}  ·  Rango 0.8–1.2")
+                                    .setFontSize(9f)
+                                    .setFontColor(color)
+                            )
+                            document.add(Paragraph(" "))
+                        }
+
+                        // RETORNO
+                        val rxOk = !nodeAdj.rxPadSelection.isNullOrBlank()
+                        addTable(
+                            document,
+                            title = "RETORNO",
+                            headers = listOf("Item", "Estado"),
+                            rows = listOf(
+                                listOf("Pads RX (selección única)" to null, okCell(rxOk)),
+                                listOf("Confirmar medición en TP RX" to null, okCell(nodeAdj.measurementConfirmed)),
+                                listOf("Confirmar espectro" to null, okCell(nodeAdj.spectrumConfirmed)),
+                            ),
+                            colWidths = floatArrayOf(75f, 25f)
+                        )
+                    }
+                } else {
+                    document.add(Paragraph("Sin datos de ajuste de nodo guardados.").setFontSize(9f))
+                    document.add(Paragraph(" "))
+                }
+
+                // Move photos to the NEXT page; keep header at top like other pages.
+                document.add(AreaBreak(AreaBreakType.NEXT_PAGE))
+                document.add(Paragraph(headerLine).setBold())
+                document.add(Paragraph(" "))
+            }
+
             // For amplifiers: print "Ajuste de Amplificador" tables on a full page BEFORE photos
             if (asset.type == AssetType.AMPLIFIER) {
                 document.add(Paragraph("Ajuste de Amplificador").setBold())
@@ -902,6 +1011,58 @@ class ExportManager(private val context: Context, private val repository: Mainte
         val displayName = "${exportBaseName(report)}.zip"
         DownloadStore.saveToDownloads(context, tmp, displayName, "application/zip")
     }
+
+    /**
+     * Exporta a un Uri (ej: Google Drive vía picker). Si falla, lanza excepción.
+     */
+    suspend fun exportPdfToUri(report: MaintenanceReport, uri: Uri, contentResolver: ContentResolver = context.contentResolver) =
+        withContext(Dispatchers.IO) {
+            val tmp = exportToPDF(report)
+            require(tmp.exists()) { "PDF temporal no existe" }
+            if (tmp.length() <= 0L) throw IllegalStateException("PDF temporal vacío")
+
+            // Use ParcelFileDescriptor for better compatibility with Drive providers.
+            // "rwt" helps some providers (truncate + write).
+            val pfd: ParcelFileDescriptor =
+                (contentResolver.openFileDescriptor(uri, "rwt")
+                    ?: contentResolver.openFileDescriptor(uri, "w"))
+                    ?: throw IllegalStateException("No se pudo abrir FileDescriptor para Uri")
+
+            pfd.use { fd ->
+                FileInputStream(tmp).use { input ->
+                    JFileOutputStream(fd.fileDescriptor).use { out ->
+                        input.copyTo(out)
+                        out.flush()
+                        runCatching { out.fd.sync() }
+                    }
+                }
+            }
+        }
+
+    /**
+     * Exporta ZIP editable a un Uri (ej: Google Drive vía picker). Si falla, lanza excepción.
+     */
+    suspend fun exportZipToUri(report: MaintenanceReport, uri: Uri, contentResolver: ContentResolver = context.contentResolver) =
+        withContext(Dispatchers.IO) {
+            val tmp = exportToZIP(report)
+            require(tmp.exists()) { "ZIP temporal no existe" }
+            if (tmp.length() <= 0L) throw IllegalStateException("ZIP temporal vacío")
+
+            val pfd: ParcelFileDescriptor =
+                (contentResolver.openFileDescriptor(uri, "rwt")
+                    ?: contentResolver.openFileDescriptor(uri, "w"))
+                    ?: throw IllegalStateException("No se pudo abrir FileDescriptor para Uri")
+
+            pfd.use { fd ->
+                FileInputStream(tmp).use { input ->
+                    JFileOutputStream(fd.fileDescriptor).use { out ->
+                        input.copyTo(out)
+                        out.flush()
+                        runCatching { out.fd.sync() }
+                    }
+                }
+            }
+        }
     
     suspend fun importFromJSON(uri: Uri): MaintenanceReport? = withContext(Dispatchers.IO) {
         try {

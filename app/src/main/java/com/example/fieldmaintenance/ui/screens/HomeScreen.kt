@@ -4,6 +4,8 @@ package com.example.fieldmaintenance.ui.screens
 
 import android.net.Uri
 import android.content.Context
+import android.content.Intent
+import android.os.Build
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -17,6 +19,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -28,6 +31,7 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.unit.dp
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.result.ActivityResult
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.example.fieldmaintenance.data.model.MaintenanceReport
@@ -61,11 +65,11 @@ fun HomeScreen(navController: NavController) {
 
     val focusRequester = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
-    
-    val importLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument()
-    ) { uri: Uri? ->
-        if (uri == null) return@rememberLauncherForActivityResult
+
+    val deviceImportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result: ActivityResult ->
+        val uri = result.data?.data ?: return@rememberLauncherForActivityResult
         scope.launch {
             val imported =
                 exportManager.importFromZip(uri)
@@ -118,7 +122,26 @@ fun HomeScreen(navController: NavController) {
                 NavigationBarItem(
                     selected = false,
                     onClick = {
-                        importLauncher.launch(arrayOf("application/zip", "application/json", "text/json", "application/octet-stream"))
+                        // Solo Dispositivo (Descargas/FieldMaintenance). No hay opción Drive.
+                        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                            addCategory(Intent.CATEGORY_OPENABLE)
+                            type = "*/*"
+                            putExtra(
+                                Intent.EXTRA_MIME_TYPES,
+                                arrayOf("application/zip", "application/json", "text/json", "application/octet-stream", "*/*")
+                            )
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                // Best-effort: open Downloads provider root
+                                putExtra(
+                                    android.provider.DocumentsContract.EXTRA_INITIAL_URI,
+                                    android.provider.DocumentsContract.buildRootUri(
+                                        "com.android.providers.downloads.documents",
+                                        "downloads"
+                                    )
+                                )
+                            }
+                        }
+                        deviceImportLauncher.launch(intent)
                     },
                     icon = { Icon(Icons.Default.Upload, contentDescription = "Importar") },
                     label = { Text("Importar") }
@@ -135,6 +158,11 @@ fun HomeScreen(navController: NavController) {
         topBar = {
             TopAppBar(
                 title = { Text("Inicio del Mantenimiento") },
+                actions = {
+                    IconButton(onClick = { navController.navigate(Screen.Settings.route) }) {
+                        Icon(Icons.Default.Settings, contentDescription = "Configuración")
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     titleContentColor = MaterialTheme.colorScheme.onPrimary
@@ -205,6 +233,7 @@ fun HomeScreen(navController: NavController) {
             }
         )
     }
+
 }
 
 @Composable

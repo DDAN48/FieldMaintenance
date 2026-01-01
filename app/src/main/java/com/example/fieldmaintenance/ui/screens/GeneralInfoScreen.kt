@@ -12,6 +12,7 @@ import androidx.compose.material.icons.filled.Save
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -28,6 +29,11 @@ import com.example.fieldmaintenance.ui.components.ReportBottomBar
 import com.example.fieldmaintenance.ui.components.ReportTab
 import com.example.fieldmaintenance.util.EmailManager
 import com.example.fieldmaintenance.util.ExportManager
+import com.example.fieldmaintenance.util.PlanCache
+import com.example.fieldmaintenance.util.PlanRepository
+import com.example.fieldmaintenance.util.SettingsStore
+import com.example.fieldmaintenance.util.AppSettings
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -45,6 +51,10 @@ fun GeneralInfoScreen(navController: NavController, reportId: String) {
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val exportManager = remember { ExportManager(context, repository) }
+    val planRepo = remember { PlanRepository(context.applicationContext) }
+    val planCache by planRepo.cacheFlow().collectAsState(initial = PlanCache())
+    val settingsStore = remember { SettingsStore(context.applicationContext) }
+    val settings by settingsStore.settings.collectAsState(initial = AppSettings())
     var showFinalizeDialog by remember { mutableStateOf(false) }
     
     var eventName by remember { mutableStateOf(report?.eventName ?: "") }
@@ -53,6 +63,14 @@ fun GeneralInfoScreen(navController: NavController, reportId: String) {
     var contractor by remember { mutableStateOf(report?.contractor ?: "") }
     var meterNumber by remember { mutableStateOf(report?.meterNumber ?: "") }
     var attemptedSave by remember { mutableStateOf(false) }
+
+    // Track manual edits so autofill doesn't overwrite what the user typed.
+    var eventTouched by remember { mutableStateOf(false) }
+    var contractorTouched by remember { mutableStateOf(false) }
+    var responsibleTouched by remember { mutableStateOf(false) }
+    var meterTouched by remember { mutableStateOf(false) }
+    var eventAutoFilled by remember { mutableStateOf(false) }
+    var contractorAutoFilled by remember { mutableStateOf(false) }
     
     suspend fun deleteDraftIfEmptyAndIncomplete() {
         val r = repository.getReportById(reportId) ?: return
@@ -66,17 +84,97 @@ fun GeneralInfoScreen(navController: NavController, reportId: String) {
         }
     }
 
-    LaunchedEffect(report) {
+    LaunchedEffect(report, settings, planCache) {
         report?.let {
             eventName = it.eventName
             nodeName = it.nodeName
             responsible = it.responsible
             contractor = it.contractor
             meterNumber = it.meterNumber
+            eventTouched = false
+            contractorTouched = false
+            eventAutoFilled = false
+            contractorAutoFilled = false
+            responsibleTouched = false
+            meterTouched = false
+
+            // Apply defaults only if report fields are empty (and user hasn't edited).
+            if (responsible.isBlank() && settings.defaultResponsible.isNotBlank()) {
+                responsible = settings.defaultResponsible
+            }
+            // Contratista: por defecto desde Configuración (pero editable en pantalla).
+            if (contractor.isBlank() && settings.defaultContractor.isNotBlank()) {
+                contractor = settings.defaultContractor
+                // This is a default, not a plan-autofill.
+                contractorAutoFilled = false
+                contractorTouched = false
+            }
+            if (meterNumber.isBlank() && settings.defaultMeterNumber.isNotBlank()) {
+                meterNumber = settings.defaultMeterNumber
+            }
         }
+    }
+
+    fun normalizeNode(v: String): String =
+        v.trim().replace(Regex("\\s+"), " ").uppercase(Locale.getDefault())
+
+    fun findPlanRowByNode(): com.example.fieldmaintenance.util.PlanRow? {
+        val key = normalizeNode(nodeName)
+        if (key.isBlank()) return null
+        return planCache.rows.firstOrNull { normalizeNode(it.nodeCmts) == key }
+    }
+
+    fun applyPlanToFields(row: com.example.fieldmaintenance.util.PlanRow?, showNoMatchWarning: Boolean) {
+        val hasPlan = planCache.rows.isNotEmpty()
+        val key = normalizeNode(nodeName)
+
+        // If node is cleared, also clear any values that were auto-filled from the plan.
+        if (key.isBlank()) {
+            if (eventAutoFilled && !eventTouched) {
+                eventName = ""
+                eventAutoFilled = false
+                eventTouched = false
+            }
+            return
+        }
+
+        if (row == null) {
+            // If plan exists but node not found, clear auto-filled values and warn when requested.
+            if (hasPlan) {
+                // IMPORTANT: No borrar un evento previamente guardado por el usuario.
+                // Solo borramos si el evento fue autollenado desde Plan (autoFilled) y el usuario no lo editó.
+                if (eventAutoFilled && !eventTouched) {
+                    eventName = ""
+                    eventAutoFilled = false
+                    eventTouched = false
+                }
+                if (showNoMatchWarning) {
+                    scope.launch { snackbarHostState.showSnackbar("Nodo no encontrado en Plan. Completa los campos manualmente.") }
+                }
+            }
+            return
+        }
+
+        // Fill only if user hasn't typed, or value was previously auto-filled.
+        if ((!eventTouched || eventAutoFilled) && row.ticketOrEvent.isNotBlank()) {
+            eventName = row.ticketOrEvent
+            eventAutoFilled = true
+        }
+    }
+
+    // Live autofill while typing node (no warning spam).
+    LaunchedEffect(nodeName, planCache) {
+        val row = findPlanRowByNode()
+        applyPlanToFields(row, showNoMatchWarning = false)
     }
     
     fun validate(): Boolean {
+        // If we have a plan loaded and node doesn't match, show a more specific hint (event will be empty).
+        val hasPlan = planCache.rows.isNotEmpty()
+        val key = normalizeNode(nodeName)
+        if (hasPlan && key.isNotBlank() && findPlanRowByNode() == null && eventName.isBlank()) {
+            scope.launch { snackbarHostState.showSnackbar("Nodo no encontrado en Plan. Completa 'Nombre del Evento'.") }
+        }
         val ok = eventName.isNotBlank() && nodeName.isNotBlank() && responsible.isNotBlank() && contractor.isNotBlank() && meterNumber.isNotBlank()
         attemptedSave = true
         if (!ok) {
@@ -121,6 +219,8 @@ fun GeneralInfoScreen(navController: NavController, reportId: String) {
                         Icon(Icons.Default.Download, contentDescription = "Finalizar Reporte")
                     }
                     IconButton(onClick = {
+                        // Ensure latest lookup before validating/saving.
+                        applyPlanToFields(findPlanRowByNode(), showNoMatchWarning = true)
                         if (validate()) {
                             viewModel.saveGeneralInfo(eventName, nodeName, responsible, contractor, meterNumber)
                             scope.launch { snackbarHostState.showSnackbar("Guardado") }
@@ -145,8 +245,31 @@ fun GeneralInfoScreen(navController: NavController, reportId: String) {
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             OutlinedTextField(
+                value = nodeName,
+                onValueChange = { nodeName = it },
+                label = { Text("Nombre del Nodo") },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .onFocusChanged { state ->
+                        if (!state.isFocused) {
+                            // On leaving the field, do a definitive lookup (can clear + warn).
+                            applyPlanToFields(findPlanRowByNode(), showNoMatchWarning = true)
+                        }
+                    },
+                singleLine = true,
+                isError = attemptedSave && nodeName.isBlank(),
+                supportingText = {
+                    if (attemptedSave && nodeName.isBlank()) Text("Obligatorio")
+                }
+            )
+
+            OutlinedTextField(
                 value = eventName,
-                onValueChange = { eventName = it },
+                onValueChange = {
+                    eventName = it
+                    eventTouched = it.isNotBlank()
+                    if (eventTouched) eventAutoFilled = false
+                },
                 label = { Text("Nombre del Evento") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
@@ -157,20 +280,11 @@ fun GeneralInfoScreen(navController: NavController, reportId: String) {
             )
             
             OutlinedTextField(
-                value = nodeName,
-                onValueChange = { nodeName = it },
-                label = { Text("Nombre del Nodo") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                isError = attemptedSave && nodeName.isBlank(),
-                supportingText = {
-                    if (attemptedSave && nodeName.isBlank()) Text("Obligatorio")
-                }
-            )
-            
-            OutlinedTextField(
                 value = responsible,
-                onValueChange = { responsible = it },
+                onValueChange = {
+                    responsible = it
+                    responsibleTouched = it.isNotBlank()
+                },
                 label = { Text("Responsable") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
@@ -182,7 +296,11 @@ fun GeneralInfoScreen(navController: NavController, reportId: String) {
 
             OutlinedTextField(
                 value = contractor,
-                onValueChange = { contractor = it },
+                onValueChange = {
+                    contractor = it
+                    contractorTouched = it.isNotBlank()
+                    if (contractorTouched) contractorAutoFilled = false
+                },
                 label = { Text("Contratista") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
@@ -194,7 +312,10 @@ fun GeneralInfoScreen(navController: NavController, reportId: String) {
             
             OutlinedTextField(
                 value = meterNumber,
-                onValueChange = { meterNumber = it },
+                onValueChange = {
+                    meterNumber = it
+                    meterTouched = it.isNotBlank()
+                },
                 label = { Text("Número de Medidor") },
                 modifier = Modifier.fillMaxWidth(),
                 trailingIcon = {
@@ -233,6 +354,8 @@ fun GeneralInfoScreen(navController: NavController, reportId: String) {
             
             Button(
                 onClick = {
+                    // On continue, re-check plan. If no match, event/contractor may be cleared -> validation will show required error.
+                    applyPlanToFields(findPlanRowByNode(), showNoMatchWarning = true)
                     if (validate()) {
                         viewModel.saveGeneralInfo(eventName, nodeName, responsible, contractor, meterNumber)
                         navController.navigate(Screen.AssetSummary.createRoute(reportId))
@@ -259,10 +382,16 @@ fun GeneralInfoScreen(navController: NavController, reportId: String) {
     if (showFinalizeDialog && report != null) {
         FinalizeReportDialog(
             onDismiss = { showFinalizeDialog = false },
-            onSendEmail = {
+            onSendEmailPdf = {
                 scope.launch {
                     val pdfFile = exportManager.exportToPDF(report!!)
                     EmailManager.sendEmail(context, report!!.eventName, listOf(pdfFile))
+                }
+            },
+            onSendEmailJson = {
+                scope.launch {
+                    val zipFile = exportManager.exportToZIP(report!!)
+                    EmailManager.sendEmail(context, report!!.eventName, listOf(zipFile))
                 }
             },
             onExportPDF = {

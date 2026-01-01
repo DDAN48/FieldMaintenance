@@ -8,13 +8,17 @@ import com.example.fieldmaintenance.ui.screens.AddAssetScreen
 import com.example.fieldmaintenance.ui.screens.AssetSummaryScreen
 import com.example.fieldmaintenance.ui.screens.GeneralInfoScreen
 import com.example.fieldmaintenance.ui.screens.HomeScreen
+import com.example.fieldmaintenance.ui.screens.ManualScreen
 import com.example.fieldmaintenance.ui.screens.MonitorQrScreen
 import com.example.fieldmaintenance.ui.screens.PassivesScreen
+import com.example.fieldmaintenance.ui.screens.SettingsScreen
 import com.example.fieldmaintenance.ui.screens.TrashScreen
 
 sealed class Screen(val route: String) {
     object Home : Screen("home")
     object Trash : Screen("trash")
+    object Settings : Screen("settings")
+    object Manual : Screen("manual")
     object GeneralInfo : Screen("general_info/{reportId}") {
         fun createRoute(reportId: String) = "general_info/$reportId"
     }
@@ -49,6 +53,12 @@ fun NavGraph(navController: NavHostController) {
         }
         composable(Screen.Trash.route) {
             TrashScreen(navController = navController)
+        }
+        composable(Screen.Settings.route) {
+            SettingsScreen(navController = navController)
+        }
+        composable(Screen.Manual.route) {
+            ManualScreen(navController = navController)
         }
         composable(Screen.GeneralInfo.route) { backStackEntry ->
             val reportId = backStackEntry.arguments?.getString("reportId") ?: ""

@@ -17,6 +17,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Warning
@@ -590,13 +591,23 @@ private fun MedidoRowWithFreqSelector(
         Text(canal, modifier = Modifier.width(60.dp), fontWeight = FontWeight.SemiBold)
 
         Box(modifier = Modifier.width(90.dp)) {
-            Text(
-                text = "$freqMHz MHz",
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable { expanded = true },
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f)
-            )
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "$freqMHz MHz",
+                    modifier = Modifier.weight(1f),
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f)
+                )
+                Icon(
+                    Icons.Default.ArrowDropDown,
+                    contentDescription = "Cambiar frecuencia",
+                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f)
+                )
+            }
             DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                 optionsMHz.forEach { f ->
                     DropdownMenuItem(

@@ -62,6 +62,8 @@ import com.example.fieldmaintenance.ui.viewmodel.ReportViewModelFactory
 import com.example.fieldmaintenance.util.DatabaseProvider
 import com.example.fieldmaintenance.util.EmailManager
 import com.example.fieldmaintenance.util.ExportManager
+import com.example.fieldmaintenance.util.SettingsStore
+import com.example.fieldmaintenance.util.AppSettings
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.launch
 
@@ -176,10 +178,16 @@ fun PassivesScreen(navController: NavController, reportId: String) {
     if (showFinalizeDialog && report != null) {
         FinalizeReportDialog(
             onDismiss = { showFinalizeDialog = false },
-            onSendEmail = {
+            onSendEmailPdf = {
                 scope.launch {
                     val pdfFile = exportManager.exportToPDF(report!!)
                     EmailManager.sendEmail(context, report!!.eventName, listOf(pdfFile))
+                }
+            },
+            onSendEmailJson = {
+                scope.launch {
+                    val zipFile = exportManager.exportToZIP(report!!)
+                    EmailManager.sendEmail(context, report!!.eventName, listOf(zipFile))
                 }
             },
             onExportPDF = {

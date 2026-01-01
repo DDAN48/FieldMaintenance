@@ -10,16 +10,18 @@ import com.example.fieldmaintenance.data.dao.MaintenanceReportDao
 import com.example.fieldmaintenance.data.dao.PhotoDao
 import com.example.fieldmaintenance.data.dao.PassiveItemDao
 import com.example.fieldmaintenance.data.dao.ReportPhotoDao
+import com.example.fieldmaintenance.data.dao.NodeAdjustmentDao
 import com.example.fieldmaintenance.data.model.AmplifierAdjustment
 import com.example.fieldmaintenance.data.model.Asset
 import com.example.fieldmaintenance.data.model.MaintenanceReport
+import com.example.fieldmaintenance.data.model.NodeAdjustment
 import com.example.fieldmaintenance.data.model.Photo
 import com.example.fieldmaintenance.data.model.PassiveItem
 import com.example.fieldmaintenance.data.model.ReportPhoto
 
 @Database(
-    entities = [MaintenanceReport::class, Asset::class, Photo::class, AmplifierAdjustment::class, PassiveItem::class, ReportPhoto::class],
-    version = 8,
+    entities = [MaintenanceReport::class, Asset::class, Photo::class, AmplifierAdjustment::class, PassiveItem::class, ReportPhoto::class, NodeAdjustment::class],
+    version = 10,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -29,6 +31,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun amplifierAdjustmentDao(): AmplifierAdjustmentDao
     abstract fun passiveItemDao(): PassiveItemDao
     abstract fun reportPhotoDao(): ReportPhotoDao
+    abstract fun nodeAdjustmentDao(): NodeAdjustmentDao
 
     companion object {
         val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -115,6 +118,45 @@ abstract class AppDatabase : RoomDatabase() {
                     )
                     """.trimIndent()
                 )
+            }
+        }
+
+        val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS node_adjustments (
+                        assetId TEXT NOT NULL PRIMARY KEY,
+                        reportId TEXT NOT NULL,
+                        planNode TEXT,
+                        planContractor TEXT,
+                        planTechnology TEXT,
+                        planPoDirecta TEXT,
+                        planPoRetorno TEXT,
+                        planDistanciaSfp TEXT,
+                        tx1310Confirmed INTEGER NOT NULL DEFAULT 0,
+                        tx1550Confirmed INTEGER NOT NULL DEFAULT 0,
+                        poConfirmed INTEGER NOT NULL DEFAULT 0,
+                        rxPadSelection TEXT,
+                        measurementConfirmed INTEGER NOT NULL DEFAULT 0,
+                        spectrumConfirmed INTEGER NOT NULL DEFAULT 0,
+                        nonLegacyConfirmed INTEGER NOT NULL DEFAULT 0,
+                        updatedAt INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+            }
+        }
+
+        val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // Add Plan snapshot columns (nullable)
+                db.execSQL("ALTER TABLE node_adjustments ADD COLUMN planNode TEXT")
+                db.execSQL("ALTER TABLE node_adjustments ADD COLUMN planContractor TEXT")
+                db.execSQL("ALTER TABLE node_adjustments ADD COLUMN planTechnology TEXT")
+                db.execSQL("ALTER TABLE node_adjustments ADD COLUMN planPoDirecta TEXT")
+                db.execSQL("ALTER TABLE node_adjustments ADD COLUMN planPoRetorno TEXT")
+                db.execSQL("ALTER TABLE node_adjustments ADD COLUMN planDistanciaSfp TEXT")
             }
         }
     }

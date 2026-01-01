@@ -6,9 +6,11 @@ import com.example.fieldmaintenance.data.dao.MaintenanceReportDao
 import com.example.fieldmaintenance.data.dao.PhotoDao
 import com.example.fieldmaintenance.data.dao.PassiveItemDao
 import com.example.fieldmaintenance.data.dao.ReportPhotoDao
+import com.example.fieldmaintenance.data.dao.NodeAdjustmentDao
 import com.example.fieldmaintenance.data.model.AmplifierAdjustment
 import com.example.fieldmaintenance.data.model.Asset
 import com.example.fieldmaintenance.data.model.MaintenanceReport
+import com.example.fieldmaintenance.data.model.NodeAdjustment
 import com.example.fieldmaintenance.data.model.Photo
 import com.example.fieldmaintenance.data.model.PhotoType
 import com.example.fieldmaintenance.data.model.PassiveItem
@@ -23,7 +25,8 @@ class MaintenanceRepository(
     private val photoDao: PhotoDao,
     private val amplifierAdjustmentDao: AmplifierAdjustmentDao,
     private val passiveItemDao: PassiveItemDao,
-    private val reportPhotoDao: ReportPhotoDao
+    private val reportPhotoDao: ReportPhotoDao,
+    private val nodeAdjustmentDao: NodeAdjustmentDao
 ) {
     fun getAllReports(): Flow<List<MaintenanceReport>> = reportDao.getAllReports()
 
@@ -83,6 +86,7 @@ class MaintenanceRepository(
         }
         photoDao.deletePhotosByAssetId(asset.id)
         amplifierAdjustmentDao.deleteByAssetId(asset.id)
+        nodeAdjustmentDao.deleteByAssetId(asset.id)
         assetDao.deleteAsset(asset)
     }
     
@@ -103,6 +107,16 @@ class MaintenanceRepository(
 
     suspend fun upsertAmplifierAdjustment(adjustment: AmplifierAdjustment) =
         amplifierAdjustmentDao.upsert(adjustment)
+
+    // Node adjustment (per asset)
+    fun getNodeAdjustment(assetId: String): Flow<NodeAdjustment?> =
+        nodeAdjustmentDao.getByAssetId(assetId)
+
+    suspend fun getNodeAdjustmentOne(assetId: String): NodeAdjustment? =
+        nodeAdjustmentDao.getOneByAssetId(assetId)
+
+    suspend fun upsertNodeAdjustment(adjustment: NodeAdjustment) =
+        nodeAdjustmentDao.upsert(adjustment)
 
     // Passives (per report)
     fun getPassivesByReportId(reportId: String): Flow<List<PassiveItem>> =

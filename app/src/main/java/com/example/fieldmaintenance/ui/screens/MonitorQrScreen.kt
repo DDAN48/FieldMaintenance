@@ -74,6 +74,8 @@ import com.example.fieldmaintenance.util.EmailManager
 import com.example.fieldmaintenance.util.ExportManager
 import com.example.fieldmaintenance.util.ImageStore
 import com.example.fieldmaintenance.util.PhotoManager
+import com.example.fieldmaintenance.util.SettingsStore
+import com.example.fieldmaintenance.util.AppSettings
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.launch
 import java.io.File
@@ -245,10 +247,16 @@ fun MonitorQrScreen(navController: androidx.navigation.NavController, reportId: 
     if (showFinalizeDialog && report != null) {
         FinalizeReportDialog(
             onDismiss = { showFinalizeDialog = false },
-            onSendEmail = {
+            onSendEmailPdf = {
                 scope.launch {
                     val pdfFile = exportManager.exportToPDF(report!!)
                     EmailManager.sendEmail(context, report!!.eventName, listOf(pdfFile))
+                }
+            },
+            onSendEmailJson = {
+                scope.launch {
+                    val zipFile = exportManager.exportToZIP(report!!)
+                    EmailManager.sendEmail(context, report!!.eventName, listOf(zipFile))
                 }
             },
             onExportPDF = {

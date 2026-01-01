@@ -23,6 +23,8 @@ object DatabaseProvider {
                 .addMigrations(AppDatabase.MIGRATION_5_6)
                 .addMigrations(AppDatabase.MIGRATION_6_7)
                 .addMigrations(AppDatabase.MIGRATION_7_8)
+                .addMigrations(AppDatabase.MIGRATION_8_9)
+                .addMigrations(AppDatabase.MIGRATION_9_10)
                 .build()
             
             repository = MaintenanceRepository(
@@ -31,7 +33,8 @@ object DatabaseProvider {
                 database!!.photoDao(),
                 database!!.amplifierAdjustmentDao(),
                 database!!.passiveItemDao(),
-                database!!.reportPhotoDao()
+                database!!.reportPhotoDao(),
+                database!!.nodeAdjustmentDao()
             )
         }
     }

@@ -1,0 +1,231 @@
+FIELD MAINTENANCE – MANUAL DE USUARIO
+Versión: 1.0 (Manual generado para la app actual)
+
+============================================================
+1) OBJETIVO DE LA APLICACIÓN
+============================================================
+La aplicación permite registrar mantenimientos de campo (HFC) con:
+- Información General del mantenimiento
+- Gestión de activos (Nodo / Amplificadores)
+- Gestión de pasivos
+- Monitoría y QR (fotos del reporte)
+- Exportación (PDF y ZIP editable) a Descargas/FieldMaintenance
+- Importación (ZIP) desde Descargas
+- Papelera (restaurar o eliminar definitivamente)
+
+[Imagen 1: Pantalla Inicio]
+
+============================================================
+2) PANTALLA “INICIO DEL MANTENIMIENTO”
+============================================================
+Ruta: Home
+
+En esta pantalla se listan mantenimientos existentes.
+
+2.1 Botones inferiores (cinta)
+- Home: vuelve al inicio y limpia búsqueda.
+- Buscar: habilita el campo de búsqueda.
+- Nuevo: crea un mantenimiento y abre “Información General”.
+- Importar: abre el selector de archivos, apuntando a Descargas (Dispositivo).
+- Papelera: abre la lista de mantenimientos borrados (Papelera).
+
+2.2 Búsqueda
+Permite filtrar mantenimientos (por ticket o nodo, según el texto ingresado).
+
+2.3 Crear mantenimiento
+- Presiona “Nuevo”.
+- Se crea un borrador de mantenimiento.
+- Se abre la pantalla “Información General”.
+
+[Imagen 2: Botones inferiores + búsqueda]
+
+============================================================
+3) PANTALLA “CONFIGURACIÓN”
+============================================================
+Acceso: ícono engranaje en la barra superior del Inicio.
+
+3.1 Valores por defecto (Información General)
+Campos:
+- Responsable (por defecto)
+- Contratista (por defecto, editable en Información General)
+- Número de Medidor (por defecto)
+
+Estos valores se usan como “pre-cargados” cuando el mantenimiento aún no tiene datos.
+
+3.2 Plan (Google Sheet)
+Campo:
+- URL de Google Sheet (primera hoja)
+
+Botón:
+- Probar conexión con Plan
+  Muestra detalle de error (ej: HTTP 403/404) o “OK”.
+
+3.3 Cargar Plan desde CSV (opcional)
+Botón:
+- Cargar Plan desde CSV
+  Permite cargar un archivo CSV como “Plan” interno.
+Indicador:
+- CSV cargado: Sí/No (y cantidad de filas)
+
+IMPORTANTE: el CSV debe tener exactamente estos encabezados:
+- Contratista
+- Nombre del Nodo
+- Tecnología
+- Nombre del Evento
+- PO Directa
+- PO Retorno
+- Distancia SFP
+
+[Imagen 3: Pantalla Configuración]
+
+3.4 Manual dentro de la App
+En Configuración hay un ícono de “librito” para abrir este manual dentro de la app.
+
+============================================================
+4) PANTALLA “INFORMACIÓN GENERAL”
+============================================================
+Sección obligatoria para continuar a Activos/Pasivos/Monitor.
+
+Orden de campos:
+1) Nombre del Nodo
+2) Nombre del Evento
+3) Responsable
+4) Contratista
+5) Número de Medidor
+
+4.1 Autocompletado con Plan (nodo → evento)
+- Al escribir “Nombre del Nodo”, la app busca coincidencia en el Plan.
+- Si encuentra coincidencia, rellena “Nombre del Evento”.
+- Si no encuentra coincidencia, el evento queda en blanco y se debe completar manualmente.
+
+4.2 Contratista por defecto
+- “Contratista” se pre-carga desde Configuración.
+- Es editable en pantalla.
+
+4.3 Salir sin datos (borrador vacío)
+Si el mantenimiento es nuevo y está vacío, al salir con BACK se elimina el borrador para no guardar reportes vacíos.
+
+[Imagen 4: Información General]
+
+============================================================
+5) PANTALLA “RESUMEN DE ACTIVOS”
+============================================================
+Aquí se agregan/gestionan los activos del mantenimiento.
+
+Reglas principales:
+- Se agrega primero el Nodo (una sola vez).
+- Luego se agregan Amplificadores.
+- Se puede editar un activo tocándolo.
+- Se puede borrar un activo con pulsación larga (según flujo de la app).
+
+[Imagen 5: Resumen de Activos]
+
+============================================================
+6) PANTALLA “AGREGAR / EDITAR ACTIVO”
+============================================================
+Tipos:
+- Nodo
+- Amplificador
+
+Campo “Frec módulo”:
+Define la frecuencia del módulo (ej: 42 MHz o 85 MHz).
+
+6.1 Activo tipo NODO: Módulo “Ajuste de Nodo”
+Ubicación: inmediatamente después de “Tipo de Activo” + “Frec módulo”.
+Características:
+- Es colapsable.
+- Muestra datos del Plan (si están disponibles).
+- Requiere confirmaciones (bloqueante) si el Plan existe y el nodo fue encontrado.
+- Si no hay Plan o no hay match, muestra “Comunicación con Plan fallida” y deja continuar.
+
+Tecnología:
+- Si NO es Legacy: muestra mensaje y una confirmación.
+- Si es Legacy: muestra secciones DIRECTA/RETORNO/Medición/Espectro con confirmaciones.
+Pads TX (Legacy):
+- Solo puede confirmarse 1310 o 1550 (mutuamente excluyente).
+
+Fotos:
+Se puede agregar las fotos de modulo y tapa .Bloqueante si no se agrega.
+Se puede agregar las fotos de TX y RX con Pads. Bloqueante si no se agrega.
+Se puede agregar las fotos de inyección de portadora.
+Se puede agregar foto de monitoria de PO de directa y retorno.
+
+[Imagen 6: Agregar Nodo + Ajuste de Nodo]
+
+6.2 Activo tipo AMPLIFICADOR: Módulo “Ajuste de Amplificador”
+Incluye tablas de niveles y campos requeridos.
+En “Niveles ENTRADA” la selección 750/870 MHz muestra una flecha (desplegable).
+
+Fotos:
+Se puede agregar las fotos de modulo y tapa .Bloqueante si no se agrega.
+Se puede agregar las fotos de inyección de portadora.
+
+[Imagen 7: Ajuste de Amplificador]
+
+============================================================
+7) PANTALLA “PASIVOS”
+============================================================
+Permite registrar intervenciones en pasivos.
+Se pueden agregar, editar y eliminar registros según la interfaz.
+
+[Imagen 8: Pasivos]
+
+============================================================
+8) PANTALLA “MONITORIA Y QR”
+============================================================
+Permite capturar y gestionar fotos a nivel de reporte (Monitoría/QR y parámetros).
+Foto:
+Se puede agregar foto de resultados de QR.
+Se puede agregar foto de Parametros de Nodo.
+[Imagen 9: Monitoria y QR]
+
+============================================================
+9) FINALIZAR REPORTE
+============================================================
+Al abrir “Finalizar Reporte” se muestran opciones:
+- Enviar por correo
+- Exportar PDF
+- Exportar editable (ZIP)
+- Volver al inicio
+
+9.1 Enviar por correo (PDF o JSON)
+Al presionar “Enviar por correo” la app pregunta:
+- PDF
+- JSON (ZIP editable)
+
+9.2 Exportación a dispositivo
+Los archivos se guardan en:
+Descargas/FieldMaintenance
+
+[Imagen 10: Finalizar Reporte]
+
+============================================================
+10) PAPELERA
+============================================================
+En Papelera se listan mantenimientos borrados (soft delete).
+Opciones:
+- Recuperar
+- Borrar definitivamente
+
+[Imagen 11: Papelera]
+
+============================================================
+11) IMPORTAR
+============================================================
+Se importa desde Dispositivo (Descargas) seleccionando un archivo:
+- ZIP editable
+- JSON (según formato soportado)
+
+Si el archivo no es válido, la app avisa.
+
+[Imagen 12: Importar]
+
+============================================================
+12) NOTAS Y RECOMENDACIONES
+============================================================
+- Para que el “Plan” funcione por URL, el Google Sheet debe estar público/publicado.
+- Si falla, usar “Cargar Plan desde CSV”.
+- Mantén consistentes los nombres de nodos para asegurar coincidencias.
+- Antes de finalizar, verifica que se completaron las confirmaciones bloqueantes.
+
+

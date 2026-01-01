@@ -39,12 +39,18 @@ import coil.compose.rememberAsyncImagePainter
 import com.example.fieldmaintenance.data.model.*
 import com.example.fieldmaintenance.data.model.label
 import com.example.fieldmaintenance.ui.components.AmplifierAdjustmentCard
+import com.example.fieldmaintenance.ui.components.NodeAdjustmentCard
 import com.example.fieldmaintenance.ui.navigation.Screen
 import com.example.fieldmaintenance.ui.viewmodel.ReportViewModel
 import com.example.fieldmaintenance.ui.viewmodel.ReportViewModelFactory
 import com.example.fieldmaintenance.util.DatabaseProvider
 import com.example.fieldmaintenance.util.ImageStore
 import com.example.fieldmaintenance.util.PhotoManager
+import com.example.fieldmaintenance.util.SettingsStore
+import com.example.fieldmaintenance.util.AppSettings
+import com.example.fieldmaintenance.util.PlanCache
+import com.example.fieldmaintenance.util.PlanRepository
+import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.map
@@ -96,12 +102,28 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
     val amplifierAdjustment by repository.getAmplifierAdjustment(workingAssetId)
         .collectAsState(initial = null)
     var currentAmplifierAdjustment by remember(workingAssetId) { mutableStateOf<com.example.fieldmaintenance.data.model.AmplifierAdjustment?>(null) }
+
+    // Node adjustment (persisted per asset)
+    val nodeAdjustment by repository.getNodeAdjustment(workingAssetId).collectAsState(initial = null)
     
     LaunchedEffect(Unit) {
         hasNode = viewModel.hasNode()
         if (!isEdit && hasNode) {
             assetType = AssetType.AMPLIFIER
         }
+    }
+
+    val planRepo = remember { PlanRepository(context.applicationContext) }
+    val planCache by planRepo.cacheFlow().collectAsState(initial = PlanCache())
+
+    fun normalizeNode(v: String): String =
+        v.trim().replace(Regex("\\s+"), " ").uppercase(Locale.getDefault())
+
+    val reportNodeName = report?.nodeName.orEmpty()
+    val planRowForNode = remember(planCache, reportNodeName) {
+        val key = normalizeNode(reportNodeName)
+        if (key.isBlank()) null
+        else planCache.rows.firstOrNull { normalizeNode(it.nodeCmts) == key }
     }
 
     LaunchedEffect(assetId) {
@@ -151,10 +173,33 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
 
         val nodeAllowed = !(assetType == AssetType.NODE && hasNode && !isEdit)
 
-        val ok = baseOk && amplifierOk && amplifierTablesOk && moduleOk && opticsOk && nodeAllowed
+        val nodeAdjOk = if (assetType != AssetType.NODE) true else {
+            // If plan info is not available, allow continuing (non-blocking).
+            if (planRowForNode == null) true
+            else {
+                val adj = nodeAdjustment
+                    ?: com.example.fieldmaintenance.data.model.NodeAdjustment(assetId = workingAssetId, reportId = reportId)
+                val tech = planRowForNode.technology.trim()
+                val isLegacy = tech.equals("legacy", ignoreCase = true)
+                if (!isLegacy) {
+                    adj.nonLegacyConfirmed
+                } else {
+                    val txOk = adj.tx1310Confirmed || adj.tx1550Confirmed
+                    val poOk = adj.poConfirmed
+                    val rxOk = !adj.rxPadSelection.isNullOrBlank()
+                    val measOk = adj.measurementConfirmed
+                    val specOk = adj.spectrumConfirmed
+                    txOk && poOk && rxOk && measOk && specOk
+                }
+            }
+        }
+
+        val ok = baseOk && amplifierOk && amplifierTablesOk && moduleOk && opticsOk && nodeAllowed && nodeAdjOk
         if (!ok) {
             if (assetType == AssetType.AMPLIFIER && !amplifierTablesOk) {
                 snackbarHostState.showSnackbar("Completa todas las tablas del ajuste del amplificador")
+            } else if (assetType == AssetType.NODE && planRowForNode != null && !nodeAdjOk) {
+                snackbarHostState.showSnackbar("Completa el Ajuste de Nodo")
             } else {
                 snackbarHostState.showSnackbar("Faltan campos o fotos obligatorias")
             }
@@ -291,7 +336,7 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
                         onValueChange = {},
                         readOnly = true,
                         enabled = true,
-                        label = { Text("Frecuencia") },
+                        label = { Text("Frec módulo") },
                         modifier = Modifier
                             .fillMaxWidth()
                             .menuAnchor(),
@@ -318,6 +363,22 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
                         }
                     }
                 }
+            }
+
+            // Submódulo: Ajuste de Nodo (después de Tipo + Frecuencia)
+            if (assetType == AssetType.NODE) {
+                NodeAdjustmentCard(
+                    assetId = workingAssetId,
+                    reportId = reportId,
+                    nodeName = reportNodeName,
+                    frequency = frequency,
+                    planRow = planRowForNode,
+                    adjustment = nodeAdjustment,
+                    showRequiredErrors = attemptedSave,
+                    onPersist = { adj ->
+                        scope.launch { repository.upsertNodeAdjustment(adj) }
+                    }
+                )
             }
             
             // Amplificador: 2da línea = Tipo (HGD/HGBT/LE), 3ra línea = Puerto + N°
@@ -634,10 +695,16 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
         val r = report ?: return
         FinalizeReportDialog(
             onDismiss = { showFinalizeDialog = false },
-            onSendEmail = {
+            onSendEmailPdf = {
                 scope.launch {
                     val pdfFile = exportManager.exportToPDF(r)
                     com.example.fieldmaintenance.util.EmailManager.sendEmail(context, r.eventName, listOf(pdfFile))
+                }
+            },
+            onSendEmailJson = {
+                scope.launch {
+                    val zipFile = exportManager.exportToZIP(r)
+                    com.example.fieldmaintenance.util.EmailManager.sendEmail(context, r.eventName, listOf(zipFile))
                 }
             },
             onExportPDF = {

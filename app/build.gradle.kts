@@ -85,6 +85,9 @@ dependencies {
     
     // EXIF (for correct orientation on export)
     implementation("androidx.exifinterface:exifinterface:1.3.7")
+
+    // DataStore (Settings)
+    implementation("androidx.datastore:datastore-preferences:1.1.1")
     
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
