@@ -28,7 +28,7 @@ object PlanParser {
         val idxTicket = idxOf("nombre del evento", "ticket", "evento", "eventname")
         val idxPoDir = idxOf("po directa", "directa", "po_directa")
         val idxPoRet = idxOf("po retorno", "retorno", "po_retorno")
-        val idxDist = idxOf("distancia sfp", "distancia", "distancia_sfp")
+        val idxDist = idxOf("distancia sfp", "distancia", "distancia_sfp", "sfp")
 
         fun cell(row: List<String>, idx: Int?): String =
             if (idx == null) "" else row.getOrNull(idx)?.trim().orEmpty()

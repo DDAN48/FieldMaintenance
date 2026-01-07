@@ -88,6 +88,7 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
     
     var assetType by remember { mutableStateOf(AssetType.NODE) }
     var frequency by remember { mutableStateOf<Frequency?>(null) }
+    var technology by remember { mutableStateOf<String?>(null) }
     var amplifierMode by remember { mutableStateOf<AmplifierMode?>(null) }
     var port by remember { mutableStateOf<Port?>(null) }
     var portIndex by remember { mutableStateOf<Int?>(null) }
@@ -136,9 +137,25 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
                     85 -> Frequency.MHz_85
                     else -> null
                 }
+                technology = asset.technology
                 amplifierMode = asset.amplifierMode
                 port = asset.port
                 portIndex = asset.portIndex
+            }
+        }
+    }
+
+    // Auto-fill technology from plan if available and not already set
+    LaunchedEffect(planRowForNode, technology) {
+        if (assetType == AssetType.NODE && technology == null && planRowForNode != null) {
+            val planTech = planRowForNode.technology.trim()
+            if (planTech.isNotBlank()) {
+                val normalized = planTech.lowercase(Locale.getDefault())
+                when {
+                    normalized == "legacy" -> technology = "Legacy"
+                    normalized == "rphy" -> technology = "RPHY"
+                    normalized == "vccap" -> technology = "VCCAP"
+                }
             }
         }
     }
@@ -147,6 +164,7 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
         attemptedSave = true
 
         val baseOk = frequency != null
+        val nodeOk = assetType != AssetType.NODE || technology != null
         val amplifierOk = assetType != AssetType.AMPLIFIER || (amplifierMode != null && port != null && portIndex != null)
 
         val ampAdj = currentAmplifierAdjustment ?: amplifierAdjustment
@@ -168,33 +186,41 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
 
         // Photos required
         // We compute counts in PhotoSection via callbacks
-        val moduleOk = modulePhotoCount == 2
-        val opticsOk = assetType != AssetType.NODE || (opticsPhotoCount in 1..2)
+        val techNormalized = technology?.trim()?.lowercase(Locale.getDefault()) ?: ""
+        val moduleOk = if (assetType == AssetType.NODE && techNormalized == "rphy") true else modulePhotoCount == 2
+        val opticsOk = if (assetType == AssetType.NODE && (techNormalized == "rphy" || techNormalized == "vccap")) true 
+                      else assetType != AssetType.NODE || (opticsPhotoCount in 1..2)
 
         val nodeAllowed = !(assetType == AssetType.NODE && hasNode && !isEdit)
 
         val nodeAdjOk = if (assetType != AssetType.NODE) true else {
-            // If plan info is not available, allow continuing (non-blocking).
-            if (planRowForNode == null) true
-            else {
-                val adj = nodeAdjustment
-                    ?: com.example.fieldmaintenance.data.model.NodeAdjustment(assetId = workingAssetId, reportId = reportId)
-                val tech = planRowForNode.technology.trim()
-                val isLegacy = tech.equals("legacy", ignoreCase = true)
-                if (!isLegacy) {
-                    adj.nonLegacyConfirmed
-                } else {
+            val adj = nodeAdjustment
+                ?: com.example.fieldmaintenance.data.model.NodeAdjustment(assetId = workingAssetId, reportId = reportId)
+            val tech = technology?.trim()?.lowercase(Locale.getDefault()) 
+                ?: planRowForNode?.technology?.trim()?.lowercase(Locale.getDefault()) ?: "legacy"
+            when {
+                tech == "rphy" -> {
+                    adj.sfpDistance != null && adj.poDirectaConfirmed && adj.poRetornoConfirmed
+                }
+                tech == "vccap" -> {
+                    adj.sfpDistance != null && adj.poDirectaConfirmed && adj.poRetornoConfirmed && 
+                    adj.spectrumConfirmed && adj.docsisConfirmed && frequency != null
+                }
+                tech == "legacy" -> {
                     val txOk = adj.tx1310Confirmed || adj.tx1550Confirmed
                     val poOk = adj.poConfirmed
                     val rxOk = !adj.rxPadSelection.isNullOrBlank()
                     val measOk = adj.measurementConfirmed
                     val specOk = adj.spectrumConfirmed
-                    txOk && poOk && rxOk && measOk && specOk
+                    txOk && poOk && rxOk && measOk && specOk && frequency != null
+                }
+                else -> {
+                    adj.nonLegacyConfirmed
                 }
             }
         }
 
-        val ok = baseOk && amplifierOk && amplifierTablesOk && moduleOk && opticsOk && nodeAllowed && nodeAdjOk
+        val ok = baseOk && nodeOk && amplifierOk && amplifierTablesOk && moduleOk && opticsOk && nodeAllowed && nodeAdjOk
         if (!ok) {
             if (assetType == AssetType.AMPLIFIER && !amplifierTablesOk) {
                 snackbarHostState.showSnackbar("Completa todas las tablas del ajuste del amplificador")
@@ -365,13 +391,57 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
                 }
             }
 
-            // Submódulo: Ajuste de Nodo (después de Tipo + Frecuencia)
+            // Tecnología (solo para Nodo)
+            if (assetType == AssetType.NODE) {
+                var expandedTech by remember { mutableStateOf(false) }
+                val techOptions = listOf("Legacy", "RPHY", "VCCAP")
+                ExposedDropdownMenuBox(
+                    expanded = expandedTech,
+                    onExpandedChange = { expandedTech = !expandedTech },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    OutlinedTextField(
+                        value = technology ?: "Seleccionar",
+                        onValueChange = {},
+                        readOnly = true,
+                        enabled = true,
+                        label = { Text("Tecnología") },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .menuAnchor(),
+                        trailingIcon = {
+                            ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedTech)
+                        },
+                        isError = attemptedSave && technology == null,
+                        supportingText = {
+                            if (attemptedSave && technology == null) Text("Obligatorio")
+                        }
+                    )
+                    ExposedDropdownMenu(
+                        expanded = expandedTech,
+                        onDismissRequest = { expandedTech = false }
+                    ) {
+                        techOptions.forEach { tech ->
+                            DropdownMenuItem(
+                                text = { Text(tech) },
+                                onClick = {
+                                    technology = tech
+                                    expandedTech = false
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Submódulo: Ajuste de Nodo (después de Tipo + Frecuencia + Tecnología)
             if (assetType == AssetType.NODE) {
                 NodeAdjustmentCard(
                     assetId = workingAssetId,
                     reportId = reportId,
                     nodeName = reportNodeName,
                     frequency = frequency,
+                    technology = technology,
                     planRow = planRowForNode,
                     adjustment = nodeAdjustment,
                     showRequiredErrors = attemptedSave,
@@ -566,21 +636,24 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
                 style = MaterialTheme.typography.titleMedium
             )
             
-            // Foto del Módulo
-            PhotoSection(
-                title = "Foto del Módulo y Tapa",
-                reportId = reportId,
-                assetId = workingAssetId,
-                photoType = PhotoType.MODULE,
-                repository = repository,
-                minRequired = 2,
-                showRequiredError = attemptedSave,
-                maxAllowed = 2,
-                onCountChange = { modulePhotoCount = it }
-            )
+            // Foto del Módulo (no para RPHY)
+            if (assetType != AssetType.NODE || technology != "RPHY") {
+                PhotoSection(
+                    title = "Foto del Módulo y Tapa",
+                    reportId = reportId,
+                    assetId = workingAssetId,
+                    photoType = PhotoType.MODULE,
+                    repository = repository,
+                    minRequired = if (assetType == AssetType.NODE && technology != "RPHY") 2 else 0,
+                    showRequiredError = attemptedSave && (assetType != AssetType.NODE || technology != "RPHY"),
+                    maxAllowed = 2,
+                    onCountChange = { modulePhotoCount = it }
+                )
+            }
             
             // Fotos adicionales según tipo
-            if (assetType == AssetType.NODE) {
+            // Foto TX y RX con pads (no para RPHY ni VCCAP)
+            if (assetType == AssetType.NODE && technology != "RPHY" && technology != "VCCAP") {
                 PhotoSection(
                     title = "Foto TX  y RX con pads",
                     reportId = reportId,
@@ -608,17 +681,22 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
                 )
             }
             
-            PhotoSection(
-                title = "Fotos de Inyección de portadoras por puerto",
-                reportId = reportId,
-                assetId = workingAssetId,
-                photoType = PhotoType.SPECTRUM,
-                repository = repository,
-                minRequired = 0,
-                showRequiredError = false,
-                maxAllowed = 3,
-                onCountChange = { spectrumPhotoCount = it }
-            )
+            // Fotos de Inyección de portadoras (no para RPHY)
+            if (assetType != AssetType.NODE || technology != "RPHY") {
+                // Para NODO con Legacy o VCCAP: 4 fotos, para otros: 3 fotos
+                val maxSpectrumPhotos = if (assetType == AssetType.NODE && (technology == "Legacy" || technology == "VCCAP")) 4 else 3
+                PhotoSection(
+                    title = "Fotos de Inyección de portadoras por puerto",
+                    reportId = reportId,
+                    assetId = workingAssetId,
+                    photoType = PhotoType.SPECTRUM,
+                    repository = repository,
+                    minRequired = 0,
+                    showRequiredError = false,
+                    maxAllowed = maxSpectrumPhotos,
+                    onCountChange = { spectrumPhotoCount = it }
+                )
+            }
             
             if (assetType == AssetType.NODE) {
                 Row(
@@ -649,6 +727,7 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
                             reportId = reportId,
                             type = assetType,
                             frequencyMHz = (frequency?.mhz ?: 0),
+                            technology = if (assetType == AssetType.NODE) technology else null,
                             amplifierMode = amplifierMode,
                             port = port,
                             portIndex = portIndex

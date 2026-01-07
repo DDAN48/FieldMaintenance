@@ -16,6 +16,11 @@ data class Asset(
     /**
      * Amplifier port index (01..99). Only applies to AMPLIFIER assets.
      */
-    val portIndex: Int? = null
+    val portIndex: Int? = null,
+    /**
+     * Technology type for NODE assets: "Legacy", "RPHY", or "VCCAP".
+     * Can come from plan or be manually selected.
+     */
+    val technology: String? = null
 )
 

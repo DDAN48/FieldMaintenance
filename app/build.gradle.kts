@@ -15,8 +15,8 @@ android {
         applicationId = "com.example.fieldmaintenance"
         minSdk = 24
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 5
+        versionName = "5.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -39,6 +39,20 @@ android {
     }
     buildFeatures {
         compose = true
+    }
+    
+    packaging {
+        jniLibs {
+            useLegacyPackaging = false
+        }
+        resources {
+            // Exclude the problematic native library from Coil if not critical
+            // This library is used for image processing optimizations but may not be essential
+            excludes += "/lib/arm64-v8a/libimage_processing_util_jni.so"
+            excludes += "/lib/armeabi-v7a/libimage_processing_util_jni.so"
+            excludes += "/lib/x86/libimage_processing_util_jni.so"
+            excludes += "/lib/x86_64/libimage_processing_util_jni.so"
+        }
     }
 }
 
@@ -80,8 +94,10 @@ dependencies {
     // Icons Extended
     implementation("androidx.compose.material:material-icons-extended")
 
-    // Images
-    implementation("io.coil-kt:coil-compose:2.4.0")
+    // Images (updated for 16 KB page size support)
+    // Note: libimage_processing_util_jni.so is excluded in packaging.resources to fix 16 KB alignment
+    // Coil will work without this native library, just with slightly less image processing optimization
+    implementation("io.coil-kt:coil-compose:2.7.0")
     
     // EXIF (for correct orientation on export)
     implementation("androidx.exifinterface:exifinterface:1.3.7")

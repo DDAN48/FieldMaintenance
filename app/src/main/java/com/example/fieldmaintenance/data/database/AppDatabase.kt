@@ -21,7 +21,7 @@ import com.example.fieldmaintenance.data.model.ReportPhoto
 
 @Database(
     entities = [MaintenanceReport::class, Asset::class, Photo::class, AmplifierAdjustment::class, PassiveItem::class, ReportPhoto::class, NodeAdjustment::class],
-    version = 10,
+    version = 11,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -150,13 +150,47 @@ abstract class AppDatabase : RoomDatabase() {
 
         val MIGRATION_9_10 = object : Migration(9, 10) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                // Add Plan snapshot columns (nullable)
-                db.execSQL("ALTER TABLE node_adjustments ADD COLUMN planNode TEXT")
-                db.execSQL("ALTER TABLE node_adjustments ADD COLUMN planContractor TEXT")
-                db.execSQL("ALTER TABLE node_adjustments ADD COLUMN planTechnology TEXT")
-                db.execSQL("ALTER TABLE node_adjustments ADD COLUMN planPoDirecta TEXT")
-                db.execSQL("ALTER TABLE node_adjustments ADD COLUMN planPoRetorno TEXT")
-                db.execSQL("ALTER TABLE node_adjustments ADD COLUMN planDistanciaSfp TEXT")
+                // Intentar agregar columnas del plan si no existen
+                // Nota: Si la tabla fue creada en MIGRATION_8_9, estas columnas ya existen
+                // SQLite lanzará una excepción si la columna ya existe, la capturamos y continuamos
+                val columnsToAdd = listOf(
+                    "planNode", "planContractor", "planTechnology",
+                    "planPoDirecta", "planPoRetorno", "planDistanciaSfp"
+                )
+
+                for (column in columnsToAdd) {
+                    try {
+                        db.execSQL("ALTER TABLE node_adjustments ADD COLUMN $column TEXT")
+                    } catch (e: Exception) {
+                        // La columna ya existe, continuar con la siguiente
+                        // Esto es normal si la tabla fue creada en MIGRATION_8_9
+                    }
+                }
+            }
+        }
+
+        val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                try {
+                    db.execSQL("ALTER TABLE assets ADD COLUMN technology TEXT")
+                } catch (e: Exception) {
+                    // La columna ya existe, continuar
+                }
+                // Agregar campos para RPHY/VCCAP en node_adjustments
+                val nodeAdjColumns = listOf(
+                    "sfpDistance INTEGER",
+                    "poDirectaConfirmed INTEGER NOT NULL DEFAULT 0",
+                    "poRetornoConfirmed INTEGER NOT NULL DEFAULT 0",
+                    "docsisConfirmed INTEGER NOT NULL DEFAULT 0"
+                )
+                for (columnDef in nodeAdjColumns) {
+                    try {
+                        val columnName = columnDef.split(" ")[0]
+                        db.execSQL("ALTER TABLE node_adjustments ADD COLUMN $columnDef")
+                    } catch (e: Exception) {
+                        // La columna ya existe, continuar
+                    }
+                }
             }
         }
     }

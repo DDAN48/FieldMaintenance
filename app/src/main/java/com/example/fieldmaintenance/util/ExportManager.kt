@@ -220,13 +220,20 @@ class ExportManager(private val context: Context, private val repository: Mainte
     }
 
     suspend fun exportToJSON(report: MaintenanceReport): File = withContext(Dispatchers.IO) {
-        val assets = repository.getAssetsByReportId(report.id).first()
+val assets = repository.getAssetsByReportId(report.id).first()
             .sortedBy { assetSortKey(it) }
         
         val photosMap = mutableMapOf<String, List<Photo>>()
+        val nodeAdjustmentsMap = mutableMapOf<String, NodeAdjustment>()
         assets.forEach { asset ->
             photosMap[asset.id] = repository.getPhotosByAssetId(asset.id).first()
                 .sortedBy { photoSortKey(it) }
+            // Include NodeAdjustment for NODE assets
+            if (asset.type == AssetType.NODE) {
+                runCatching { repository.getNodeAdjustmentOne(asset.id) }.getOrNull()?.let {
+                    nodeAdjustmentsMap[asset.id] = it
+                }
+            }
         }
         
         val passives = repository.getPassivesByReportId(report.id).first()
@@ -237,7 +244,8 @@ class ExportManager(private val context: Context, private val repository: Mainte
             assets = assets,
             photos = photosMap,
             passives = passives,
-            reportPhotos = reportPhotos
+            reportPhotos = reportPhotos,
+            nodeAdjustments = if (nodeAdjustmentsMap.isNotEmpty()) nodeAdjustmentsMap else null
         )
         
         val jsonString = gson.toJson(exportData)
@@ -538,41 +546,242 @@ class ExportManager(private val context: Context, private val repository: Mainte
                         )
                     }
 
-                    val tech = nodeAdj.planTechnology.orEmpty().trim()
-                    val isLegacy = tech.equals("legacy", ignoreCase = true)
+                    // Get technology from asset first, then fallback to plan
+                    val tech = asset.technology?.trim()?.lowercase() 
+                        ?: nodeAdj.planTechnology?.trim()?.lowercase() 
+                        ?: "legacy"
+                    val isLegacy = tech == "legacy"
+                    val isRphy = tech == "rphy"
+                    val isVccap = tech == "vccap"
                     val green = DeviceRgb(46, 125, 50)
                     val red = DeviceRgb(183, 28, 28)
                     fun okCell(ok: Boolean): Pair<String, com.itextpdf.kernel.colors.Color?> =
                         (if (ok) "Confirmado" else "Pendiente") to (if (ok) green else red)
 
-                    if (!isLegacy) {
-                        addTable(
-                            document,
-                            title = "Validación (No Legacy)",
-                            headers = listOf("Item", "Estado"),
-                            rows = listOf(
-                                listOf(
-                                    "Asegure con HUB y operador que los parámetros estén correctos." to null,
-                                    okCell(nodeAdj.nonLegacyConfirmed)
+                    when {
+                        isRphy -> {
+                            // RPHY: SFP + PO Directa + PO Retorno
+                            val sfpText = nodeAdj.sfpDistance?.let { "$it km" } ?: "No seleccionado"
+                            addTable(
+                                document,
+                                title = "RPHY - Configuración",
+                                headers = listOf("Campo", "Valor"),
+                                rows = listOf(
+                                    listOf("SFP" to null, sfpText to null)
+                                ),
+                                colWidths = floatArrayOf(35f, 65f)
+                            )
+                            document.add(Paragraph(" "))
+                            
+                            addTable(
+                                document,
+                                title = "RPHY - PO Directa (llegando a Nodo)",
+                                headers = listOf("Item", "Estado"),
+                                rows = listOf(
+                                    listOf("Confirmo PO Directa" to null, okCell(nodeAdj.poDirectaConfirmed))
+                                ),
+                                colWidths = floatArrayOf(75f, 25f)
+                            )
+                            nodeAdj.planPoDirecta?.takeIf { it.isNotBlank() }?.let { po ->
+                                val poVal = Regex("[-+]?[0-9]*\\.?[0-9]+").find(po)?.value?.toDoubleOrNull()
+                                val rangeText = when (nodeAdj.sfpDistance) {
+                                    20 -> "-1 a -14 dBm"
+                                    40 -> "-7 a -16 dBm"
+                                    80 -> "-7 a -21 dBm"
+                                    else -> "N/A"
+                                }
+                                val inRange = poVal != null && when (nodeAdj.sfpDistance) {
+                                    20 -> poVal >= -14.0 && poVal <= -1.0
+                                    40 -> poVal >= -16.0 && poVal <= -7.0
+                                    80 -> poVal >= -21.0 && poVal <= -7.0
+                                    else -> false
+                                }
+                                val color = if (inRange) green else red
+                                document.add(
+                                    Paragraph("PO Directa (Plan): $po  ·  Rango esperado: $rangeText")
+                                        .setFontSize(9f)
+                                        .setFontColor(color)
                                 )
-                            ),
-                            colWidths = floatArrayOf(75f, 25f)
-                        )
-                    } else {
-                        // DIRECTA
-                        val txOk = nodeAdj.tx1310Confirmed || nodeAdj.tx1550Confirmed
-                        addTable(
-                            document,
-                            title = "DIRECTA",
-                            headers = listOf("Item", "Estado"),
-                            rows = listOf(
-                                listOf("Con Tx de 1310nm instalados en HUB colocar Pad de 9" to null, okCell(nodeAdj.tx1310Confirmed)),
-                                listOf("Con Tx de 1550nm instalados en HUB colocar Pad de 10" to null, okCell(nodeAdj.tx1550Confirmed)),
-                                listOf("Pads TX (uno de los dos)" to null, okCell(txOk)),
-                                listOf("Confirmo PO" to null, okCell(nodeAdj.poConfirmed)),
-                            ),
-                            colWidths = floatArrayOf(75f, 25f)
-                        )
+                            }
+                            document.add(Paragraph(" "))
+                            
+                            addTable(
+                                document,
+                                title = "RPHY - PO Retorno (llegando a HUB)",
+                                headers = listOf("Item", "Estado"),
+                                rows = listOf(
+                                    listOf("Confirmo PO Retorno" to null, okCell(nodeAdj.poRetornoConfirmed))
+                                ),
+                                colWidths = floatArrayOf(75f, 25f)
+                            )
+                            nodeAdj.planPoRetorno?.takeIf { it.isNotBlank() }?.let { po ->
+                                val poVal = Regex("[-+]?[0-9]*\\.?[0-9]+").find(po)?.value?.toDoubleOrNull()
+                                val rangeText = when (nodeAdj.sfpDistance) {
+                                    20 -> "-1 a -14 dBm"
+                                    40 -> "-7 a -16 dBm"
+                                    80 -> "-7 a -21 dBm"
+                                    else -> "N/A"
+                                }
+                                val inRange = poVal != null && when (nodeAdj.sfpDistance) {
+                                    20 -> poVal >= -14.0 && poVal <= -1.0
+                                    40 -> poVal >= -16.0 && poVal <= -7.0
+                                    80 -> poVal >= -21.0 && poVal <= -7.0
+                                    else -> false
+                                }
+                                val color = if (inRange) green else red
+                                document.add(
+                                    Paragraph("PO Retorno (Plan): $po  ·  Rango esperado: $rangeText")
+                                        .setFontSize(9f)
+                                        .setFontColor(color)
+                                )
+                            }
+                        }
+                        isVccap -> {
+                            // VCCAP: SFP + PO Directa + PO Retorno + Espectro + DOCSIS
+                            val sfpText = nodeAdj.sfpDistance?.let { "$it km" } ?: "No seleccionado"
+                            addTable(
+                                document,
+                                title = "VCCAP - Configuración",
+                                headers = listOf("Campo", "Valor"),
+                                rows = listOf(
+                                    listOf("SFP" to null, sfpText to null)
+                                ),
+                                colWidths = floatArrayOf(35f, 65f)
+                            )
+                            document.add(Paragraph(" "))
+                            
+                            addTable(
+                                document,
+                                title = "VCCAP - PO Directa (llegando a Nodo)",
+                                headers = listOf("Item", "Estado"),
+                                rows = listOf(
+                                    listOf("Confirmo PO Directa" to null, okCell(nodeAdj.poDirectaConfirmed))
+                                ),
+                                colWidths = floatArrayOf(75f, 25f)
+                            )
+                            nodeAdj.planPoDirecta?.takeIf { it.isNotBlank() }?.let { po ->
+                                val poVal = Regex("[-+]?[0-9]*\\.?[0-9]+").find(po)?.value?.toDoubleOrNull()
+                                val rangeText = when (nodeAdj.sfpDistance) {
+                                    20 -> "-1 a -14 dBm"
+                                    40 -> "-7 a -16 dBm"
+                                    80 -> "-7 a -21 dBm"
+                                    else -> "N/A"
+                                }
+                                val inRange = poVal != null && when (nodeAdj.sfpDistance) {
+                                    20 -> poVal >= -14.0 && poVal <= -1.0
+                                    40 -> poVal >= -16.0 && poVal <= -7.0
+                                    80 -> poVal >= -21.0 && poVal <= -7.0
+                                    else -> false
+                                }
+                                val color = if (inRange) green else red
+                                document.add(
+                                    Paragraph("PO Directa (Plan): $po  ·  Rango esperado: $rangeText")
+                                        .setFontSize(9f)
+                                        .setFontColor(color)
+                                )
+                            }
+                            document.add(Paragraph(" "))
+                            
+                            addTable(
+                                document,
+                                title = "VCCAP - PO Retorno (llegando a HUB)",
+                                headers = listOf("Item", "Estado"),
+                                rows = listOf(
+                                    listOf("Confirmo PO Retorno" to null, okCell(nodeAdj.poRetornoConfirmed))
+                                ),
+                                colWidths = floatArrayOf(75f, 25f)
+                            )
+                            nodeAdj.planPoRetorno?.takeIf { it.isNotBlank() }?.let { po ->
+                                val poVal = Regex("[-+]?[0-9]*\\.?[0-9]+").find(po)?.value?.toDoubleOrNull()
+                                val rangeText = when (nodeAdj.sfpDistance) {
+                                    20 -> "-1 a -14 dBm"
+                                    40 -> "-7 a -16 dBm"
+                                    80 -> "-7 a -21 dBm"
+                                    else -> "N/A"
+                                }
+                                val inRange = poVal != null && when (nodeAdj.sfpDistance) {
+                                    20 -> poVal >= -14.0 && poVal <= -1.0
+                                    40 -> poVal >= -16.0 && poVal <= -7.0
+                                    80 -> poVal >= -21.0 && poVal <= -7.0
+                                    else -> false
+                                }
+                                val color = if (inRange) green else red
+                                document.add(
+                                    Paragraph("PO Retorno (Plan): $po  ·  Rango esperado: $rangeText")
+                                        .setFontSize(9f)
+                                        .setFontColor(color)
+                                )
+                            }
+                            document.add(Paragraph(" "))
+                            
+                            addTable(
+                                document,
+                                title = "VCCAP - Espectro",
+                                headers = listOf("Item", "Estado"),
+                                rows = listOf(
+                                    listOf("Confirmar espectro" to null, okCell(nodeAdj.spectrumConfirmed))
+                                ),
+                                colWidths = floatArrayOf(75f, 25f)
+                            )
+                            document.add(Paragraph(" "))
+                            
+                            val docsisText = when (asset.frequencyMHz) {
+                                42 -> "DOCSIS en el equipo debe estar entre (29 a 34) dBmV ± 1dB"
+                                85 -> "DOCSIS en el equipo debe estar entre (30 a 35) dBmV ± 1dB"
+                                else -> "DOCSIS (frecuencia no especificada)"
+                            }
+                            addTable(
+                                document,
+                                title = "VCCAP - DOCSIS",
+                                headers = listOf("Item", "Estado"),
+                                rows = listOf(
+                                    listOf(docsisText to null, okCell(nodeAdj.docsisConfirmed))
+                                ),
+                                colWidths = floatArrayOf(75f, 25f)
+                            )
+                        }
+                        !isLegacy -> {
+                            addTable(
+                                document,
+                                title = "Validación (No Legacy)",
+                                headers = listOf("Item", "Estado"),
+                                rows = listOf(
+                                    listOf(
+                                        "Asegure con HUB y operador que los parámetros estén correctos." to null,
+                                        okCell(nodeAdj.nonLegacyConfirmed)
+                                    )
+                                ),
+                                colWidths = floatArrayOf(75f, 25f)
+                            )
+                        }
+                        else -> {
+                            // Legacy
+                            // DIRECTA
+                            val rxOk = nodeAdj.tx1310Confirmed || nodeAdj.tx1550Confirmed
+                            val directaRows = mutableListOf<List<Pair<String, com.itextpdf.kernel.colors.Color?>>>()
+                            
+                            // Solo mostrar las opciones confirmadas
+                            if (nodeAdj.tx1310Confirmed) {
+                                directaRows.add(listOf("Con Tx de 1310nm instalados en HUB colocar Pad de 9 en receptora de nodo" to null, okCell(true)))
+                            }
+                            if (nodeAdj.tx1550Confirmed) {
+                                directaRows.add(listOf("Con Tx de 1550nm instalados en HUB colocar Pad de 10 en receptora de nodo" to null, okCell(true)))
+                            }
+                            
+                            // Agregar PO solo si hay al menos una confirmación de TX
+                            if (rxOk) {
+                                directaRows.add(listOf("Confirmo PO" to null, okCell(nodeAdj.poConfirmed)))
+                            }
+                            
+                            if (directaRows.isNotEmpty()) {
+                                addTable(
+                                    document,
+                                    title = "DIRECTA",
+                                    headers = listOf("Item", "Estado"),
+                                    rows = directaRows,
+                                    colWidths = floatArrayOf(75f, 25f)
+                                )
+                            }
 
                         // PO range helper (best-effort parse)
                         val poVal = Regex("[-+]?[0-9]*\\.?[0-9]+").find(nodeAdj.planPoDirecta.orEmpty())?.value?.toDoubleOrNull()
@@ -587,19 +796,37 @@ class ExportManager(private val context: Context, private val repository: Mainte
                             document.add(Paragraph(" "))
                         }
 
-                        // RETORNO
-                        val rxOk = !nodeAdj.rxPadSelection.isNullOrBlank()
-                        addTable(
-                            document,
-                            title = "RETORNO",
-                            headers = listOf("Item", "Estado"),
-                            rows = listOf(
-                                listOf("Pads RX (selección única)" to null, okCell(rxOk)),
-                                listOf("Confirmar medición en TP RX" to null, okCell(nodeAdj.measurementConfirmed)),
-                                listOf("Confirmar espectro" to null, okCell(nodeAdj.spectrumConfirmed)),
-                            ),
-                            colWidths = floatArrayOf(75f, 25f)
-                        )
+                            // RETORNO
+                            val txOk = !nodeAdj.rxPadSelection.isNullOrBlank()
+                            val txPadText = when (nodeAdj.rxPadSelection) {
+                                "TP_BLACK" -> {
+                                    when (asset.frequencyMHz) {
+                                        85 -> "Con FRECUENCIA de 85Mhz con test point y cartucho negro colocar pad de 8 en transmisora de nodo"
+                                        42 -> "Con FRECUENCIA de 42Mhz con test point y cartucho negro colocar pad de 10 en transmisora de nodo"
+                                        else -> "Con test point y cartucho negro"
+                                    }
+                                }
+                                "TP_NO_BLACK" -> {
+                                    when (asset.frequencyMHz) {
+                                        85 -> "Con FRECUENCIA de 85Mhz con test point y SIN cartucho negro colocar pad de 9 en transmisora de nodo"
+                                        42 -> "Con FRECUENCIA de 42Mhz con test point y SIN cartucho negro colocar pad de 10 en transmisora de nodo"
+                                        else -> "Con test point y SIN cartucho negro"
+                                    }
+                                }
+                                else -> "No seleccionado"
+                            }
+                            addTable(
+                                document,
+                                title = "RETORNO",
+                                headers = listOf("Item", "Estado"),
+                                rows = listOf(
+                                    listOf("Pads TX: $txPadText" to null, okCell(txOk)),
+                                    listOf("Confirmar medición en test point de RX" to null, okCell(nodeAdj.measurementConfirmed)),
+                                    listOf("Confirmar espectro" to null, okCell(nodeAdj.spectrumConfirmed)),
+                                ),
+                                colWidths = floatArrayOf(75f, 25f)
+                            )
+                        }
                     }
                 } else {
                     document.add(Paragraph("Sin datos de ajuste de nodo guardados.").setFontSize(9f))
@@ -934,12 +1161,19 @@ class ExportManager(private val context: Context, private val repository: Mainte
         val photosByAsset = mutableMapOf<String, List<Photo>>()
         val imagesByAsset = mutableMapOf<String, List<ExportImageRef>>()
         val adjustmentsByAsset = mutableMapOf<String, AmplifierAdjustment>()
+        val nodeAdjustmentsByAsset = mutableMapOf<String, NodeAdjustment>()
         val reportImageRefs = mutableListOf<ExportReportImageRef>()
 
         assets.forEach { asset ->
             // Persist amplifier adjustment (if any) inside report.json
             repository.getAmplifierAdjustment(asset.id).first()?.let { adj ->
                 adjustmentsByAsset[asset.id] = adj
+            }
+            // Persist node adjustment (if any) inside report.json
+            if (asset.type == AssetType.NODE) {
+                repository.getNodeAdjustment(asset.id).first()?.let { adj ->
+                    nodeAdjustmentsByAsset[asset.id] = adj
+                }
             }
 
             val photos = repository.getPhotosByAssetId(asset.id).first()
@@ -992,6 +1226,7 @@ class ExportManager(private val context: Context, private val repository: Mainte
             images = imagesByAsset,
             reportImages = if (reportImageRefs.isEmpty()) null else reportImageRefs,
             adjustments = if (adjustmentsByAsset.isEmpty()) null else adjustmentsByAsset,
+            nodeAdjustments = if (nodeAdjustmentsByAsset.isNotEmpty()) nodeAdjustmentsByAsset else null,
             passives = passives
         )
         File(exportDir, "report.json").writeText(gson.toJson(exportData))
@@ -1083,6 +1318,10 @@ class ExportManager(private val context: Context, private val repository: Mainte
             exportData.reportPhotos?.forEach { rp ->
                 repository.upsertReportPhoto(rp)
             }
+            exportData.nodeAdjustments?.forEach { (assetId, adj) ->
+                // Ensure assetId and reportId are preserved from the imported data
+                repository.upsertNodeAdjustment(adj.copy(assetId = assetId, reportId = exportData.report.id))
+            }
             
             exportData.report
         } catch (e: Exception) {
@@ -1130,6 +1369,10 @@ class ExportManager(private val context: Context, private val repository: Mainte
             // Restore amplifier adjustments (if present in the zip)
             exportData.adjustments?.forEach { (assetId, adj) ->
                 repository.upsertAmplifierAdjustment(adj.copy(assetId = assetId))
+            }
+            // Restore node adjustments (if present in the zip)
+            exportData.nodeAdjustments?.forEach { (assetId, adj) ->
+                repository.upsertNodeAdjustment(adj.copy(assetId = assetId, reportId = report.id))
             }
 
             // Restore passives
@@ -1202,7 +1445,8 @@ data class ExportData(
     val assets: List<Asset>,
     val photos: Map<String, List<Photo>>,
     val passives: List<PassiveItem>? = null,
-    val reportPhotos: List<ReportPhoto>? = null
+    val reportPhotos: List<ReportPhoto>? = null,
+    val nodeAdjustments: Map<String, NodeAdjustment>? = null
 )
 
 data class ExportImageRef(
@@ -1221,6 +1465,7 @@ data class ExportDataV2(
     val images: Map<String, List<ExportImageRef>>,
     val reportImages: List<ExportReportImageRef>? = null,
     val adjustments: Map<String, AmplifierAdjustment>? = null,
+    val nodeAdjustments: Map<String, NodeAdjustment>? = null,
     val passives: List<PassiveItem>? = null
 )
 

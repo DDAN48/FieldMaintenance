@@ -40,6 +40,14 @@ data class NodeAdjustment(
     // Non-legacy: confirmación simple
     val nonLegacyConfirmed: Boolean = false,
 
+    // RPHY/VCCAP: SFP distance (20, 40, or 80 km)
+    val sfpDistance: Int? = null,
+    // RPHY/VCCAP: PO confirmations
+    val poDirectaConfirmed: Boolean = false,
+    val poRetornoConfirmed: Boolean = false,
+    // VCCAP: DOCSIS confirmation
+    val docsisConfirmed: Boolean = false,
+
     val updatedAt: Long = System.currentTimeMillis()
 )
 
