@@ -48,6 +48,7 @@ import com.example.fieldmaintenance.util.ImageStore
 import com.example.fieldmaintenance.util.PhotoManager
 import com.example.fieldmaintenance.util.SettingsStore
 import com.example.fieldmaintenance.util.AppSettings
+import com.example.fieldmaintenance.util.MaintenanceStorage
 import com.example.fieldmaintenance.util.PlanCache
 import com.example.fieldmaintenance.util.PlanRepository
 import java.util.Locale
@@ -278,6 +279,9 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
                                     portIndex = portIndex
                                 )
                                 if (isEdit) viewModel.updateAsset(asset) else viewModel.addAsset(asset)
+                                withContext(Dispatchers.IO) {
+                                    MaintenanceStorage.ensureAssetDir(context, reportId, asset)
+                                }
                                 snackbarHostState.showSnackbar("Guardado")
                             } else {
                                 snackbarHostState.showSnackbar("Completa los datos del activo")
@@ -1049,4 +1053,3 @@ fun PhotoSection(
         )
     }
 }
-
