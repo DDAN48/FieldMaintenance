@@ -1101,6 +1101,9 @@ private fun AssetFileSection(
             putExtra(android.content.Intent.EXTRA_TEXT, "Selecciona la app para compartir mediciones")
         }
     }
+    val viaviIntent = remember {
+        context.packageManager.getLaunchIntentForPackage("com.viavisolutions.mobiletech")
+    }
 
     var isExpanded by remember { mutableStateOf(true) }
 
@@ -1148,6 +1151,28 @@ private fun AssetFileSection(
                         Icon(Icons.Default.Description, contentDescription = null)
                         Spacer(modifier = Modifier.width(8.dp))
                         Text("Agregar Mediciones")
+                    }
+                    Button(onClick = {
+                        if (viaviIntent != null) {
+                            runCatching { context.startActivity(viaviIntent) }
+                                .onFailure {
+                                    Toast.makeText(
+                                        context,
+                                        "No se pudo abrir Viavi",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                        } else {
+                            Toast.makeText(
+                                context,
+                                "Viavi (mobiletech) no está instalada",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    }) {
+                        Icon(Icons.Default.Description, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Agregar desde Viavi")
                     }
                     if (selected.isNotEmpty()) {
                         Button(onClick = {
