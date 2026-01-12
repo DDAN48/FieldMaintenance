@@ -1093,7 +1093,7 @@ private fun AssetFileSection(
     val scope = rememberCoroutineScope()
 
     val documentLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument()
+        contract = ActivityResultContracts.GetContent()
     ) { uri ->
         if (uri != null) {
             scope.launch(Dispatchers.IO) {
@@ -1107,7 +1107,7 @@ private fun AssetFileSection(
     }
 
     Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("Archivos", style = MaterialTheme.typography.titleMedium)
+        Text("Archivos de Mediciones", style = MaterialTheme.typography.titleMedium)
         Text(
             "Ruta: ${assetDir.path}",
             style = MaterialTheme.typography.bodySmall,
@@ -1115,11 +1115,11 @@ private fun AssetFileSection(
         )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = {
-                documentLauncher.launch(arrayOf("*/*"))
+                documentLauncher.launch("*/*")
             }) {
                 Icon(Icons.Default.Description, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("Agregar archivo")
+                Text("Agregar Mediciones")
             }
             if (selected.isNotEmpty()) {
                 Button(onClick = {
