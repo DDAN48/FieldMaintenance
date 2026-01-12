@@ -26,12 +26,14 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -46,6 +48,7 @@ import com.example.fieldmaintenance.util.DatabaseProvider
 import com.example.fieldmaintenance.util.MaintenanceStorage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 fun ShareImportScreen(
@@ -217,6 +220,10 @@ private fun AssetShareRow(
             "Amplificador $portName$portIndex".trim()
         }
     }
+    val assetDir = remember(reportFolder, asset) {
+        MaintenanceStorage.ensureAssetDir(context, reportFolder, asset)
+    }
+    var files by remember(assetDir) { mutableStateOf(assetDir.listFiles()?.sortedBy { it.name } ?: emptyList()) }
 
     Button(
         onClick = {
@@ -225,8 +232,12 @@ private fun AssetShareRow(
                 sharedUris.forEach { uri ->
                     MaintenanceStorage.copySharedFileToDir(context, uri, assetDir)
                 }
+                val updated = assetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
                 onShareHandled()
-                onShowMessage("Archivos guardados en $assetLabel")
+                withContext(Dispatchers.Main) {
+                    files = updated
+                    onShowMessage("Archivos guardados en $assetLabel")
+                }
             }
         },
         modifier = Modifier.fillMaxWidth()
@@ -234,5 +245,34 @@ private fun AssetShareRow(
         Icon(Icons.Default.Folder, contentDescription = null)
         Spacer(modifier = Modifier.width(8.dp))
         Text("Guardar en $assetLabel")
+    }
+
+    if (files.isNotEmpty()) {
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            files.forEach { file ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = file.name,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.weight(1f)
+                    )
+                    TextButton(onClick = {
+                        scope.launch(Dispatchers.IO) {
+                            file.delete()
+                            val updated = assetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
+                            withContext(Dispatchers.Main) {
+                                files = updated
+                                onShowMessage("Archivo eliminado")
+                            }
+                        }
+                    }) {
+                        Text("Borrar")
+                    }
+                }
+            }
+        }
     }
 }
