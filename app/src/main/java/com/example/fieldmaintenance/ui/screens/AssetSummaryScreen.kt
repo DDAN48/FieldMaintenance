@@ -344,16 +344,16 @@ fun FinalizeReportDialog(
             Column(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                    TextButton(
-                        onClick = {
-                            if (!showMissingWarning) {
-                                showEmailChoice = true
-                            }
-                        },
-                        enabled = !showMissingWarning
-                    ) {
-                        Text("📧 Enviar por correo")
-                    }
+                TextButton(
+                    onClick = {
+                        if (!showMissingWarning) {
+                            showEmailChoice = true
+                        }
+                    },
+                    enabled = !showMissingWarning
+                ) {
+                    Text("📧 Enviar por correo")
+                }
                     },
                     enabled = !showMissingWarning
                 ) {
