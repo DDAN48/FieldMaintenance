@@ -115,7 +115,8 @@ fun HomeScreen(navController: NavController) {
                     selected = false,
                     onClick = {
                         val reportId = viewModel.createNewReport()
-                        MaintenanceStorage.ensureReportDir(context, reportId)
+                        val reportFolder = MaintenanceStorage.reportFolderName(null, reportId)
+                        MaintenanceStorage.ensureReportDir(context, reportFolder)
                         navController.navigate(Screen.GeneralInfo.createRoute(reportId))
                     },
                     icon = { Icon(Icons.Default.Add, contentDescription = "Nuevo") },

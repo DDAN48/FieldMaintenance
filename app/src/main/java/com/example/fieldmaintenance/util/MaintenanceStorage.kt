@@ -15,14 +15,17 @@ import java.util.Locale
 object MaintenanceStorage {
     private const val BASE_FOLDER = "FieldMaintenance"
 
+    fun reportFolderName(eventName: String?, fallbackId: String): String {
+        return sanitizeName(eventName?.takeIf { it.isNotBlank() } ?: fallbackId)
+    }
+
     fun baseDir(context: Context): File {
         val root = context.getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS) ?: context.filesDir
         return File(root, BASE_FOLDER).apply { mkdirs() }
     }
 
     fun ensureReportDir(context: Context, reportFolderName: String): File {
-        val sanitized = sanitizeName(reportFolderName)
-        return File(baseDir(context), sanitized).apply { mkdirs() }
+        return File(baseDir(context), sanitizeName(reportFolderName)).apply { mkdirs() }
     }
 
     fun ensureAssetDir(context: Context, reportFolderName: String, asset: Asset): File {
