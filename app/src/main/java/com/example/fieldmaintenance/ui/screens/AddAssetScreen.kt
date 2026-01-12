@@ -280,7 +280,11 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
                                 )
                                 if (isEdit) viewModel.updateAsset(asset) else viewModel.addAsset(asset)
                                 withContext(Dispatchers.IO) {
-                                    MaintenanceStorage.ensureAssetDir(context, reportId, asset)
+                                    val reportFolder = MaintenanceStorage.reportFolderName(
+                                        report?.eventName,
+                                        reportId
+                                    )
+                                    MaintenanceStorage.ensureAssetDir(context, reportFolder, asset)
                                 }
                                 snackbarHostState.showSnackbar("Guardado")
                             } else {

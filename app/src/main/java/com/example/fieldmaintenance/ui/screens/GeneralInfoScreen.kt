@@ -29,6 +29,7 @@ import com.example.fieldmaintenance.ui.components.ReportBottomBar
 import com.example.fieldmaintenance.ui.components.ReportTab
 import com.example.fieldmaintenance.util.EmailManager
 import com.example.fieldmaintenance.util.ExportManager
+import com.example.fieldmaintenance.util.MaintenanceStorage
 import com.example.fieldmaintenance.util.PlanCache
 import com.example.fieldmaintenance.util.PlanRepository
 import com.example.fieldmaintenance.util.SettingsStore
@@ -223,6 +224,8 @@ fun GeneralInfoScreen(navController: NavController, reportId: String) {
                         applyPlanToFields(findPlanRowByNode(), showNoMatchWarning = true)
                         if (validate()) {
                             viewModel.saveGeneralInfo(eventName, nodeName, responsible, contractor, meterNumber)
+                            val reportFolder = MaintenanceStorage.reportFolderName(eventName, reportId)
+                            MaintenanceStorage.ensureReportDir(context, reportFolder)
                             scope.launch { snackbarHostState.showSnackbar("Guardado") }
                         }
                     }) {
@@ -358,6 +361,8 @@ fun GeneralInfoScreen(navController: NavController, reportId: String) {
                     applyPlanToFields(findPlanRowByNode(), showNoMatchWarning = true)
                     if (validate()) {
                         viewModel.saveGeneralInfo(eventName, nodeName, responsible, contractor, meterNumber)
+                        val reportFolder = MaintenanceStorage.reportFolderName(eventName, reportId)
+                        MaintenanceStorage.ensureReportDir(context, reportFolder)
                         navController.navigate(Screen.AssetSummary.createRoute(reportId))
                     }
                 },
@@ -412,4 +417,3 @@ fun GeneralInfoScreen(navController: NavController, reportId: String) {
         )
     }
 }
-
