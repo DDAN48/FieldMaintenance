@@ -1,6 +1,8 @@
 package com.example.fieldmaintenance.ui.navigation
 
+import android.net.Uri
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -11,6 +13,7 @@ import com.example.fieldmaintenance.ui.screens.HomeScreen
 import com.example.fieldmaintenance.ui.screens.ManualScreen
 import com.example.fieldmaintenance.ui.screens.MonitorQrScreen
 import com.example.fieldmaintenance.ui.screens.PassivesScreen
+import com.example.fieldmaintenance.ui.screens.ShareImportScreen
 import com.example.fieldmaintenance.ui.screens.SettingsScreen
 import com.example.fieldmaintenance.ui.screens.TrashScreen
 
@@ -19,6 +22,7 @@ sealed class Screen(val route: String) {
     object Trash : Screen("trash")
     object Settings : Screen("settings")
     object Manual : Screen("manual")
+    object ShareImport : Screen("share_import")
     object GeneralInfo : Screen("general_info/{reportId}") {
         fun createRoute(reportId: String) = "general_info/$reportId"
     }
@@ -43,7 +47,11 @@ sealed class Screen(val route: String) {
 }
 
 @Composable
-fun NavGraph(navController: NavHostController) {
+fun NavGraph(
+    navController: NavHostController,
+    sharedUris: List<Uri>,
+    onShareHandled: () -> Unit
+) {
     NavHost(
         navController = navController,
         startDestination = Screen.Home.route
@@ -59,6 +67,13 @@ fun NavGraph(navController: NavHostController) {
         }
         composable(Screen.Manual.route) {
             ManualScreen(navController = navController)
+        }
+        composable(Screen.ShareImport.route) {
+            ShareImportScreen(
+                navController = navController,
+                sharedUris = sharedUris,
+                onShareHandled = onShareHandled
+            )
         }
         composable(Screen.GeneralInfo.route) { backStackEntry ->
             val reportId = backStackEntry.arguments?.getString("reportId") ?: ""
@@ -92,5 +107,12 @@ fun NavGraph(navController: NavHostController) {
             MonitorQrScreen(navController = navController, reportId = reportId)
         }
     }
-}
 
+    LaunchedEffect(sharedUris) {
+        if (sharedUris.isNotEmpty()) {
+            navController.navigate(Screen.ShareImport.route) {
+                launchSingleTop = true
+            }
+        }
+    }
+}
