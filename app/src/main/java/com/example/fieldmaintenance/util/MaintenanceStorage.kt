@@ -40,7 +40,19 @@ object MaintenanceStorage {
         val fileName = sanitizeName(displayName ?: "shared_${System.currentTimeMillis()}")
         val baseName = fileName.substringBeforeLast('.', fileName)
         val reportDir = ensureReportDir(context, baseName)
-        val targetFile = uniqueFile(reportDir, fileName)
+        return copySharedFileToDir(context, uri, reportDir, fileName)
+    }
+
+    fun copySharedFileToDir(
+        context: Context,
+        uri: Uri,
+        targetDir: File,
+        overrideFileName: String? = null
+    ): File? {
+        targetDir.mkdirs()
+        val displayName = queryDisplayName(context, uri)
+        val fileName = sanitizeName(overrideFileName ?: displayName ?: "shared_${System.currentTimeMillis()}")
+        val targetFile = uniqueFile(targetDir, fileName)
         context.contentResolver.openInputStream(uri)?.use { input ->
             FileOutputStream(targetFile).use { output ->
                 input.copyTo(output)
