@@ -40,6 +40,7 @@ import com.example.fieldmaintenance.ui.viewmodel.MaintenanceViewModel
 import com.example.fieldmaintenance.ui.viewmodel.MaintenanceViewModelFactory
 import com.example.fieldmaintenance.util.DatabaseProvider
 import com.example.fieldmaintenance.util.ExportManager
+import com.example.fieldmaintenance.util.MaintenanceStorage
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
@@ -114,6 +115,7 @@ fun HomeScreen(navController: NavController) {
                     selected = false,
                     onClick = {
                         val reportId = viewModel.createNewReport()
+                        MaintenanceStorage.ensureReportDir(context, reportId)
                         navController.navigate(Screen.GeneralInfo.createRoute(reportId))
                     },
                     icon = { Icon(Icons.Default.Add, contentDescription = "Nuevo") },
@@ -286,4 +288,3 @@ fun MaintenanceReportCard(
         }
     }
 }
-
