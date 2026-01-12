@@ -15,7 +15,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CameraAlt
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
@@ -1091,16 +1090,9 @@ private fun AssetFileSection(
         MaintenanceStorage.ensureAssetDir(context, reportFolder, asset)
     }
     var files by remember(assetDir) { mutableStateOf(assetDir.listFiles()?.sortedBy { it.name } ?: emptyList()) }
-    var selected by remember { mutableStateOf<Set<String>>(emptySet()) }
     var fileToDelete by remember { mutableStateOf<File?>(null) }
     val scope = rememberCoroutineScope()
 
-    val shareIntent = remember {
-        android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-            type = "*/*"
-            putExtra(android.content.Intent.EXTRA_TEXT, "Selecciona la app para compartir mediciones")
-        }
-    }
     val viaviIntent = remember {
         context.packageManager.getLaunchIntentForPackage("com.viavisolutions.mobiletech")
     }
@@ -1131,27 +1123,7 @@ private fun AssetFileSection(
                 )
             }
             if (isExpanded) {
-                Text(
-                    "Ruta: ${assetDir.path}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = {
-                        val chooser = android.content.Intent.createChooser(shareIntent, "Importar mediciones")
-                        runCatching { context.startActivity(chooser) }
-                            .onFailure {
-                                Toast.makeText(
-                                    context,
-                                    "No se pudo abrir la lista de apps",
-                                    Toast.LENGTH_SHORT
-                                ).show()
-                            }
-                    }) {
-                        Icon(Icons.Default.Description, contentDescription = null)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Agregar Mediciones")
-                    }
                     Button(onClick = {
                         if (viaviIntent != null) {
                             runCatching { context.startActivity(viaviIntent) }
@@ -1172,25 +1144,7 @@ private fun AssetFileSection(
                     }) {
                         Icon(Icons.Default.Description, contentDescription = null)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Agregar desde Viavi")
-                    }
-                    if (selected.isNotEmpty()) {
-                        Button(onClick = {
-                            scope.launch(Dispatchers.IO) {
-                                selected.forEach { name ->
-                                    File(assetDir, name).delete()
-                                }
-                                val updated = assetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
-                                withContext(Dispatchers.Main) {
-                                    selected = emptySet()
-                                    files = updated
-                                }
-                            }
-                        }) {
-                            Icon(Icons.Default.Delete, contentDescription = null)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Borrar seleccionados")
-                        }
+                        Text("Agregar Mediciones")
                     }
                 }
 
@@ -1225,19 +1179,8 @@ private fun AssetFileSection(
                                         onLongClick = { fileToDelete = file }
                                     )
                                     .padding(vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Checkbox(
-                                    checked = selected.contains(file.name),
-                                    onCheckedChange = { checked ->
-                                        selected = if (checked) {
-                                            selected + file.name
-                                        } else {
-                                            selected - file.name
-                                        }
-                                    }
-                                )
                                 Text(
                                     text = file.name,
                                     modifier = Modifier.weight(1f)
@@ -1253,22 +1196,22 @@ private fun AssetFileSection(
     if (fileToDelete != null) {
         AlertDialog(
             onDismissRequest = { fileToDelete = null },
-            title = { Text("Eliminar archivo") },
-            text = { Text("¿Deseas eliminar este archivo?") },
+            title = { Text("Mover a papelera") },
+            text = { Text("¿Esta seguro de mover este archivo a la papelera?") },
             confirmButton = {
                 TextButton(onClick = {
                     val target = fileToDelete
                     fileToDelete = null
                     if (target != null) {
                         scope.launch(Dispatchers.IO) {
-                            target.delete()
+                            MaintenanceStorage.moveMeasurementFileToTrash(context, target)
                             val updated = assetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
                             withContext(Dispatchers.Main) {
                                 files = updated
                             }
                         }
                     }
-                }) { Text("Eliminar") }
+                }) { Text("Mover") }
             },
             dismissButton = {
                 TextButton(onClick = { fileToDelete = null }) { Text("Cancelar") }
