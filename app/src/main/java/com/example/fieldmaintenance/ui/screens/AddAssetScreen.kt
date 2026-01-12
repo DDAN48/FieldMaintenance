@@ -17,6 +17,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Download
@@ -34,6 +36,7 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -1092,103 +1095,155 @@ private fun AssetFileSection(
     var fileToDelete by remember { mutableStateOf<File?>(null) }
     val scope = rememberCoroutineScope()
 
-    val documentLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri ->
-        if (uri != null) {
-            scope.launch(Dispatchers.IO) {
-                MaintenanceStorage.copySharedFileToDir(context, uri, assetDir)
-                val updated = assetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
-                withContext(Dispatchers.Main) {
-                    files = updated
-                }
-            }
+    val shareIntent = remember {
+        android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+            type = "*/*"
+            putExtra(android.content.Intent.EXTRA_TEXT, "Selecciona la app para compartir mediciones")
         }
     }
+    val viaviIntent = remember {
+        context.packageManager.getLaunchIntentForPackage("com.viavisolutions.mobiletech")
+    }
 
-    Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("Archivos de Mediciones", style = MaterialTheme.typography.titleMedium)
-        Text(
-            "Ruta: ${assetDir.path}",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = {
-                documentLauncher.launch("*/*")
-            }) {
-                Icon(Icons.Default.Description, contentDescription = null)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Agregar Mediciones")
+    var isExpanded by remember { mutableStateOf(true) }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { isExpanded = !isExpanded },
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Archivos de Mediciones", style = MaterialTheme.typography.titleMedium)
+                Icon(
+                    if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    contentDescription = null
+                )
             }
-            if (selected.isNotEmpty()) {
-                Button(onClick = {
-                    scope.launch(Dispatchers.IO) {
-                        selected.forEach { name ->
-                            File(assetDir, name).delete()
-                        }
-                        val updated = assetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
-                        withContext(Dispatchers.Main) {
-                            selected = emptySet()
-                            files = updated
-                        }
+            if (isExpanded) {
+                Text(
+                    "Ruta: ${assetDir.path}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = {
+                        val chooser = android.content.Intent.createChooser(shareIntent, "Importar mediciones")
+                        runCatching { context.startActivity(chooser) }
+                            .onFailure {
+                                Toast.makeText(
+                                    context,
+                                    "No se pudo abrir la lista de apps",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                    }) {
+                        Icon(Icons.Default.Description, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Agregar Mediciones")
                     }
-                }) {
-                    Icon(Icons.Default.Delete, contentDescription = null)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Borrar seleccionados")
-                }
-            }
-        }
-
-        if (files.isEmpty()) {
-            Text("No hay archivos adjuntos.")
-        } else {
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                files.forEach { file ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .combinedClickable(
-                                onClick = {
-                                    val uri = FileProvider.getUriForFile(
+                    Button(onClick = {
+                        if (viaviIntent != null) {
+                            runCatching { context.startActivity(viaviIntent) }
+                                .onFailure {
+                                    Toast.makeText(
                                         context,
-                                        "${context.packageName}.fileprovider",
-                                        file
-                                    )
-                                    val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
-                                        setDataAndType(uri, URLConnection.guessContentTypeFromName(file.name) ?: "*/*")
-                                        addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                    }
-                                    runCatching { context.startActivity(intent) }
-                                        .onFailure {
-                                            Toast.makeText(
-                                                context,
-                                                "No se pudo abrir el archivo",
-                                                Toast.LENGTH_SHORT
-                                            ).show()
-                                        }
-                                },
-                                onLongClick = { fileToDelete = file }
-                            )
-                            .padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Checkbox(
-                            checked = selected.contains(file.name),
-                            onCheckedChange = { checked ->
-                                selected = if (checked) {
-                                    selected + file.name
-                                } else {
-                                    selected - file.name
+                                        "No se pudo abrir Viavi",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                        } else {
+                            Toast.makeText(
+                                context,
+                                "Viavi (mobiletech) no está instalada",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    }) {
+                        Icon(Icons.Default.Description, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Agregar desde Viavi")
+                    }
+                    if (selected.isNotEmpty()) {
+                        Button(onClick = {
+                            scope.launch(Dispatchers.IO) {
+                                selected.forEach { name ->
+                                    File(assetDir, name).delete()
+                                }
+                                val updated = assetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
+                                withContext(Dispatchers.Main) {
+                                    selected = emptySet()
+                                    files = updated
                                 }
                             }
-                        )
-                        Text(
-                            text = file.name,
-                            modifier = Modifier.weight(1f)
-                        )
+                        }) {
+                            Icon(Icons.Default.Delete, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Borrar seleccionados")
+                        }
+                    }
+                }
+
+                if (files.isEmpty()) {
+                    Text("No hay archivos adjuntos.")
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        files.forEach { file ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .combinedClickable(
+                                        onClick = {
+                                            val uri = FileProvider.getUriForFile(
+                                                context,
+                                                "${context.packageName}.fileprovider",
+                                                file
+                                            )
+                                            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                                                setDataAndType(uri, URLConnection.guessContentTypeFromName(file.name) ?: "*/*")
+                                                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                            }
+                                            runCatching { context.startActivity(intent) }
+                                                .onFailure {
+                                                    Toast.makeText(
+                                                        context,
+                                                        "No se pudo abrir el archivo",
+                                                        Toast.LENGTH_SHORT
+                                                    ).show()
+                                                }
+                                        },
+                                        onLongClick = { fileToDelete = file }
+                                    )
+                                    .padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Checkbox(
+                                    checked = selected.contains(file.name),
+                                    onCheckedChange = { checked ->
+                                        selected = if (checked) {
+                                            selected + file.name
+                                        } else {
+                                            selected - file.name
+                                        }
+                                    }
+                                )
+                                Text(
+                                    text = file.name,
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
                     }
                 }
             }

@@ -17,6 +17,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Settings
@@ -162,6 +163,9 @@ fun HomeScreen(navController: NavController) {
             TopAppBar(
                 title = { Text("Inicio del Mantenimiento") },
                 actions = {
+                    IconButton(onClick = { navController.navigate(Screen.ShareImport.route) }) {
+                        Icon(Icons.Default.Storage, contentDescription = "Importar mediciones")
+                    }
                     IconButton(onClick = { navController.navigate(Screen.Settings.route) }) {
                         Icon(Icons.Default.Settings, contentDescription = "Configuración")
                     }

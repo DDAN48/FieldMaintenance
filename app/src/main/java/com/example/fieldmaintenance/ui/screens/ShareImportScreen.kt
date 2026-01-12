@@ -14,10 +14,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -69,7 +72,7 @@ fun ShareImportScreen(
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = { Text("Importar archivos compartidos") },
+                title = { Text("Importar Mediciones") },
                 navigationIcon = {
                     androidx.compose.material3.IconButton(onClick = {
                         onShareHandled()
@@ -116,7 +119,7 @@ fun ShareImportScreen(
             }
 
             Text(
-                text = "Selecciona una carpeta para guardar los archivos:",
+                text = "Seleccione una carpeta para guardar las mediciones.",
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.SemiBold
             )
@@ -153,6 +156,7 @@ private fun ReportShareCard(
     val repository = DatabaseProvider.getRepository()
     val assets by repository.getAssetsByReportId(report.id).collectAsState(initial = emptyList())
     val reportFolder = MaintenanceStorage.reportFolderName(report.eventName, report.id)
+    var isExpanded by remember(report.id) { mutableStateOf(false) }
 
     Card(
         modifier = Modifier.fillMaxWidth()
@@ -163,30 +167,45 @@ private fun ReportShareCard(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Text(
-                text = reportCardTitle(report),
-                style = MaterialTheme.typography.titleMedium
-            )
-            Text(
-                text = "Carpeta: $reportFolder",
-                style = MaterialTheme.typography.bodySmall
-            )
-
-            if (assets.isNotEmpty()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { isExpanded = !isExpanded },
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Text(
-                    text = "Activos",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.SemiBold
+                    text = reportCardTitle(report),
+                    style = MaterialTheme.typography.titleMedium
                 )
-                assets.forEach { asset ->
-                    AssetShareRow(
-                        asset = asset,
-                        reportFolder = reportFolder,
-                        sharedUris = sharedUris,
-                        context = context,
-                        onShareHandled = onShareHandled,
-                        onShowMessage = onShowMessage
+                Icon(
+                    if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    contentDescription = null
+                )
+            }
+
+            if (isExpanded) {
+                Text(
+                    text = "Carpeta: $reportFolder",
+                    style = MaterialTheme.typography.bodySmall
+                )
+
+                if (assets.isNotEmpty()) {
+                    Text(
+                        text = "Activos",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold
                     )
+                    assets.forEach { asset ->
+                        AssetShareRow(
+                            asset = asset,
+                            reportFolder = reportFolder,
+                            sharedUris = sharedUris,
+                            context = context,
+                            onShareHandled = onShareHandled,
+                            onShowMessage = onShowMessage
+                        )
+                    }
                 }
             }
         }
