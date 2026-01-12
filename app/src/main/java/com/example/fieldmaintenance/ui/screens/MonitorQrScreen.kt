@@ -76,6 +76,7 @@ import com.example.fieldmaintenance.util.ImageStore
 import com.example.fieldmaintenance.util.PhotoManager
 import com.example.fieldmaintenance.util.SettingsStore
 import com.example.fieldmaintenance.util.AppSettings
+import com.example.fieldmaintenance.util.hasIncompleteAssets
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.launch
 import java.io.File
@@ -95,6 +96,7 @@ fun MonitorQrScreen(navController: androidx.navigation.NavController, reportId: 
     )
     val report by viewModel.report.collectAsState()
     var showFinalizeDialog by remember { mutableStateOf(false) }
+    var hasMissingAssets by remember { mutableStateOf(false) }
 
     val photos by repository.getReportPhotosByReportId(reportId).collectAsState(initial = emptyList())
     val byType = photos.groupBy { it.type }
@@ -273,8 +275,13 @@ fun MonitorQrScreen(navController: androidx.navigation.NavController, reportId: 
             },
             onGoHome = {
                 navController.navigate(Screen.Home.route) { popUpTo(0) }
-            }
+            },
+            showMissingWarning = hasMissingAssets
         )
+    }
+
+    LaunchedEffect(reportId, report) {
+        hasMissingAssets = hasIncompleteAssets(context, reportId, report, repository)
     }
 
     pendingDelete?.let { photo ->
@@ -401,5 +408,4 @@ private suspend fun upsertReportPhotoReplacingIfNeeded(
         )
     )
 }
-
 

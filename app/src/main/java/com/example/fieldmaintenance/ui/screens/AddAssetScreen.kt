@@ -56,6 +56,7 @@ import com.example.fieldmaintenance.util.AppSettings
 import com.example.fieldmaintenance.util.MaintenanceStorage
 import com.example.fieldmaintenance.util.PlanCache
 import com.example.fieldmaintenance.util.PlanRepository
+import com.example.fieldmaintenance.util.hasIncompleteAssets
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collectLatest
@@ -83,6 +84,7 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
     val isEdit = assetId != null
     val report by viewModel.report.collectAsState()
     var showFinalizeDialog by remember { mutableStateOf(false) }
+    var hasMissingAssets by remember { mutableStateOf(false) }
 
     // Mensaje emergente al ingresar al módulo de activos (SnackBar, para que no se corte el texto)
     val syncMsgShown = rememberSaveable(workingAssetId) { mutableStateOf(false) }
@@ -105,6 +107,7 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
     var opticsPhotoCount by remember { mutableStateOf(0) }
     var monitoringPhotoCount by remember { mutableStateOf(0) }
     var spectrumPhotoCount by remember { mutableStateOf(0) }
+    var autoSaved by rememberSaveable(workingAssetId) { mutableStateOf(false) }
 
     // Amplifier adjustment (persisted per asset)
     val amplifierAdjustment by repository.getAmplifierAdjustment(workingAssetId)
@@ -113,6 +116,55 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
 
     // Node adjustment (persisted per asset)
     val nodeAdjustment by repository.getNodeAdjustment(workingAssetId).collectAsState(initial = null)
+
+    val techNormalized = technology?.trim()?.lowercase(Locale.getDefault()) ?: ""
+    val ampAdj = currentAmplifierAdjustment ?: amplifierAdjustment
+    val autoBaseOk = frequency != null
+    val autoNodeOk = assetType != AssetType.NODE || technology != null
+    val autoAmplifierOk = assetType != AssetType.AMPLIFIER || (amplifierMode != null && port != null && portIndex != null)
+    val autoAmplifierTablesOk = if (assetType != AssetType.AMPLIFIER) true else {
+        val okAdj = (frequency != null && amplifierMode != null) &&
+            ampAdj != null &&
+            ampAdj.inputCh50Dbmv != null &&
+            ampAdj.inputCh116Dbmv != null &&
+            (ampAdj.inputHighFreqMHz == 750 || ampAdj.inputHighFreqMHz == 870) &&
+            ampAdj.planLowDbmv != null &&
+            ampAdj.planHighDbmv != null &&
+            ampAdj.outCh50Dbmv != null &&
+            ampAdj.outCh70Dbmv != null &&
+            ampAdj.outCh110Dbmv != null &&
+            ampAdj.outCh116Dbmv != null &&
+            ampAdj.outCh136Dbmv != null
+        okAdj
+    }
+
+    val autoNodeAdjOk = if (assetType != AssetType.NODE) true else {
+        val adj = nodeAdjustment
+            ?: com.example.fieldmaintenance.data.model.NodeAdjustment(assetId = workingAssetId, reportId = reportId)
+        when {
+            techNormalized == "rphy" -> {
+                adj.sfpDistance != null && adj.poDirectaConfirmed && adj.poRetornoConfirmed
+            }
+            techNormalized == "vccap" -> {
+                adj.sfpDistance != null && adj.poDirectaConfirmed && adj.poRetornoConfirmed &&
+                    adj.spectrumConfirmed && adj.docsisConfirmed && frequency != null
+            }
+            techNormalized == "legacy" -> {
+                val txOk = adj.tx1310Confirmed || adj.tx1550Confirmed
+                val poOk = adj.poConfirmed
+                val rxOk = !adj.rxPadSelection.isNullOrBlank()
+                val measOk = adj.measurementConfirmed
+                val specOk = adj.spectrumConfirmed
+                txOk && poOk && rxOk && measOk && specOk && frequency != null
+            }
+            else -> {
+                adj.nonLegacyConfirmed
+            }
+        }
+    }
+
+    val nodeAllowed = !(assetType == AssetType.NODE && hasNode && !isEdit)
+    val autoSaveReady = autoBaseOk && autoNodeOk && autoAmplifierOk && autoAmplifierTablesOk && autoNodeAdjOk && nodeAllowed
     
     LaunchedEffect(Unit) {
         hasNode = viewModel.hasNode()
@@ -150,6 +202,10 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
                 portIndex = asset.portIndex
             }
         }
+    }
+
+    LaunchedEffect(reportId, report) {
+        hasMissingAssets = hasIncompleteAssets(context, reportId, report, repository)
     }
 
     // Auto-fill technology from plan if available and not already set
@@ -238,6 +294,41 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
             }
         }
         return ok
+    }
+
+    LaunchedEffect(
+        autoSaveReady,
+        assetType,
+        frequency,
+        technology,
+        amplifierMode,
+        port,
+        portIndex,
+        nodeAdjustment,
+        currentAmplifierAdjustment,
+        amplifierAdjustment
+    ) {
+        if (!autoSaveReady) return@LaunchedEffect
+        val asset = Asset(
+            id = workingAssetId,
+            reportId = reportId,
+            type = assetType,
+            frequencyMHz = frequency?.mhz ?: 0,
+            amplifierMode = amplifierMode,
+            port = port,
+            portIndex = portIndex,
+            technology = if (assetType == AssetType.NODE) technology else null
+        )
+        if (isEdit || autoSaved) {
+            viewModel.updateAsset(asset)
+        } else {
+            viewModel.addAsset(asset)
+        }
+        autoSaved = true
+        withContext(Dispatchers.IO) {
+            val reportFolder = MaintenanceStorage.reportFolderName(report?.eventName, reportId)
+            MaintenanceStorage.ensureAssetDir(context, reportFolder, asset)
+        }
     }
 
     Scaffold(
@@ -731,21 +822,23 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
                 }
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
-            AssetFileSection(
-                context = context,
-                reportFolder = MaintenanceStorage.reportFolderName(report?.eventName, reportId),
-                asset = Asset(
-                    id = workingAssetId,
-                    reportId = reportId,
-                    type = assetType,
-                    frequencyMHz = frequency?.mhz ?: 0,
-                    amplifierMode = amplifierMode,
-                    port = port,
-                    portIndex = portIndex,
-                    technology = if (assetType == AssetType.NODE) technology else null
+            if (autoSaved) {
+                Spacer(modifier = Modifier.height(8.dp))
+                AssetFileSection(
+                    context = context,
+                    reportFolder = MaintenanceStorage.reportFolderName(report?.eventName, reportId),
+                    asset = Asset(
+                        id = workingAssetId,
+                        reportId = reportId,
+                        type = assetType,
+                        frequencyMHz = frequency?.mhz ?: 0,
+                        amplifierMode = amplifierMode,
+                        port = port,
+                        portIndex = portIndex,
+                        technology = if (assetType == AssetType.NODE) technology else null
+                    )
                 )
-            )
+            }
             
             Spacer(modifier = Modifier.height(16.dp))
             
@@ -830,7 +923,8 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
             },
             onGoHome = {
                 navController.navigate(Screen.Home.route) { popUpTo(0) }
-            }
+            },
+            showMissingWarning = hasMissingAssets
         )
     }
 }

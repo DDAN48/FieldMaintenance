@@ -34,6 +34,7 @@ import com.example.fieldmaintenance.util.PlanCache
 import com.example.fieldmaintenance.util.PlanRepository
 import com.example.fieldmaintenance.util.SettingsStore
 import com.example.fieldmaintenance.util.AppSettings
+import com.example.fieldmaintenance.util.hasIncompleteAssets
 import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -57,6 +58,7 @@ fun GeneralInfoScreen(navController: NavController, reportId: String) {
     val settingsStore = remember { SettingsStore(context.applicationContext) }
     val settings by settingsStore.settings.collectAsState(initial = AppSettings())
     var showFinalizeDialog by remember { mutableStateOf(false) }
+    var hasMissingAssets by remember { mutableStateOf(false) }
     
     var eventName by remember { mutableStateOf(report?.eventName ?: "") }
     var nodeName by remember { mutableStateOf(report?.nodeName ?: "") }
@@ -384,6 +386,10 @@ fun GeneralInfoScreen(navController: NavController, reportId: String) {
         }
     }
 
+    LaunchedEffect(reportId, report) {
+        hasMissingAssets = hasIncompleteAssets(context, reportId, report, repository)
+    }
+
     if (showFinalizeDialog && report != null) {
         FinalizeReportDialog(
             onDismiss = { showFinalizeDialog = false },
@@ -413,7 +419,8 @@ fun GeneralInfoScreen(navController: NavController, reportId: String) {
             },
             onGoHome = {
                 navController.navigate(Screen.Home.route) { popUpTo(0) }
-            }
+            },
+            showMissingWarning = hasMissingAssets
         )
     }
 }
