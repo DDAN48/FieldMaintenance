@@ -275,7 +275,7 @@ fun AssetSummaryCard(
             ),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         colors = if (hasMissingData) {
-            CardDefaults.cardColors(containerColor = Color(0xFFDE3C2A))
+            CardDefaults.cardColors(containerColor = Color(0xFFC94F4F))
         } else {
             CardDefaults.cardColors()
         }
@@ -344,21 +344,21 @@ fun FinalizeReportDialog(
             Column(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                TextButton(
-                    onClick = {
-                        if (!showMissingWarning) {
-                            showEmailChoice = true
-                        }
+                    TextButton(
+                        onClick = {
+                            if (!showMissingWarning) {
+                                showEmailChoice = true
+                            }
+                        },
+                        enabled = !showMissingWarning
+                    ) {
+                        Text("📧 Enviar por correo")
+                    }
                     },
                     enabled = !showMissingWarning
                 ) {
-                    Text("📧 Enviar por correo")
-                }
-                TextButton(
-                    onClick = {
-                        if (!showMissingWarning) {
-                            onExportPDF()
-                            onDismiss()
+                        "Debe completar datos de activos o borrarlos para poder exportar",
+                        color = Color(0xFFC94F4F)
                         }
                     },
                     enabled = !showMissingWarning
