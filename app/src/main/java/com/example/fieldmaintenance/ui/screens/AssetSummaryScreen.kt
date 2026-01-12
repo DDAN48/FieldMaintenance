@@ -349,16 +349,26 @@ fun FinalizeReportDialog(
                 }) {
                     Text("📧 Enviar por correo")
                 }
-                TextButton(onClick = {
-                    onExportPDF()
-                    onDismiss()
-                }) {
+                TextButton(
+                    onClick = {
+                        if (!showMissingWarning) {
+                            onExportPDF()
+                            onDismiss()
+                        }
+                    },
+                    enabled = !showMissingWarning
+                ) {
                     Text("📄 Exportar PDF")
                 }
-                TextButton(onClick = {
-                    onExportJSON()
-                    onDismiss()
-                }) {
+                TextButton(
+                    onClick = {
+                        if (!showMissingWarning) {
+                            onExportJSON()
+                            onDismiss()
+                        }
+                    },
+                    enabled = !showMissingWarning
+                ) {
                     Text("📦 Exportar editable (JSON)")
                 }
                 TextButton(onClick = {
@@ -377,6 +387,11 @@ fun FinalizeReportDialog(
                 if (showMissingWarning) {
                     Text(
                         "Falta completar datos de activos",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFFDE3C2A)
+                    )
+                    Text(
+                        "Debe completar datos de activos o borrarlos para poder exportar archivo",
                         style = MaterialTheme.typography.bodySmall,
                         color = Color(0xFFDE3C2A)
                     )
