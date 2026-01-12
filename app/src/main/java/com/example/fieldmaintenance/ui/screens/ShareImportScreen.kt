@@ -18,7 +18,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.Save
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
@@ -148,7 +147,6 @@ private fun ReportShareCard(
 ) {
     val repository = DatabaseProvider.getRepository()
     val assets by repository.getAssetsByReportId(report.id).collectAsState(initial = emptyList())
-    val scope = rememberCoroutineScope()
     val reportFolder = MaintenanceStorage.reportFolderName(report.eventName, report.id)
 
     Card(
@@ -161,29 +159,13 @@ private fun ReportShareCard(
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text(
-                text = report.eventName.ifBlank { "Mantenimiento ${report.id.take(6)}" },
+                text = reportCardTitle(report),
                 style = MaterialTheme.typography.titleMedium
             )
             Text(
                 text = "Carpeta: $reportFolder",
                 style = MaterialTheme.typography.bodySmall
             )
-            Button(
-                onClick = {
-                    scope.launch(Dispatchers.IO) {
-                        val reportDir = MaintenanceStorage.ensureReportDir(context, reportFolder)
-                        sharedUris.forEach { uri ->
-                            MaintenanceStorage.copySharedFileToDir(context, uri, reportDir)
-                        }
-                        onShareHandled()
-                        onShowMessage("Archivos guardados en $reportFolder")
-                    }
-                }
-            ) {
-                Icon(Icons.Default.Save, contentDescription = null)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Guardar en mantenimiento")
-            }
 
             if (assets.isNotEmpty()) {
                 Text(
@@ -203,6 +185,17 @@ private fun ReportShareCard(
                 }
             }
         }
+    }
+}
+
+private fun reportCardTitle(report: MaintenanceReport): String {
+    val nodeName = report.nodeName.trim()
+    val eventName = report.eventName.trim()
+    return when {
+        nodeName.isNotEmpty() && eventName.isNotEmpty() -> "$nodeName-$eventName"
+        nodeName.isNotEmpty() -> nodeName
+        eventName.isNotEmpty() -> eventName
+        else -> "Mantenimiento ${report.id.take(6)}"
     }
 }
 
