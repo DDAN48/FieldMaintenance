@@ -15,6 +15,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Download
@@ -33,6 +35,7 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import coil.compose.rememberAsyncImagePainter
@@ -59,6 +62,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 // Note: some Material3 versions only support menuAnchor() and menuAnchor(type, enabled).
 import java.io.File
+import java.net.URLConnection
 import java.util.UUID
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -71,7 +75,6 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
     val viewModel: ReportViewModel = viewModel(
         factory = ReportViewModelFactory(repository, reportId)
     )
-    val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val workingAssetId = rememberSaveable(assetId) { assetId ?: UUID.randomUUID().toString() }
     val isEdit = assetId != null
@@ -724,6 +727,22 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
                     )
                 }
             }
+
+            Spacer(modifier = Modifier.height(8.dp))
+            AssetFileSection(
+                context = context,
+                reportFolder = MaintenanceStorage.reportFolderName(report?.eventName, reportId),
+                asset = Asset(
+                    id = workingAssetId,
+                    reportId = reportId,
+                    type = assetType,
+                    frequencyMHz = frequency?.mhz ?: 0,
+                    amplifierMode = amplifierMode,
+                    port = port,
+                    portIndex = portIndex,
+                    technology = if (assetType == AssetType.NODE) technology else null
+                )
+            )
             
             Spacer(modifier = Modifier.height(16.dp))
             
@@ -870,9 +889,153 @@ fun PhotoSection(
                     // ignore for now
                 }
             }
+    }
+}
+
+@Composable
+private fun AssetFileSection(
+    context: Context,
+    reportFolder: String,
+    asset: Asset
+) {
+    val assetDir = remember(reportFolder, asset) {
+        MaintenanceStorage.ensureAssetDir(context, reportFolder, asset)
+    }
+    var files by remember(assetDir) { mutableStateOf(assetDir.listFiles()?.sortedBy { it.name } ?: emptyList()) }
+    var selected by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var fileToDelete by remember { mutableStateOf<File?>(null) }
+    val scope = rememberCoroutineScope()
+
+    val documentLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            scope.launch(Dispatchers.IO) {
+                MaintenanceStorage.copySharedFileToDir(context, uri, assetDir)
+                val updated = assetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
+                withContext(Dispatchers.Main) {
+                    files = updated
+                }
+            }
         }
     }
-    
+
+    Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Archivos", style = MaterialTheme.typography.titleMedium)
+        Text(
+            "Ruta: ${assetDir.path}",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = {
+                documentLauncher.launch(arrayOf("*/*"))
+            }) {
+                Icon(Icons.Default.Description, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Agregar archivo")
+            }
+            if (selected.isNotEmpty()) {
+                Button(onClick = {
+                    scope.launch(Dispatchers.IO) {
+                        selected.forEach { name ->
+                            File(assetDir, name).delete()
+                        }
+                        val updated = assetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
+                        withContext(Dispatchers.Main) {
+                            selected = emptySet()
+                            files = updated
+                        }
+                    }
+                }) {
+                    Icon(Icons.Default.Delete, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Borrar seleccionados")
+                }
+            }
+        }
+
+        if (files.isEmpty()) {
+            Text("No hay archivos adjuntos.")
+        } else {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                files.forEach { file ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .combinedClickable(
+                                onClick = {
+                                    val uri = FileProvider.getUriForFile(
+                                        context,
+                                        "${context.packageName}.fileprovider",
+                                        file
+                                    )
+                                    val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                                        setDataAndType(uri, URLConnection.guessContentTypeFromName(file.name) ?: "*/*")
+                                        addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                    }
+                                    runCatching { context.startActivity(intent) }
+                                        .onFailure {
+                                            Toast.makeText(
+                                                context,
+                                                "No se pudo abrir el archivo",
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        }
+                                },
+                                onLongClick = { fileToDelete = file }
+                            )
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Checkbox(
+                            checked = selected.contains(file.name),
+                            onCheckedChange = { checked ->
+                                selected = if (checked) {
+                                    selected + file.name
+                                } else {
+                                    selected - file.name
+                                }
+                            }
+                        )
+                        Text(
+                            text = file.name,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    if (fileToDelete != null) {
+        AlertDialog(
+            onDismissRequest = { fileToDelete = null },
+            title = { Text("Eliminar archivo") },
+            text = { Text("¿Deseas eliminar este archivo?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    val target = fileToDelete
+                    fileToDelete = null
+                    if (target != null) {
+                        scope.launch(Dispatchers.IO) {
+                            target.delete()
+                            val updated = assetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
+                            withContext(Dispatchers.Main) {
+                                files = updated
+                            }
+                        }
+                    }
+                }) { Text("Eliminar") }
+            },
+            dismissButton = {
+                TextButton(onClick = { fileToDelete = null }) { Text("Cancelar") }
+            }
+        )
+    }
+}
+
     // Launcher para tomar foto con la cámara
     val cameraLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.TakePicture()
