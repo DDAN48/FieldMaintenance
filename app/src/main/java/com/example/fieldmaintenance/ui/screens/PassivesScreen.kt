@@ -64,6 +64,7 @@ import com.example.fieldmaintenance.util.EmailManager
 import com.example.fieldmaintenance.util.ExportManager
 import com.example.fieldmaintenance.util.SettingsStore
 import com.example.fieldmaintenance.util.AppSettings
+import com.example.fieldmaintenance.util.hasIncompleteAssets
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.launch
 
@@ -83,6 +84,7 @@ fun PassivesScreen(navController: NavController, reportId: String) {
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val exportManager = remember { ExportManager(context, repository) }
+    var hasMissingAssets by remember { mutableStateOf(false) }
 
     var showEditor by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<PassiveItem?>(null) }
@@ -204,8 +206,13 @@ fun PassivesScreen(navController: NavController, reportId: String) {
             },
             onGoHome = {
                 navController.navigate(Screen.Home.route) { popUpTo(0) }
-            }
+            },
+            showMissingWarning = hasMissingAssets
         )
+    }
+
+    LaunchedEffect(reportId, report) {
+        hasMissingAssets = hasIncompleteAssets(context, reportId, report, repository)
     }
 
     if (showEditor) {
@@ -325,5 +332,4 @@ private fun PassiveEditorDialog(
         }
     )
 }
-
 

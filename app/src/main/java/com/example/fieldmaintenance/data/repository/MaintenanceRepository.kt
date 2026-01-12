@@ -105,6 +105,9 @@ class MaintenanceRepository(
     fun getAmplifierAdjustment(assetId: String): Flow<AmplifierAdjustment?> =
         amplifierAdjustmentDao.getByAssetId(assetId)
 
+    suspend fun getAmplifierAdjustmentOne(assetId: String): AmplifierAdjustment? =
+        amplifierAdjustmentDao.getOneByAssetId(assetId)
+
     suspend fun upsertAmplifierAdjustment(adjustment: AmplifierAdjustment) =
         amplifierAdjustmentDao.upsert(adjustment)
 
@@ -154,4 +157,3 @@ class MaintenanceRepository(
         reportPhotoDao.deleteByReportId(reportId)
     }
 }
-
