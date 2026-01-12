@@ -344,9 +344,14 @@ fun FinalizeReportDialog(
             Column(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                TextButton(onClick = {
-                    showEmailChoice = true
-                }) {
+                TextButton(
+                    onClick = {
+                        if (!showMissingWarning) {
+                            showEmailChoice = true
+                        }
+                    },
+                    enabled = !showMissingWarning
+                ) {
                     Text("📧 Enviar por correo")
                 }
                 TextButton(
@@ -379,19 +384,9 @@ fun FinalizeReportDialog(
                 }
 
                 Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                    "Recuerde sincronizar mediciones",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                )
                 if (showMissingWarning) {
                     Text(
-                        "Falta completar datos de activos",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color(0xFFDE3C2A)
-                    )
-                    Text(
-                        "Debe completar datos de activos o borrarlos para poder exportar archivo",
+                        "Debe completar datos de activos o borrarlos para poder exportar",
                         style = MaterialTheme.typography.bodySmall,
                         color = Color(0xFFDE3C2A)
                     )
