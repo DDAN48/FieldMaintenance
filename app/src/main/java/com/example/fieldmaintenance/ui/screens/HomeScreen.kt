@@ -64,6 +64,7 @@ fun HomeScreen(navController: NavController) {
     var searchQuery by remember { mutableStateOf("") }
     var showSearch by remember { mutableStateOf(false) }
     var reportToDelete by remember { mutableStateOf<MaintenanceReport?>(null) }
+    var showTrashChooser by remember { mutableStateOf(false) }
 
     val focusRequester = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
@@ -152,7 +153,7 @@ fun HomeScreen(navController: NavController) {
                 )
                 NavigationBarItem(
                     selected = false,
-                    onClick = { navController.navigate(Screen.Trash.route) },
+                    onClick = { showTrashChooser = true },
                     icon = { Icon(Icons.Default.Delete, contentDescription = "Papelera") },
                     label = { Text("Papelera") }
                 )
@@ -222,6 +223,26 @@ fun HomeScreen(navController: NavController) {
                 }
             }
         }
+    }
+
+    if (showTrashChooser) {
+        AlertDialog(
+            onDismissRequest = { showTrashChooser = false },
+            title = { Text("Seleccionar papelera") },
+            text = { Text("¿A qué papelera deseas ingresar?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showTrashChooser = false
+                    navController.navigate(Screen.Trash.route)
+                }) { Text("Mantenimientos") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showTrashChooser = false
+                    navController.navigate(Screen.MeasurementsTrash.route)
+                }) { Text("Mediciones") }
+            }
+        )
     }
     
     reportToDelete?.let { report ->

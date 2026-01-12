@@ -14,6 +14,8 @@ import java.util.Locale
 
 object MaintenanceStorage {
     private const val BASE_FOLDER = "FieldMaintenance"
+    private const val TRASH_FOLDER = "Trash"
+    private const val MEASUREMENTS_TRASH_FOLDER = "Measurements"
 
     fun reportFolderName(eventName: String?, fallbackId: String): String {
         return sanitizeName(eventName?.takeIf { it.isNotBlank() } ?: fallbackId)
@@ -22,6 +24,10 @@ object MaintenanceStorage {
     fun baseDir(context: Context): File {
         val root = context.getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS) ?: context.filesDir
         return File(root, BASE_FOLDER).apply { mkdirs() }
+    }
+
+    fun measurementTrashDir(context: Context): File {
+        return File(baseDir(context), "$TRASH_FOLDER/$MEASUREMENTS_TRASH_FOLDER").apply { mkdirs() }
     }
 
     fun ensureReportDir(context: Context, reportFolderName: String): File {
@@ -59,6 +65,45 @@ object MaintenanceStorage {
             }
         } ?: return null
         return targetFile
+    }
+
+    fun moveMeasurementFileToTrash(context: Context, source: File): File? {
+        val base = baseDir(context)
+        val trashRoot = measurementTrashDir(context)
+        val relative = source.relativeToOrNull(base)?.path
+        val destination = if (relative != null) {
+            File(trashRoot, relative)
+        } else {
+            File(trashRoot, source.name)
+        }
+        destination.parentFile?.mkdirs()
+        val target = if (destination.exists()) {
+            uniqueFile(destination.parentFile ?: trashRoot, destination.name)
+        } else {
+            destination
+        }
+        return if (source.renameTo(target)) target else null
+    }
+
+    fun restoreMeasurementFile(context: Context, trashed: File): File? {
+        val base = baseDir(context)
+        val trashRoot = measurementTrashDir(context)
+        val relative = trashed.relativeToOrNull(trashRoot)?.path ?: trashed.name
+        val destination = File(base, relative)
+        destination.parentFile?.mkdirs()
+        val target = if (destination.exists()) {
+            uniqueFile(destination.parentFile ?: base, destination.name)
+        } else {
+            destination
+        }
+        return if (trashed.renameTo(target)) target else null
+    }
+
+    fun listMeasurementTrashFiles(context: Context): List<File> {
+        val trashRoot = measurementTrashDir(context)
+        return trashRoot.walkTopDown()
+            .filter { it.isFile }
+            .toList()
     }
 
     private fun assetFolderName(asset: Asset): String {
