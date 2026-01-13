@@ -35,6 +35,8 @@ import androidx.compose.ui.text.font.FontWeight
 import android.net.Uri
 import android.widget.Toast
 import android.location.Geocoder
+import android.location.Location
+import android.location.LocationManager
 import android.os.Build
 import android.text.Layout
 import android.text.StaticLayout
@@ -77,6 +79,8 @@ import java.io.FileOutputStream
 import androidx.exifinterface.media.ExifInterface
 import java.text.SimpleDateFormat
 import java.util.Date
+import java.net.URL
+import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.map
@@ -1039,9 +1043,9 @@ fun PhotoSection(
         if (!ok) return@rememberLauncherForActivityResult
 
         scope.launch {
-            val label = buildPhotoLabel(context, file, assetLabel, eventName)
-            if (label != null) {
-                annotateImageWithLabel(file, label)
+            val labelInfo = buildPhotoLabel(context, file, assetLabel, eventName)
+            if (labelInfo != null) {
+                annotateImageWithLabel(file, labelInfo)
             }
             repository.insertPhoto(
                 com.example.fieldmaintenance.data.model.Photo(
@@ -1071,6 +1075,14 @@ fun PhotoSection(
         }
     }
 
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (!granted) {
+            Toast.makeText(context, "Permiso de ubicación denegado", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     // Función para crear archivo temporal para la cámara
     val takePicture = {
         try {
@@ -1086,6 +1098,13 @@ fun PhotoSection(
             pendingCameraUriString = photoUri.toString()
 
             val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+            val locationGranted = ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.ACCESS_FINE_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED
+            if (!locationGranted) {
+                locationPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+            }
             if (granted) {
                 cameraLauncher.launch(photoUri)
             } else {
@@ -1198,8 +1217,12 @@ fun PhotoSection(
 
     photoToPreview?.let { photo ->
         var scale by remember { mutableStateOf(1f) }
-        val transformState = rememberTransformableState { zoomChange, _, _ ->
+        var offsetX by remember { mutableStateOf(0f) }
+        var offsetY by remember { mutableStateOf(0f) }
+        val transformState = rememberTransformableState { zoomChange, panChange, _ ->
             scale = (scale * zoomChange).coerceIn(1f, 5f)
+            offsetX += panChange.x
+            offsetY += panChange.y
         }
         androidx.compose.ui.window.Dialog(onDismissRequest = { photoToPreview = null }) {
             Surface(
@@ -1219,7 +1242,9 @@ fun PhotoSection(
                             .fillMaxWidth()
                             .graphicsLayer(
                                 scaleX = scale,
-                                scaleY = scale
+                                scaleY = scale,
+                                translationX = offsetX,
+                                translationY = offsetY
                             )
                             .transformable(transformState)
                     )
@@ -1255,16 +1280,26 @@ fun PhotoSection(
     }
 }
 
+private data class PhotoLabelInfo(
+    val lines: List<String>,
+    val mapBitmap: Bitmap?
+)
+
 private suspend fun buildPhotoLabel(
     context: Context,
     file: File,
     assetLabel: String,
     eventName: String
-): String? {
+): PhotoLabelInfo? {
     val exif = runCatching { ExifInterface(file.absolutePath) }.getOrNull()
     val latLong = exif?.latLong
-    val latitude = latLong?.getOrNull(0)
-    val longitude = latLong?.getOrNull(1)
+    val fallbackLocation = if (latLong == null) {
+        getLastKnownLocation(context)
+    } else {
+        null
+    }
+    val latitude = latLong?.getOrNull(0) ?: fallbackLocation?.latitude
+    val longitude = latLong?.getOrNull(1) ?: fallbackLocation?.longitude
     val address = if (latitude != null && longitude != null) {
         withContext(Dispatchers.IO) {
             runCatching {
@@ -1299,30 +1334,39 @@ private suspend fun buildPhotoLabel(
         else -> "Ubicación no disponible"
     }
     val timeLine = formattedDateTime
-    return "$headerLine\n$locationLine\n$timeLine"
+    val mapBitmap = if (latitude != null && longitude != null) {
+        loadStaticMap(latitude, longitude)
+    } else {
+        null
+    }
+    return PhotoLabelInfo(
+        lines = listOf(headerLine, locationLine, timeLine),
+        mapBitmap = mapBitmap
+    )
 }
 
-private fun annotateImageWithLabel(file: File, label: String) {
+private fun annotateImageWithLabel(file: File, labelInfo: PhotoLabelInfo) {
     val bitmap = BitmapFactory.decodeFile(file.absolutePath) ?: return
     val mutable = bitmap.copy(Bitmap.Config.ARGB_8888, true)
     val canvas = Canvas(mutable)
     val padding = (mutable.width * 0.02f).coerceIn(8f, 28f)
-    val textSize = (mutable.width * 0.03f).coerceIn(18f, 42f)
+    val textSize = (mutable.width * 0.04f).coerceIn(22f, 54f)
     val textPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
         color = android.graphics.Color.WHITE
         this.textSize = textSize
     }
     val maxWidth = (mutable.width - padding * 2).toInt()
+    val labelText = labelInfo.lines.joinToString("\n")
     val layout = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
         StaticLayout.Builder
-            .obtain(label, 0, label.length, textPaint, maxWidth)
+            .obtain(labelText, 0, labelText.length, textPaint, maxWidth)
             .setAlignment(Layout.Alignment.ALIGN_CENTER)
             .setLineSpacing(0f, 1f)
             .build()
     } else {
         @Suppress("DEPRECATION")
         StaticLayout(
-            label,
+            labelText,
             textPaint,
             maxWidth,
             Layout.Alignment.ALIGN_CENTER,
@@ -1334,7 +1378,9 @@ private fun annotateImageWithLabel(file: File, label: String) {
     val backgroundPaint = Paint().apply {
         color = android.graphics.Color.argb(170, 0, 0, 0)
     }
-    val totalHeight = layout.height + (padding * 2).toInt()
+    val mapHeight = (mutable.height * 0.18f).roundToInt()
+    val mapWidth = (mapHeight * 1.3f).roundToInt()
+    val totalHeight = maxOf(layout.height + (padding * 2).toInt(), mapHeight + (padding * 2).toInt())
     val top = (mutable.height - totalHeight).coerceAtLeast(0)
     canvas.drawRect(
         0f,
@@ -1343,6 +1389,19 @@ private fun annotateImageWithLabel(file: File, label: String) {
         mutable.height.toFloat(),
         backgroundPaint
     )
+    labelInfo.mapBitmap?.let { map ->
+        val destWidth = mapWidth.coerceAtMost(mutable.width)
+        val destHeight = mapHeight.coerceAtMost(mutable.height)
+        val left = padding
+        val topMap = top + ((totalHeight - destHeight) / 2f)
+        val dest = android.graphics.Rect(
+            left.toInt(),
+            topMap.toInt(),
+            (left + destWidth).toInt(),
+            (topMap + destHeight).toInt()
+        )
+        canvas.drawBitmap(map, null, dest, null)
+    }
     canvas.save()
     val textX = (mutable.width - layout.width) / 2f
     canvas.translate(textX, top + padding)
@@ -1351,6 +1410,29 @@ private fun annotateImageWithLabel(file: File, label: String) {
 
     FileOutputStream(file).use { out ->
         mutable.compress(Bitmap.CompressFormat.JPEG, 90, out)
+    }
+}
+
+private fun getLastKnownLocation(context: Context): Location? {
+    val manager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return null
+    val providers = listOf(
+        LocationManager.GPS_PROVIDER,
+        LocationManager.NETWORK_PROVIDER,
+        LocationManager.PASSIVE_PROVIDER
+    )
+    return providers.asSequence()
+        .mapNotNull { provider -> runCatching { manager.getLastKnownLocation(provider) }.getOrNull() }
+        .firstOrNull()
+}
+
+private suspend fun loadStaticMap(latitude: Double, longitude: Double): Bitmap? {
+    return withContext(Dispatchers.IO) {
+        val url = "https://staticmap.openstreetmap.de/staticmap.php?center=$latitude,$longitude&zoom=15&size=300x200&markers=$latitude,$longitude,red-pushpin"
+        runCatching {
+            URL(url).openStream().use { stream ->
+                BitmapFactory.decodeStream(stream)
+            }
+        }.getOrNull()
     }
 }
 
