@@ -36,6 +36,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -184,6 +185,7 @@ fun ShareImportScreen(
                         report = report,
                         sharedUris = sharedUris,
                         context = context,
+                        autoReturn = hasPendingAsset,
                         onImportFinished = {
                             onShareHandled()
                             if (!navController.popBackStack()) {
@@ -205,6 +207,7 @@ private fun ReportShareCard(
     report: MaintenanceReport,
     sharedUris: List<Uri>,
     context: Context,
+    autoReturn: Boolean,
     onImportFinished: () -> Unit,
     onShowMessage: (String) -> Unit
 ) {
@@ -257,6 +260,7 @@ private fun ReportShareCard(
                             reportFolder = reportFolder,
                             sharedUris = sharedUris,
                             context = context,
+                            autoReturn = autoReturn,
                             onImportFinished = onImportFinished,
                             onShowMessage = onShowMessage
                         )
@@ -284,6 +288,7 @@ private fun AssetShareRow(
     reportFolder: String,
     sharedUris: List<Uri>,
     context: Context,
+    autoReturn: Boolean,
     onImportFinished: () -> Unit,
     onShowMessage: (String) -> Unit
 ) {
@@ -312,7 +317,9 @@ private fun AssetShareRow(
                 withContext(Dispatchers.Main) {
                     files = updated
                     onShowMessage("Archivos guardados en $assetLabel")
-                    onImportFinished()
+                    if (autoReturn) {
+                        onImportFinished()
+                    }
                 }
             }
         },
