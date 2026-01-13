@@ -106,7 +106,7 @@ object MaintenanceStorage {
             .toList()
     }
 
-    private fun assetFolderName(asset: Asset): String {
+    fun assetFolderName(asset: Asset): String {
         return when (asset.type) {
             AssetType.NODE -> "NODE"
             AssetType.AMPLIFIER -> {

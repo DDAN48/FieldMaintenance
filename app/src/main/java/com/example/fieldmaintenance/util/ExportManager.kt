@@ -37,6 +37,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import net.lingala.zip4j.ZipFile
+import net.lingala.zip4j.model.ZipParameters
 import java.io.File
 import java.io.ByteArrayOutputStream
 import java.io.FileOutputStream
@@ -1002,11 +1003,13 @@ val assets = repository.getAssetsByReportId(report.id).first()
                 .sortedBy { photoSortKey(it) }
 
             val grouped = photos.groupBy { it.photoType }
-            fun requiredCount(assetType: AssetType, photoType: PhotoType): Int {
+            fun requiredCount(asset: Asset, photoType: PhotoType): Int {
+                val technology = asset.technology?.uppercase(Locale.ROOT)
+                val isNode = asset.type == AssetType.NODE
                 return when (photoType) {
-                    PhotoType.MODULE -> 2
-                    PhotoType.OPTICS -> if (assetType == AssetType.NODE) 2 else 0
-                    PhotoType.MONITORING -> if (assetType == AssetType.NODE) 2 else 0
+                    PhotoType.MODULE -> if (isNode && technology == "RPHY") 0 else 2
+                    PhotoType.OPTICS -> if (isNode && technology == "VCCAP") 0 else if (isNode) 2 else 0
+                    PhotoType.MONITORING -> if (isNode) 2 else 0
                     PhotoType.SPECTRUM -> 3
                 }
             }
@@ -1047,7 +1050,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                 types.forEach { t ->
                     val list = grouped[t].orEmpty()
                     val sectionTitle = photoSectionTitle(t)
-                    val req = requiredCount(asset.type, t)
+                    val req = requiredCount(asset, t)
                     if (req <= 0) return@forEach
 
                     val perPage = perPageOverride?.invoke(t) ?: if (t == PhotoType.SPECTRUM) 3 else 2
@@ -1157,6 +1160,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
         exportDir.mkdirs()
 
         val imagesDir = File(exportDir, "images").apply { mkdirs() }
+        val measurementsDir = File(exportDir, "measurements").apply { mkdirs() }
 
         val photosByAsset = mutableMapOf<String, List<Photo>>()
         val imagesByAsset = mutableMapOf<String, List<ExportImageRef>>()
@@ -1164,6 +1168,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
         val nodeAdjustmentsByAsset = mutableMapOf<String, NodeAdjustment>()
         val reportImageRefs = mutableListOf<ExportReportImageRef>()
 
+        val reportFolderName = MaintenanceStorage.reportFolderName(report.eventName, report.id)
         assets.forEach { asset ->
             // Persist amplifier adjustment (if any) inside report.json
             repository.getAmplifierAdjustment(asset.id).first()?.let { adj ->
@@ -1199,6 +1204,16 @@ val assets = repository.getAssetsByReportId(report.id).first()
                 )
             }
             imagesByAsset[asset.id] = refs
+
+            val sourceMeasurementsDir = MaintenanceStorage.ensureAssetDir(context, reportFolderName, asset)
+            if (sourceMeasurementsDir.exists()) {
+                val measurementTargetDir = File(measurementsDir, MaintenanceStorage.assetFolderName(asset)).apply { mkdirs() }
+                sourceMeasurementsDir.listFiles()
+                    ?.filter { it.isFile }
+                    ?.forEach { file ->
+                        file.copyTo(File(measurementTargetDir, file.name), overwrite = true)
+                    }
+            }
         }
 
         // Report-level images (Monitoria y QR)
@@ -1241,8 +1256,36 @@ val assets = repository.getAssetsByReportId(report.id).first()
         zipFile
     }
 
+    suspend fun exportToBundleZip(report: MaintenanceReport): File = withContext(Dispatchers.IO) {
+        val pdfFile = exportToPDF(report)
+        val jsonZip = exportToZIP(report)
+        val baseName = exportBaseName(report)
+
+        val bundleZip = File(context.getExternalFilesDir(null), "maintenance_${report.id}_bundle.zip")
+        if (bundleZip.exists()) bundleZip.delete()
+
+        ZipFile(bundleZip).apply {
+            addFile(
+                pdfFile,
+                ZipParameters().apply { fileNameInZip = "$baseName.pdf" }
+            )
+            addFile(
+                jsonZip,
+                ZipParameters().apply { fileNameInZip = "${baseName}_json.zip" }
+            )
+        }
+
+        bundleZip
+    }
+
     suspend fun exportZipToDownloads(report: MaintenanceReport): Uri = withContext(Dispatchers.IO) {
         val tmp = exportToZIP(report)
+        val displayName = "${exportBaseName(report)}.zip"
+        DownloadStore.saveToDownloads(context, tmp, displayName, "application/zip")
+    }
+
+    suspend fun exportBundleToDownloads(report: MaintenanceReport): Uri = withContext(Dispatchers.IO) {
+        val tmp = exportToBundleZip(report)
         val displayName = "${exportBaseName(report)}.zip"
         DownloadStore.saveToDownloads(context, tmp, displayName, "application/zip")
     }
@@ -1280,6 +1323,28 @@ val assets = repository.getAssetsByReportId(report.id).first()
     suspend fun exportZipToUri(report: MaintenanceReport, uri: Uri, contentResolver: ContentResolver = context.contentResolver) =
         withContext(Dispatchers.IO) {
             val tmp = exportToZIP(report)
+            require(tmp.exists()) { "ZIP temporal no existe" }
+            if (tmp.length() <= 0L) throw IllegalStateException("ZIP temporal vacío")
+
+            val pfd: ParcelFileDescriptor =
+                (contentResolver.openFileDescriptor(uri, "rwt")
+                    ?: contentResolver.openFileDescriptor(uri, "w"))
+                    ?: throw IllegalStateException("No se pudo abrir FileDescriptor para Uri")
+
+            pfd.use { fd ->
+                FileInputStream(tmp).use { input ->
+                    JFileOutputStream(fd.fileDescriptor).use { out ->
+                        input.copyTo(out)
+                        out.flush()
+                        runCatching { out.fd.sync() }
+                    }
+                }
+            }
+        }
+
+    suspend fun exportBundleToUri(report: MaintenanceReport, uri: Uri, contentResolver: ContentResolver = context.contentResolver) =
+        withContext(Dispatchers.IO) {
+            val tmp = exportToBundleZip(report)
             require(tmp.exists()) { "ZIP temporal no existe" }
             if (tmp.length() <= 0L) throw IllegalStateException("ZIP temporal vacío")
 
@@ -1343,9 +1408,22 @@ val assets = repository.getAssetsByReportId(report.id).first()
             ZipFile(tmpZip).extractAll(extractDir.absolutePath)
 
             // The zip may contain a top-level folder (e.g. reportId). Search recursively.
-            val reportJson = extractDir.walkTopDown().firstOrNull { it.isFile && it.name == "report.json" }
-                ?: return@withContext null
-            val baseDir = reportJson.parentFile ?: extractDir
+            var reportJson = extractDir.walkTopDown().firstOrNull { it.isFile && it.name == "report.json" }
+            var baseDir = reportJson?.parentFile ?: extractDir
+
+            if (reportJson == null) {
+                val nestedZip = extractDir.walkTopDown()
+                    .firstOrNull { it.isFile && it.extension.equals("zip", ignoreCase = true) }
+                    ?: return@withContext null
+
+                val nestedDir = File(context.cacheDir, "import_nested/${System.currentTimeMillis()}")
+                if (nestedDir.exists()) nestedDir.deleteRecursively()
+                nestedDir.mkdirs()
+                ZipFile(nestedZip).extractAll(nestedDir.absolutePath)
+                reportJson = nestedDir.walkTopDown().firstOrNull { it.isFile && it.name == "report.json" }
+                    ?: return@withContext null
+                baseDir = reportJson.parentFile ?: nestedDir
+            }
 
             val exportData: ExportDataV2 = gson.fromJson(reportJson.readText(), ExportDataV2::class.java)
             val report = exportData.report.copy(deletedAt = null)
@@ -1433,6 +1511,21 @@ val assets = repository.getAssetsByReportId(report.id).first()
                 }
             }
 
+            val measurementsDir = File(baseDir, "measurements")
+            if (measurementsDir.exists()) {
+                val reportFolderName = MaintenanceStorage.reportFolderName(report.eventName, report.id)
+                exportData.assets.forEach { asset ->
+                    val sourceDir = File(measurementsDir, MaintenanceStorage.assetFolderName(asset))
+                    if (!sourceDir.exists()) return@forEach
+                    val destDir = MaintenanceStorage.ensureAssetDir(context, reportFolderName, asset)
+                    sourceDir.listFiles()
+                        ?.filter { it.isFile }
+                        ?.forEach { file ->
+                            file.copyTo(File(destDir, file.name), overwrite = true)
+                        }
+                }
+            }
+
             report
         } catch (_: Exception) {
             null
@@ -1474,4 +1567,3 @@ data class ExportReportImageRef(
     val type: ReportPhotoType,
     val fileName: String
 )
-
