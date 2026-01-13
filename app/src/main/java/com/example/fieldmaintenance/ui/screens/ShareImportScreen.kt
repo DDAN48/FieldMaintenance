@@ -135,7 +135,12 @@ fun ShareImportScreen(
                         report = report,
                         sharedUris = sharedUris,
                         context = context,
-                        onShareHandled = onShareHandled,
+                        onImportFinished = {
+                            onShareHandled()
+                            if (!navController.popBackStack()) {
+                                navController.navigate(Screen.Home.route)
+                            }
+                        },
                         onShowMessage = { message ->
                             scope.launch { snackbarHostState.showSnackbar(message) }
                         }
@@ -151,7 +156,7 @@ private fun ReportShareCard(
     report: MaintenanceReport,
     sharedUris: List<Uri>,
     context: Context,
-    onShareHandled: () -> Unit,
+    onImportFinished: () -> Unit,
     onShowMessage: (String) -> Unit
 ) {
     val repository = DatabaseProvider.getRepository()
@@ -203,7 +208,7 @@ private fun ReportShareCard(
                             reportFolder = reportFolder,
                             sharedUris = sharedUris,
                             context = context,
-                            onShareHandled = onShareHandled,
+                            onImportFinished = onImportFinished,
                             onShowMessage = onShowMessage
                         )
                     }
@@ -230,7 +235,7 @@ private fun AssetShareRow(
     reportFolder: String,
     sharedUris: List<Uri>,
     context: Context,
-    onShareHandled: () -> Unit,
+    onImportFinished: () -> Unit,
     onShowMessage: (String) -> Unit
 ) {
     val scope = rememberCoroutineScope()
@@ -255,10 +260,10 @@ private fun AssetShareRow(
                     MaintenanceStorage.copySharedFileToDir(context, uri, assetDir)
                 }
                 val updated = assetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
-                onShareHandled()
                 withContext(Dispatchers.Main) {
                     files = updated
                     onShowMessage("Archivos guardados en $assetLabel")
+                    onImportFinished()
                 }
             }
         },
