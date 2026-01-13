@@ -31,6 +31,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.font.FontWeight
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -900,27 +901,15 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
         val r = report ?: return
         FinalizeReportDialog(
             onDismiss = { showFinalizeDialog = false },
-            onSendEmailPdf = {
+            onSendEmailPackage = {
                 scope.launch {
-                    val pdfFile = exportManager.exportToPDF(r)
-                    com.example.fieldmaintenance.util.EmailManager.sendEmail(context, r.eventName, listOf(pdfFile))
+                    val bundleFile = exportManager.exportToBundleZip(r)
+                    com.example.fieldmaintenance.util.EmailManager.sendEmail(context, r.eventName, listOf(bundleFile))
                 }
             },
-            onSendEmailJson = {
+            onExportPackage = {
                 scope.launch {
-                    val zipFile = exportManager.exportToZIP(r)
-                    com.example.fieldmaintenance.util.EmailManager.sendEmail(context, r.eventName, listOf(zipFile))
-                }
-            },
-            onExportPDF = {
-                scope.launch {
-                    exportManager.exportPdfToDownloads(r)
-                    snackbarHostState.showSnackbar("PDF guardado en Descargas/FieldMaintenance")
-                }
-            },
-            onExportJSON = {
-                scope.launch {
-                    exportManager.exportZipToDownloads(r)
+                    exportManager.exportBundleToDownloads(r)
                     snackbarHostState.showSnackbar("ZIP guardado en Descargas/FieldMaintenance")
                 }
             },
@@ -1199,26 +1188,29 @@ private fun AssetFileSection(
 
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { isExpanded = !isExpanded },
-                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Archivos de Mediciones", style = MaterialTheme.typography.titleMedium)
-                Icon(
-                    if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                    contentDescription = null
+                Text(
+                    "Carga de Mediciones",
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f)
                 )
+                IconButton(onClick = { isExpanded = !isExpanded }) {
+                    Icon(
+                        if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                        contentDescription = if (isExpanded) "Colapsar" else "Expandir"
+                    )
+                }
             }
             if (isExpanded) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

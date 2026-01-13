@@ -209,27 +209,15 @@ fun AssetSummaryScreen(navController: NavController, reportId: String) {
     if (showFinalizeDialog && report != null) {
         FinalizeReportDialog(
             onDismiss = { showFinalizeDialog = false },
-            onSendEmailPdf = {
+            onSendEmailPackage = {
                 scope.launch {
-                    val pdfFile = exportManager.exportToPDF(report!!)
-                    EmailManager.sendEmail(context, report!!.eventName, listOf(pdfFile))
+                    val bundleFile = exportManager.exportToBundleZip(report!!)
+                    EmailManager.sendEmail(context, report!!.eventName, listOf(bundleFile))
                 }
             },
-            onSendEmailJson = {
+            onExportPackage = {
                 scope.launch {
-                    val zipFile = exportManager.exportToZIP(report!!)
-                    EmailManager.sendEmail(context, report!!.eventName, listOf(zipFile))
-                }
-            },
-            onExportPDF = {
-                scope.launch {
-                    exportManager.exportPdfToDownloads(report!!)
-                    snackbarHostState.showSnackbar("PDF guardado en Descargas/FieldMaintenance")
-                }
-            },
-            onExportJSON = {
-                scope.launch {
-                    exportManager.exportZipToDownloads(report!!)
+                    exportManager.exportBundleToDownloads(report!!)
                     snackbarHostState.showSnackbar("ZIP guardado en Descargas/FieldMaintenance")
                 }
             },
@@ -340,14 +328,11 @@ fun AssetSummaryCard(
 @Composable
 fun FinalizeReportDialog(
     onDismiss: () -> Unit,
-    onSendEmailPdf: () -> Unit,
-    onSendEmailJson: () -> Unit,
-    onExportPDF: () -> Unit,
-    onExportJSON: () -> Unit,
+    onSendEmailPackage: () -> Unit,
+    onExportPackage: () -> Unit,
     onGoHome: () -> Unit,
     showMissingWarning: Boolean
 ) {
-    var showEmailChoice by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -359,34 +344,24 @@ fun FinalizeReportDialog(
                 TextButton(
                     onClick = {
                         if (!showMissingWarning) {
-                            showEmailChoice = true
-                        }
-                    },
-                    enabled = !showMissingWarning
-                ) {
-                    Text("📧 Enviar por correo")
-                }
-                TextButton(
-                    onClick = {
-                        if (!showMissingWarning) {
-                            onExportPDF()
+                            onExportPackage()
                             onDismiss()
                         }
                     },
                     enabled = !showMissingWarning
                 ) {
-                    Text("📄 Exportar PDF")
+                    Text("📦 Exportar reporte (ZIP)")
                 }
                 TextButton(
                     onClick = {
                         if (!showMissingWarning) {
-                            onExportJSON()
+                            onSendEmailPackage()
                             onDismiss()
                         }
                     },
                     enabled = !showMissingWarning
                 ) {
-                    Text("📦 Exportar editable (JSON)")
+                    Text("✉️ Enviar reporte (ZIP)")
                 }
                 TextButton(onClick = {
                     onGoHome()
@@ -412,25 +387,4 @@ fun FinalizeReportDialog(
         }
     )
 
-    if (showEmailChoice) {
-        AlertDialog(
-            onDismissRequest = { showEmailChoice = false },
-            title = { Text("Enviar por correo") },
-            text = { Text("¿En qué formato deseas enviar?") },
-            confirmButton = {
-                TextButton(onClick = {
-                    showEmailChoice = false
-                    onSendEmailPdf()
-                    onDismiss()
-                }) { Text("PDF") }
-            },
-            dismissButton = {
-                TextButton(onClick = {
-                    showEmailChoice = false
-                    onSendEmailJson()
-                    onDismiss()
-                }) { Text("JSON") }
-            }
-        )
-    }
 }
