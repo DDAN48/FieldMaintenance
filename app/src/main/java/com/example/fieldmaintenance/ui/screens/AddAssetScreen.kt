@@ -1086,6 +1086,13 @@ fun PhotoSection(
             pendingCameraUriString = photoUri.toString()
 
             val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+            val locationGranted = ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.ACCESS_FINE_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED
+            if (!locationGranted) {
+                locationPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+            }
             if (granted) {
                 cameraLauncher.launch(photoUri)
             } else {
