@@ -45,6 +45,8 @@ import com.example.fieldmaintenance.data.model.*
 import com.example.fieldmaintenance.data.model.label
 import com.example.fieldmaintenance.ui.components.AmplifierAdjustmentCard
 import com.example.fieldmaintenance.ui.components.NodeAdjustmentCard
+import com.example.fieldmaintenance.ui.navigation.PendingMeasurementAssetIdKey
+import com.example.fieldmaintenance.ui.navigation.PendingMeasurementReportIdKey
 import com.example.fieldmaintenance.ui.navigation.Screen
 import com.example.fieldmaintenance.ui.viewmodel.ReportViewModel
 import com.example.fieldmaintenance.ui.viewmodel.ReportViewModelFactory
@@ -826,6 +828,7 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
                 Spacer(modifier = Modifier.height(8.dp))
                 AssetFileSection(
                     context = context,
+                    navController = navController,
                     reportFolder = MaintenanceStorage.reportFolderName(report?.eventName, reportId),
                     asset = Asset(
                         id = workingAssetId,
@@ -1177,6 +1180,7 @@ fun PhotoSection(
 @Composable
 private fun AssetFileSection(
     context: Context,
+    navController: NavController,
     reportFolder: String,
     asset: Asset
 ) {
@@ -1220,6 +1224,10 @@ private fun AssetFileSection(
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(onClick = {
                         if (viaviIntent != null) {
+                            navController.currentBackStackEntry?.savedStateHandle?.apply {
+                                set(PendingMeasurementReportIdKey, asset.reportId)
+                                set(PendingMeasurementAssetIdKey, asset.id)
+                            }
                             runCatching { context.startActivity(viaviIntent) }
                                 .onFailure {
                                     Toast.makeText(
