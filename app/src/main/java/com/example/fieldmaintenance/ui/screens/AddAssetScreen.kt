@@ -35,7 +35,6 @@ import androidx.compose.ui.text.font.FontWeight
 import android.net.Uri
 import android.widget.Toast
 import android.location.Geocoder
-import android.location.LocationManager
 import android.os.Build
 import android.text.Layout
 import android.text.StaticLayout
@@ -47,6 +46,9 @@ import android.graphics.Paint
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.transformable
+import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -72,6 +74,9 @@ import com.example.fieldmaintenance.util.PlanRepository
 import com.example.fieldmaintenance.util.hasIncompleteAssets
 import java.util.Locale
 import java.io.FileOutputStream
+import androidx.exifinterface.media.ExifInterface
+import java.text.SimpleDateFormat
+import java.util.Date
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.map
@@ -768,6 +773,9 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
                     "$baseNodeName $code".trim()
                 }
             }
+            val eventName = remember(report?.eventName) {
+                report?.eventName?.trim().orEmpty().ifBlank { "Sin evento" }
+            }
             
             // Foto del Módulo (no para RPHY)
             if (assetType != AssetType.NODE || technology != "RPHY") {
@@ -777,6 +785,7 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
                     assetId = workingAssetId,
                     photoType = PhotoType.MODULE,
                     assetLabel = assetDisplayName,
+                    eventName = eventName,
                     repository = repository,
                     minRequired = if (assetType == AssetType.NODE && technology != "RPHY") 2 else 0,
                     showRequiredError = attemptedSave && (assetType != AssetType.NODE || technology != "RPHY"),
@@ -794,6 +803,7 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
                     assetId = workingAssetId,
                     photoType = PhotoType.OPTICS,
                     assetLabel = assetDisplayName,
+                    eventName = eventName,
                     repository = repository,
                     minRequired = 1,
                     showRequiredError = attemptedSave,
@@ -809,6 +819,7 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
                     assetId = workingAssetId,
                     photoType = PhotoType.MONITORING,
                     assetLabel = assetDisplayName,
+                    eventName = eventName,
                     repository = repository,
                     minRequired = 0,
                     showRequiredError = false,
@@ -827,6 +838,7 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
                     assetId = workingAssetId,
                     photoType = PhotoType.SPECTRUM,
                     assetLabel = assetDisplayName,
+                    eventName = eventName,
                     repository = repository,
                     minRequired = 0,
                     showRequiredError = false,
@@ -957,6 +969,7 @@ fun PhotoSection(
     assetId: String,
     photoType: PhotoType,
     assetLabel: String,
+    eventName: String,
     repository: com.example.fieldmaintenance.data.repository.MaintenanceRepository,
     minRequired: Int,
     showRequiredError: Boolean,
@@ -1026,7 +1039,7 @@ fun PhotoSection(
         if (!ok) return@rememberLauncherForActivityResult
 
         scope.launch {
-            val label = buildPhotoLabel(context, assetLabel)
+            val label = buildPhotoLabel(context, file, assetLabel, eventName)
             if (label != null) {
                 annotateImageWithLabel(file, label)
             }
@@ -1058,10 +1071,6 @@ fun PhotoSection(
         }
     }
 
-    val locationPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { _ -> }
-    
     // Función para crear archivo temporal para la cámara
     val takePicture = {
         try {
@@ -1195,6 +1204,10 @@ fun PhotoSection(
     }
 
     photoToPreview?.let { photo ->
+        var scale by remember { mutableStateOf(1f) }
+        val transformState = rememberTransformableState { zoomChange, _, _ ->
+            scale = (scale * zoomChange).coerceIn(1f, 5f)
+        }
         androidx.compose.ui.window.Dialog(onDismissRequest = { photoToPreview = null }) {
             Surface(
                 shape = MaterialTheme.shapes.medium,
@@ -1209,7 +1222,13 @@ fun PhotoSection(
                     androidx.compose.foundation.Image(
                         painter = rememberAsyncImagePainter(File(photo.filePath)),
                         contentDescription = null,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .graphicsLayer(
+                                scaleX = scale,
+                                scaleY = scale
+                            )
+                            .transformable(transformState)
                     )
                     TextButton(
                         onClick = { photoToPreview = null },
@@ -1243,45 +1262,51 @@ fun PhotoSection(
     }
 }
 
-private suspend fun buildPhotoLabel(context: Context, assetLabel: String): String? {
-    val hasPermission = ContextCompat.checkSelfPermission(
-        context,
-        Manifest.permission.ACCESS_FINE_LOCATION
-    ) == PackageManager.PERMISSION_GRANTED
-    if (!hasPermission) return assetLabel
-
-    val location = withContext(Dispatchers.IO) {
-        val manager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return@withContext null
-        val providers = listOf(
-            LocationManager.GPS_PROVIDER,
-            LocationManager.NETWORK_PROVIDER,
-            LocationManager.PASSIVE_PROVIDER
-        )
-        providers.asSequence()
-            .mapNotNull { provider ->
-                runCatching { manager.getLastKnownLocation(provider) }.getOrNull()
-            }
-            .firstOrNull()
-    } ?: return assetLabel
-
-    val latitude = location.latitude
-    val longitude = location.longitude
-    val address = withContext(Dispatchers.IO) {
-        runCatching {
-            @Suppress("DEPRECATION")
-            Geocoder(context, Locale.getDefault())
-                .getFromLocation(latitude, longitude, 1)
-                ?.firstOrNull()
-                ?.getAddressLine(0)
-        }.getOrNull()
-    }
-
-    val coords = String.format(Locale.getDefault(), "%.5f, %.5f", latitude, longitude)
-    return if (!address.isNullOrBlank()) {
-        "$assetLabel - $address ($coords)"
+private suspend fun buildPhotoLabel(
+    context: Context,
+    file: File,
+    assetLabel: String,
+    eventName: String
+): String? {
+    val exif = runCatching { ExifInterface(file.absolutePath) }.getOrNull()
+    val latLong = exif?.latLong
+    val latitude = latLong?.getOrNull(0)
+    val longitude = latLong?.getOrNull(1)
+    val address = if (latitude != null && longitude != null) {
+        withContext(Dispatchers.IO) {
+            runCatching {
+                @Suppress("DEPRECATION")
+                Geocoder(context, Locale.getDefault())
+                    .getFromLocation(latitude, longitude, 1)
+                    ?.firstOrNull()
+                    ?.getAddressLine(0)
+            }.getOrNull()
+        }
     } else {
-        "$assetLabel - $coords"
+        null
     }
+    val coords = if (latitude != null && longitude != null) {
+        String.format(Locale.getDefault(), "%.5f, %.5f", latitude, longitude)
+    } else {
+        null
+    }
+    val dateTime = exif?.getAttribute(ExifInterface.TAG_DATETIME_ORIGINAL)
+        ?: exif?.getAttribute(ExifInterface.TAG_DATETIME)
+    val formattedDateTime = dateTime?.let { raw ->
+        runCatching {
+            val parsed = SimpleDateFormat("yyyy:MM:dd HH:mm:ss", Locale.getDefault()).parse(raw)
+            SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(parsed ?: Date())
+        }.getOrNull()
+    } ?: SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date(file.lastModified()))
+
+    val headerLine = "$assetLabel - $eventName"
+    val locationLine = when {
+        !address.isNullOrBlank() && coords != null -> "$address ($coords)"
+        coords != null -> coords
+        else -> "Ubicación no disponible"
+    }
+    val timeLine = formattedDateTime
+    return "$headerLine\n$locationLine\n$timeLine"
 }
 
 private fun annotateImageWithLabel(file: File, label: String) {
