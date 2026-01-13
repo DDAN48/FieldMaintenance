@@ -1003,11 +1003,13 @@ val assets = repository.getAssetsByReportId(report.id).first()
                 .sortedBy { photoSortKey(it) }
 
             val grouped = photos.groupBy { it.photoType }
-            fun requiredCount(assetType: AssetType, photoType: PhotoType): Int {
+            fun requiredCount(asset: Asset, photoType: PhotoType): Int {
+                val technology = asset.technology?.uppercase(Locale.ROOT)
+                val isNode = asset.type == AssetType.NODE
                 return when (photoType) {
-                    PhotoType.MODULE -> 2
-                    PhotoType.OPTICS -> if (assetType == AssetType.NODE) 2 else 0
-                    PhotoType.MONITORING -> if (assetType == AssetType.NODE) 2 else 0
+                    PhotoType.MODULE -> if (isNode && technology == "RPHY") 0 else 2
+                    PhotoType.OPTICS -> if (isNode && technology == "VCCAP") 0 else if (isNode) 2 else 0
+                    PhotoType.MONITORING -> if (isNode) 2 else 0
                     PhotoType.SPECTRUM -> 3
                 }
             }
@@ -1048,7 +1050,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                 types.forEach { t ->
                     val list = grouped[t].orEmpty()
                     val sectionTitle = photoSectionTitle(t)
-                    val req = requiredCount(asset.type, t)
+                    val req = requiredCount(asset, t)
                     if (req <= 0) return@forEach
 
                     val perPage = perPageOverride?.invoke(t) ?: if (t == PhotoType.SPECTRUM) 3 else 2

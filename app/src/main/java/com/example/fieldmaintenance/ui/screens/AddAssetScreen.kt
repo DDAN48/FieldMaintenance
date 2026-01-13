@@ -34,6 +34,16 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.font.FontWeight
 import android.net.Uri
 import android.widget.Toast
+import android.location.Geocoder
+import android.location.LocationManager
+import android.os.Build
+import android.text.Layout
+import android.text.StaticLayout
+import android.text.TextPaint
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Paint
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -61,6 +71,7 @@ import com.example.fieldmaintenance.util.PlanCache
 import com.example.fieldmaintenance.util.PlanRepository
 import com.example.fieldmaintenance.util.hasIncompleteAssets
 import java.util.Locale
+import java.io.FileOutputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.map
@@ -743,6 +754,20 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
                 "Fotos",
                 style = MaterialTheme.typography.titleMedium
             )
+
+            val assetDisplayName = remember(reportNodeName, assetType, port, portIndex) {
+                val baseNodeName = reportNodeName.ifBlank { "Nodo" }
+                if (assetType == AssetType.NODE) {
+                    baseNodeName
+                } else {
+                    val code = if (port != null && portIndex != null) {
+                        "${port?.name}${String.format("%02d", portIndex)}"
+                    } else {
+                        "SIN-COD"
+                    }
+                    "$baseNodeName $code".trim()
+                }
+            }
             
             // Foto del Módulo (no para RPHY)
             if (assetType != AssetType.NODE || technology != "RPHY") {
@@ -751,6 +776,7 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
                     reportId = reportId,
                     assetId = workingAssetId,
                     photoType = PhotoType.MODULE,
+                    assetLabel = assetDisplayName,
                     repository = repository,
                     minRequired = if (assetType == AssetType.NODE && technology != "RPHY") 2 else 0,
                     showRequiredError = attemptedSave && (assetType != AssetType.NODE || technology != "RPHY"),
@@ -767,6 +793,7 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
                     reportId = reportId,
                     assetId = workingAssetId,
                     photoType = PhotoType.OPTICS,
+                    assetLabel = assetDisplayName,
                     repository = repository,
                     minRequired = 1,
                     showRequiredError = attemptedSave,
@@ -781,6 +808,7 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
                     reportId = reportId,
                     assetId = workingAssetId,
                     photoType = PhotoType.MONITORING,
+                    assetLabel = assetDisplayName,
                     repository = repository,
                     minRequired = 0,
                     showRequiredError = false,
@@ -798,6 +826,7 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
                     reportId = reportId,
                     assetId = workingAssetId,
                     photoType = PhotoType.SPECTRUM,
+                    assetLabel = assetDisplayName,
                     repository = repository,
                     minRequired = 0,
                     showRequiredError = false,
@@ -927,6 +956,7 @@ fun PhotoSection(
     reportId: String,
     assetId: String,
     photoType: PhotoType,
+    assetLabel: String,
     repository: com.example.fieldmaintenance.data.repository.MaintenanceRepository,
     minRequired: Int,
     showRequiredError: Boolean,
@@ -945,8 +975,10 @@ fun PhotoSection(
     val isMissingRequired = showRequiredError && minRequired > 0 && photos.size < minRequired
     val isOverMax = photos.size > maxAllowed
     val isAtMax = photos.size >= maxAllowed
+    val allowsGallery = photoType != PhotoType.MODULE && photoType != PhotoType.OPTICS
 
     var photoToDelete by remember { mutableStateOf<com.example.fieldmaintenance.data.model.Photo?>(null) }
+    var photoToPreview by remember { mutableStateOf<com.example.fieldmaintenance.data.model.Photo?>(null) }
     // These must survive configuration changes (e.g., rotating to landscape opens camera and Activity may recreate)
     var pendingCameraFilePath by rememberSaveable { mutableStateOf<String?>(null) }
     var pendingCameraUriString by rememberSaveable { mutableStateOf<String?>(null) }
@@ -994,6 +1026,10 @@ fun PhotoSection(
         if (!ok) return@rememberLauncherForActivityResult
 
         scope.launch {
+            val label = buildPhotoLabel(context, assetLabel)
+            if (label != null) {
+                annotateImageWithLabel(file, label)
+            }
             repository.insertPhoto(
                 com.example.fieldmaintenance.data.model.Photo(
                     assetId = assetId,
@@ -1021,6 +1057,10 @@ fun PhotoSection(
             Toast.makeText(context, "Permiso de cámara denegado", Toast.LENGTH_SHORT).show()
         }
     }
+
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { _ -> }
     
     // Función para crear archivo temporal para la cámara
     val takePicture = {
@@ -1037,6 +1077,13 @@ fun PhotoSection(
             pendingCameraUriString = photoUri.toString()
 
             val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+            val locationGranted = ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.ACCESS_FINE_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED
+            if (!locationGranted) {
+                locationPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+            }
             if (granted) {
                 cameraLauncher.launch(photoUri)
             } else {
@@ -1092,14 +1139,16 @@ fun PhotoSection(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                OutlinedButton(
-                    onClick = { if (!isAtMax) galleryLauncher.launch("image/*") },
-                    modifier = Modifier.weight(1f),
-                    enabled = !isAtMax
-                ) {
-                    Icon(Icons.Default.Image, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Galería")
+                if (allowsGallery) {
+                    OutlinedButton(
+                        onClick = { if (!isAtMax) galleryLauncher.launch("image/*") },
+                        modifier = Modifier.weight(1f),
+                        enabled = !isAtMax
+                    ) {
+                        Icon(Icons.Default.Image, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Galería")
+                    }
                 }
                 
                 OutlinedButton(
@@ -1128,7 +1177,7 @@ fun PhotoSection(
                         modifier = Modifier
                             .size(72.dp)
                             .combinedClickable(
-                                onClick = {},
+                                onClick = { photoToPreview = photo },
                                 onLongClick = { photoToDelete = photo }
                             ),
                         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
@@ -1141,6 +1190,34 @@ fun PhotoSection(
                     }
                 }
             }
+            }
+        }
+    }
+
+    photoToPreview?.let { photo ->
+        androidx.compose.ui.window.Dialog(onDismissRequest = { photoToPreview = null }) {
+            Surface(
+                shape = MaterialTheme.shapes.medium,
+                tonalElevation = 4.dp
+            ) {
+                Column(
+                    modifier = Modifier
+                        .padding(12.dp)
+                        .fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    androidx.compose.foundation.Image(
+                        painter = rememberAsyncImagePainter(File(photo.filePath)),
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    TextButton(
+                        onClick = { photoToPreview = null },
+                        modifier = Modifier.align(Alignment.End)
+                    ) {
+                        Text("Cerrar")
+                    }
+                }
             }
         }
     }
@@ -1163,6 +1240,99 @@ fun PhotoSection(
                 TextButton(onClick = { photoToDelete = null }) { Text("Cancelar") }
             }
         )
+    }
+}
+
+private suspend fun buildPhotoLabel(context: Context, assetLabel: String): String? {
+    val hasPermission = ContextCompat.checkSelfPermission(
+        context,
+        Manifest.permission.ACCESS_FINE_LOCATION
+    ) == PackageManager.PERMISSION_GRANTED
+    if (!hasPermission) return assetLabel
+
+    val location = withContext(Dispatchers.IO) {
+        val manager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return@withContext null
+        val providers = listOf(
+            LocationManager.GPS_PROVIDER,
+            LocationManager.NETWORK_PROVIDER,
+            LocationManager.PASSIVE_PROVIDER
+        )
+        providers.asSequence()
+            .mapNotNull { provider ->
+                runCatching { manager.getLastKnownLocation(provider) }.getOrNull()
+            }
+            .firstOrNull()
+    } ?: return assetLabel
+
+    val latitude = location.latitude
+    val longitude = location.longitude
+    val address = withContext(Dispatchers.IO) {
+        runCatching {
+            @Suppress("DEPRECATION")
+            Geocoder(context, Locale.getDefault())
+                .getFromLocation(latitude, longitude, 1)
+                ?.firstOrNull()
+                ?.getAddressLine(0)
+        }.getOrNull()
+    }
+
+    val coords = String.format(Locale.getDefault(), "%.5f, %.5f", latitude, longitude)
+    return if (!address.isNullOrBlank()) {
+        "$assetLabel - $address ($coords)"
+    } else {
+        "$assetLabel - $coords"
+    }
+}
+
+private fun annotateImageWithLabel(file: File, label: String) {
+    val bitmap = BitmapFactory.decodeFile(file.absolutePath) ?: return
+    val mutable = bitmap.copy(Bitmap.Config.ARGB_8888, true)
+    val canvas = Canvas(mutable)
+    val padding = (mutable.width * 0.03f).coerceIn(12f, 36f)
+    val textSize = (mutable.width * 0.035f).coerceIn(20f, 48f)
+    val textPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = android.graphics.Color.WHITE
+        this.textSize = textSize
+    }
+    val maxWidth = (mutable.width - padding * 2).toInt()
+    val layout = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+        StaticLayout.Builder
+            .obtain(label, 0, label.length, textPaint, maxWidth)
+            .setAlignment(Layout.Alignment.ALIGN_CENTER)
+            .setLineSpacing(0f, 1f)
+            .build()
+    } else {
+        @Suppress("DEPRECATION")
+        StaticLayout(
+            label,
+            textPaint,
+            maxWidth,
+            Layout.Alignment.ALIGN_CENTER,
+            1f,
+            0f,
+            false
+        )
+    }
+    val backgroundPaint = Paint().apply {
+        color = android.graphics.Color.argb(170, 0, 0, 0)
+    }
+    val totalHeight = layout.height + (padding * 2).toInt()
+    val top = (mutable.height - totalHeight).coerceAtLeast(0)
+    canvas.drawRect(
+        0f,
+        top.toFloat(),
+        mutable.width.toFloat(),
+        mutable.height.toFloat(),
+        backgroundPaint
+    )
+    canvas.save()
+    val textX = (mutable.width - layout.width) / 2f
+    canvas.translate(textX, top + padding)
+    layout.draw(canvas)
+    canvas.restore()
+
+    FileOutputStream(file).use { out ->
+        mutable.compress(Bitmap.CompressFormat.JPEG, 90, out)
     }
 }
 
