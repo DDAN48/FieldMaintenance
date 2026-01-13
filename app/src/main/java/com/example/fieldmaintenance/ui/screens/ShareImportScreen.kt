@@ -78,7 +78,6 @@ fun ShareImportScreen(
     val reports by repository.getAllReports().collectAsState(initial = emptyList())
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
-    var isAutoImporting by remember { mutableStateOf(false) }
     val previousEntry = navController.previousBackStackEntry
     val pendingReportId = previousEntry?.savedStateHandle?.get<String>(PendingMeasurementReportIdKey)
     val pendingAssetId = previousEntry?.savedStateHandle?.get<String>(PendingMeasurementAssetIdKey)
@@ -86,40 +85,35 @@ fun ShareImportScreen(
 
     LaunchedEffect(sharedUris, hasPendingAsset) {
         if (!hasPendingAsset || sharedUris.isEmpty()) return@LaunchedEffect
-        isAutoImporting = true
-        try {
-            val reportId = pendingReportId ?: return@LaunchedEffect
-            val assetId = pendingAssetId ?: return@LaunchedEffect
-            val report = withContext(Dispatchers.IO) { repository.getReportById(reportId) }
-            val asset = withContext(Dispatchers.IO) { repository.getAssetById(assetId) }
-            if (report == null || asset == null) {
-                previousEntry?.savedStateHandle?.remove<String>(PendingMeasurementReportIdKey)
-                previousEntry?.savedStateHandle?.remove<String>(PendingMeasurementAssetIdKey)
-                return@LaunchedEffect
-            }
-            val assetLabel = when (asset.type) {
-                AssetType.NODE -> "Nodo"
-                AssetType.AMPLIFIER -> {
-                    val portName = asset.port?.name ?: ""
-                    val portIndex = asset.portIndex?.let { String.format("%02d", it) } ?: ""
-                    "Amplificador $portName$portIndex".trim()
-                }
-            }
-            withContext(Dispatchers.IO) {
-                val reportFolder = MaintenanceStorage.reportFolderName(report.eventName, report.id)
-                val assetDir = MaintenanceStorage.ensureAssetDir(context, reportFolder, asset)
-                sharedUris.forEach { uri ->
-                    MaintenanceStorage.copySharedFileToDir(context, uri, assetDir)
-                }
-            }
+        val reportId = pendingReportId ?: return@LaunchedEffect
+        val assetId = pendingAssetId ?: return@LaunchedEffect
+        val report = withContext(Dispatchers.IO) { repository.getReportById(reportId) }
+        val asset = withContext(Dispatchers.IO) { repository.getAssetById(assetId) }
+        if (report == null || asset == null) {
             previousEntry?.savedStateHandle?.remove<String>(PendingMeasurementReportIdKey)
             previousEntry?.savedStateHandle?.remove<String>(PendingMeasurementAssetIdKey)
-            snackbarHostState.showSnackbar("Archivos guardados en $assetLabel")
-            onShareHandled()
-            navController.popBackStack()
-        } finally {
-            isAutoImporting = false
+            return@LaunchedEffect
         }
+        val assetLabel = when (asset.type) {
+            AssetType.NODE -> "Nodo"
+            AssetType.AMPLIFIER -> {
+                val portName = asset.port?.name ?: ""
+                val portIndex = asset.portIndex?.let { String.format("%02d", it) } ?: ""
+                "Amplificador $portName$portIndex".trim()
+            }
+        }
+        withContext(Dispatchers.IO) {
+            val reportFolder = MaintenanceStorage.reportFolderName(report.eventName, report.id)
+            val assetDir = MaintenanceStorage.ensureAssetDir(context, reportFolder, asset)
+            sharedUris.forEach { uri ->
+                MaintenanceStorage.copySharedFileToDir(context, uri, assetDir)
+            }
+        }
+        previousEntry?.savedStateHandle?.remove<String>(PendingMeasurementReportIdKey)
+        previousEntry?.savedStateHandle?.remove<String>(PendingMeasurementAssetIdKey)
+        snackbarHostState.showSnackbar("Archivos guardados en $assetLabel")
+        onShareHandled()
+        navController.popBackStack()
     }
 
     Scaffold(
@@ -155,21 +149,16 @@ fun ShareImportScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(16.dp)
-            ) {
-                Text(
-                    text = "Ruta base: ${MaintenanceStorage.baseDir(context).path}",
-                    style = MaterialTheme.typography.bodySmall
-                )
-                Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = "Ruta base: ${MaintenanceStorage.baseDir(context).path}",
+                style = MaterialTheme.typography.bodySmall
+            )
+            Spacer(modifier = Modifier.height(12.dp))
 
-                if (sharedUris.isEmpty()) {
-                    Text("No hay archivos para importar. Puedes revisar las mediciones guardadas abajo.")
-                    Spacer(modifier = Modifier.height(12.dp))
-                }
+            if (sharedUris.isEmpty()) {
+                Text("No hay archivos para importar. Puedes revisar las mediciones guardadas abajo.")
+                Spacer(modifier = Modifier.height(12.dp))
+            }
 
                 if (reports.isEmpty()) {
                     Text("No hay mantenimientos creados todavía.")
@@ -180,63 +169,37 @@ fun ShareImportScreen(
                     return@Box
                 }
 
-                Text(
-                    text = if (sharedUris.isEmpty()) {
-                        "Seleccione un mantenimiento para ver las mediciones."
-                    } else {
-                        "Seleccione una carpeta para guardar las mediciones."
-                    },
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = if (sharedUris.isEmpty()) {
+                    "Seleccione un mantenimiento para ver las mediciones."
+                } else {
+                    "Seleccione una carpeta para guardar las mediciones."
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+            Spacer(modifier = Modifier.height(8.dp))
 
-                LazyColumn(
-                    contentPadding = PaddingValues(bottom = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    items(reports) { report ->
-                        ReportShareCard(
-                            report = report,
-                            sharedUris = sharedUris,
-                            context = context,
-                            autoReturn = hasPendingAsset,
-                            onImportFinished = {
-                                onShareHandled()
-                                if (!navController.popBackStack()) {
-                                    navController.navigate(Screen.Home.route)
-                                }
-                            },
-                            onShowMessage = { message ->
-                                scope.launch { snackbarHostState.showSnackbar(message) }
+            LazyColumn(
+                contentPadding = PaddingValues(bottom = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                items(reports) { report ->
+                    ReportShareCard(
+                        report = report,
+                        sharedUris = sharedUris,
+                        context = context,
+                        autoReturn = hasPendingAsset,
+                        onImportFinished = {
+                            onShareHandled()
+                            if (!navController.popBackStack()) {
+                                navController.navigate(Screen.Home.route)
                             }
-                        )
-                    }
-                }
-            }
-
-            if (isAutoImporting) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color.Black.copy(alpha = 0.5f))
-                        .clickable(
-                            indication = null,
-                            interactionSource = remember { MutableInteractionSource() }
-                        ) {},
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        CircularProgressIndicator(color = Color.White)
-                        Text(
-                            text = "Subiendo mediciones...",
-                            color = Color.White,
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                    }
+                        },
+                        onShowMessage = { message ->
+                            scope.launch { snackbarHostState.showSnackbar(message) }
+                        }
+                    )
                 }
             }
         }
