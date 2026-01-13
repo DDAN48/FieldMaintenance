@@ -120,17 +120,17 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
     }
     
     var assetType by remember { mutableStateOf(AssetType.NODE) }
-    val frequencySaver = Saver<Frequency?, String?>(
-        save = { it?.name },
-        restore = { it?.let(Frequency::valueOf) }
+    val frequencySaver = Saver<Frequency?, String>(
+        save = { it?.name ?: "" },
+        restore = { if (it.isBlank()) null else Frequency.valueOf(it) }
     )
-    val amplifierModeSaver = Saver<AmplifierMode?, String?>(
-        save = { it?.name },
-        restore = { it?.let(AmplifierMode::valueOf) }
+    val amplifierModeSaver = Saver<AmplifierMode?, String>(
+        save = { it?.name ?: "" },
+        restore = { if (it.isBlank()) null else AmplifierMode.valueOf(it) }
     )
-    val portSaver = Saver<Port?, String?>(
-        save = { it?.name },
-        restore = { it?.let(Port::valueOf) }
+    val portSaver = Saver<Port?, String>(
+        save = { it?.name ?: "" },
+        restore = { if (it.isBlank()) null else Port.valueOf(it) }
     )
     var frequency by rememberSaveable(stateSaver = frequencySaver) { mutableStateOf<Frequency?>(null) }
     var technology by rememberSaveable { mutableStateOf<String?>(null) }
