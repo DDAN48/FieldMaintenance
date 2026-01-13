@@ -352,14 +352,14 @@ fun FinalizeReportDialog(
                     },
                     enabled = !showMissingWarning
                 ) {
-                    Text("📧 Enviar por correo")
+                    Text("Enviar por correo")
                 }
                     },
                     enabled = !showMissingWarning
                 ) {
-                        "Debe completar datos de activos o borrarlos para poder exportar",
-                        color = Color(0xFFC94F4F)
-                        }
+                    Text("Exportar PDF")
+                    Text("Exportar editable (JSON)")
+                    Text("Volver al inicio")
                     },
                     enabled = !showMissingWarning
                 ) {
