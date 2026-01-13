@@ -275,7 +275,7 @@ fun AssetSummaryCard(
             ),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         colors = if (hasMissingData) {
-            CardDefaults.cardColors(containerColor = Color(0xFFDE3C2A))
+            CardDefaults.cardColors(containerColor = Color(0xA6CD9D10))
         } else {
             CardDefaults.cardColors()
         }
