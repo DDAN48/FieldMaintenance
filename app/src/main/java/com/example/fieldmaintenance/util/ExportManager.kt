@@ -1263,8 +1263,14 @@ val assets = repository.getAssetsByReportId(report.id).first()
         if (bundleZip.exists()) bundleZip.delete()
 
         ZipFile(bundleZip).apply {
-            addFile(pdfFile, ZipParameters().setFileNameInZip("$baseName.pdf"))
-            addFile(jsonZip, ZipParameters().setFileNameInZip("${baseName}_json.zip"))
+            addFile(
+                pdfFile,
+                ZipParameters().apply { fileNameInZip = "$baseName.pdf" }
+            )
+            addFile(
+                jsonZip,
+                ZipParameters().apply { fileNameInZip = "${baseName}_json.zip" }
+            )
         }
 
         bundleZip
