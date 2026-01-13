@@ -184,7 +184,6 @@ fun ShareImportScreen(
                         report = report,
                         sharedUris = sharedUris,
                         context = context,
-                        autoReturn = hasPendingAsset,
                         onImportFinished = {
                             onShareHandled()
                             if (!navController.popBackStack()) {
@@ -206,7 +205,6 @@ private fun ReportShareCard(
     report: MaintenanceReport,
     sharedUris: List<Uri>,
     context: Context,
-    autoReturn: Boolean,
     onImportFinished: () -> Unit,
     onShowMessage: (String) -> Unit
 ) {
@@ -259,7 +257,6 @@ private fun ReportShareCard(
                             reportFolder = reportFolder,
                             sharedUris = sharedUris,
                             context = context,
-                            autoReturn = autoReturn,
                             onImportFinished = onImportFinished,
                             onShowMessage = onShowMessage
                         )
@@ -287,7 +284,6 @@ private fun AssetShareRow(
     reportFolder: String,
     sharedUris: List<Uri>,
     context: Context,
-    autoReturn: Boolean,
     onImportFinished: () -> Unit,
     onShowMessage: (String) -> Unit
 ) {
@@ -316,9 +312,7 @@ private fun AssetShareRow(
                 withContext(Dispatchers.Main) {
                     files = updated
                     onShowMessage("Archivos guardados en $assetLabel")
-                    if (autoReturn) {
-                        onImportFinished()
-                    }
+                    onImportFinished()
                 }
             }
         },
