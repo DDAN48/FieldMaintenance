@@ -316,11 +316,23 @@ fun AssetSummaryCard(
                     color = if (hasMissingData) Color.White else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                 )
             }
-            Icon(
-                if (hasMissingData) Icons.Default.Warning else Icons.Default.CheckCircle,
-                contentDescription = null,
-                tint = if (hasMissingData) Color.White else MaterialTheme.colorScheme.primary
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (hasMissingData) {
+                    Text(
+                        text = "Pendiente",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFFEB3C38),
+                        modifier = Modifier.padding(end = 8.dp)
+                    )
+                }
+                Icon(
+                    if (hasMissingData) Icons.Default.Warning else Icons.Default.CheckCircle,
+                    contentDescription = null,
+                    tint = if (hasMissingData) Color.White else MaterialTheme.colorScheme.primary
+                )
+            }
         }
     }
 }
