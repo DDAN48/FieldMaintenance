@@ -31,11 +31,24 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.font.FontWeight
 import android.net.Uri
 import android.widget.Toast
+import android.location.Geocoder
+import android.os.Build
+import android.text.Layout
+import android.text.StaticLayout
+import android.text.TextPaint
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Paint
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.transformable
+import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -45,6 +58,8 @@ import com.example.fieldmaintenance.data.model.*
 import com.example.fieldmaintenance.data.model.label
 import com.example.fieldmaintenance.ui.components.AmplifierAdjustmentCard
 import com.example.fieldmaintenance.ui.components.NodeAdjustmentCard
+import com.example.fieldmaintenance.ui.navigation.PendingMeasurementAssetIdKey
+import com.example.fieldmaintenance.ui.navigation.PendingMeasurementReportIdKey
 import com.example.fieldmaintenance.ui.navigation.Screen
 import com.example.fieldmaintenance.ui.viewmodel.ReportViewModel
 import com.example.fieldmaintenance.ui.viewmodel.ReportViewModelFactory
@@ -58,6 +73,10 @@ import com.example.fieldmaintenance.util.PlanCache
 import com.example.fieldmaintenance.util.PlanRepository
 import com.example.fieldmaintenance.util.hasIncompleteAssets
 import java.util.Locale
+import java.io.FileOutputStream
+import androidx.exifinterface.media.ExifInterface
+import java.text.SimpleDateFormat
+import java.util.Date
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.map
@@ -740,6 +759,23 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
                 "Fotos",
                 style = MaterialTheme.typography.titleMedium
             )
+
+            val assetDisplayName = remember(reportNodeName, assetType, port, portIndex) {
+                val baseNodeName = reportNodeName.ifBlank { "Nodo" }
+                if (assetType == AssetType.NODE) {
+                    baseNodeName
+                } else {
+                    val code = if (port != null && portIndex != null) {
+                        "${port?.name}${String.format("%02d", portIndex)}"
+                    } else {
+                        "SIN-COD"
+                    }
+                    "$baseNodeName $code".trim()
+                }
+            }
+            val eventName = remember(report?.eventName) {
+                report?.eventName?.trim().orEmpty().ifBlank { "Sin evento" }
+            }
             
             // Foto del Módulo (no para RPHY)
             if (assetType != AssetType.NODE || technology != "RPHY") {
@@ -748,6 +784,8 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
                     reportId = reportId,
                     assetId = workingAssetId,
                     photoType = PhotoType.MODULE,
+                    assetLabel = assetDisplayName,
+                    eventName = eventName,
                     repository = repository,
                     minRequired = if (assetType == AssetType.NODE && technology != "RPHY") 2 else 0,
                     showRequiredError = attemptedSave && (assetType != AssetType.NODE || technology != "RPHY"),
@@ -764,6 +802,8 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
                     reportId = reportId,
                     assetId = workingAssetId,
                     photoType = PhotoType.OPTICS,
+                    assetLabel = assetDisplayName,
+                    eventName = eventName,
                     repository = repository,
                     minRequired = 1,
                     showRequiredError = attemptedSave,
@@ -778,6 +818,8 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
                     reportId = reportId,
                     assetId = workingAssetId,
                     photoType = PhotoType.MONITORING,
+                    assetLabel = assetDisplayName,
+                    eventName = eventName,
                     repository = repository,
                     minRequired = 0,
                     showRequiredError = false,
@@ -795,6 +837,8 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
                     reportId = reportId,
                     assetId = workingAssetId,
                     photoType = PhotoType.SPECTRUM,
+                    assetLabel = assetDisplayName,
+                    eventName = eventName,
                     repository = repository,
                     minRequired = 0,
                     showRequiredError = false,
@@ -826,6 +870,7 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
                 Spacer(modifier = Modifier.height(8.dp))
                 AssetFileSection(
                     context = context,
+                    navController = navController,
                     reportFolder = MaintenanceStorage.reportFolderName(report?.eventName, reportId),
                     asset = Asset(
                         id = workingAssetId,
@@ -897,27 +942,15 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
         val r = report ?: return
         FinalizeReportDialog(
             onDismiss = { showFinalizeDialog = false },
-            onSendEmailPdf = {
+            onSendEmailPackage = {
                 scope.launch {
-                    val pdfFile = exportManager.exportToPDF(r)
-                    com.example.fieldmaintenance.util.EmailManager.sendEmail(context, r.eventName, listOf(pdfFile))
+                    val bundleFile = exportManager.exportToBundleZip(r)
+                    com.example.fieldmaintenance.util.EmailManager.sendEmail(context, r.eventName, listOf(bundleFile))
                 }
             },
-            onSendEmailJson = {
+            onExportPackage = {
                 scope.launch {
-                    val zipFile = exportManager.exportToZIP(r)
-                    com.example.fieldmaintenance.util.EmailManager.sendEmail(context, r.eventName, listOf(zipFile))
-                }
-            },
-            onExportPDF = {
-                scope.launch {
-                    exportManager.exportPdfToDownloads(r)
-                    snackbarHostState.showSnackbar("PDF guardado en Descargas/FieldMaintenance")
-                }
-            },
-            onExportJSON = {
-                scope.launch {
-                    exportManager.exportZipToDownloads(r)
+                    exportManager.exportBundleToDownloads(r)
                     snackbarHostState.showSnackbar("ZIP guardado en Descargas/FieldMaintenance")
                 }
             },
@@ -935,6 +968,8 @@ fun PhotoSection(
     reportId: String,
     assetId: String,
     photoType: PhotoType,
+    assetLabel: String,
+    eventName: String,
     repository: com.example.fieldmaintenance.data.repository.MaintenanceRepository,
     minRequired: Int,
     showRequiredError: Boolean,
@@ -953,8 +988,10 @@ fun PhotoSection(
     val isMissingRequired = showRequiredError && minRequired > 0 && photos.size < minRequired
     val isOverMax = photos.size > maxAllowed
     val isAtMax = photos.size >= maxAllowed
+    val allowsGallery = photoType != PhotoType.MODULE && photoType != PhotoType.OPTICS
 
     var photoToDelete by remember { mutableStateOf<com.example.fieldmaintenance.data.model.Photo?>(null) }
+    var photoToPreview by remember { mutableStateOf<com.example.fieldmaintenance.data.model.Photo?>(null) }
     // These must survive configuration changes (e.g., rotating to landscape opens camera and Activity may recreate)
     var pendingCameraFilePath by rememberSaveable { mutableStateOf<String?>(null) }
     var pendingCameraUriString by rememberSaveable { mutableStateOf<String?>(null) }
@@ -1002,6 +1039,10 @@ fun PhotoSection(
         if (!ok) return@rememberLauncherForActivityResult
 
         scope.launch {
+            val label = buildPhotoLabel(context, file, assetLabel, eventName)
+            if (label != null) {
+                annotateImageWithLabel(file, label)
+            }
             repository.insertPhoto(
                 com.example.fieldmaintenance.data.model.Photo(
                     assetId = assetId,
@@ -1029,7 +1070,7 @@ fun PhotoSection(
             Toast.makeText(context, "Permiso de cámara denegado", Toast.LENGTH_SHORT).show()
         }
     }
-    
+
     // Función para crear archivo temporal para la cámara
     val takePicture = {
         try {
@@ -1100,14 +1141,16 @@ fun PhotoSection(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                OutlinedButton(
-                    onClick = { if (!isAtMax) galleryLauncher.launch("image/*") },
-                    modifier = Modifier.weight(1f),
-                    enabled = !isAtMax
-                ) {
-                    Icon(Icons.Default.Image, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Galería")
+                if (allowsGallery) {
+                    OutlinedButton(
+                        onClick = { if (!isAtMax) galleryLauncher.launch("image/*") },
+                        modifier = Modifier.weight(1f),
+                        enabled = !isAtMax
+                    ) {
+                        Icon(Icons.Default.Image, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Galería")
+                    }
                 }
                 
                 OutlinedButton(
@@ -1136,7 +1179,7 @@ fun PhotoSection(
                         modifier = Modifier
                             .size(72.dp)
                             .combinedClickable(
-                                onClick = {},
+                                onClick = { photoToPreview = photo },
                                 onLongClick = { photoToDelete = photo }
                             ),
                         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
@@ -1149,6 +1192,44 @@ fun PhotoSection(
                     }
                 }
             }
+            }
+        }
+    }
+
+    photoToPreview?.let { photo ->
+        var scale by remember { mutableStateOf(1f) }
+        val transformState = rememberTransformableState { zoomChange, _, _ ->
+            scale = (scale * zoomChange).coerceIn(1f, 5f)
+        }
+        androidx.compose.ui.window.Dialog(onDismissRequest = { photoToPreview = null }) {
+            Surface(
+                shape = MaterialTheme.shapes.medium,
+                tonalElevation = 4.dp
+            ) {
+                Column(
+                    modifier = Modifier
+                        .padding(12.dp)
+                        .fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    androidx.compose.foundation.Image(
+                        painter = rememberAsyncImagePainter(File(photo.filePath)),
+                        contentDescription = null,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .graphicsLayer(
+                                scaleX = scale,
+                                scaleY = scale
+                            )
+                            .transformable(transformState)
+                    )
+                    TextButton(
+                        onClick = { photoToPreview = null },
+                        modifier = Modifier.align(Alignment.End)
+                    ) {
+                        Text("Cerrar")
+                    }
+                }
             }
         }
     }
@@ -1174,9 +1255,109 @@ fun PhotoSection(
     }
 }
 
+private suspend fun buildPhotoLabel(
+    context: Context,
+    file: File,
+    assetLabel: String,
+    eventName: String
+): String? {
+    val exif = runCatching { ExifInterface(file.absolutePath) }.getOrNull()
+    val latLong = exif?.latLong
+    val latitude = latLong?.getOrNull(0)
+    val longitude = latLong?.getOrNull(1)
+    val address = if (latitude != null && longitude != null) {
+        withContext(Dispatchers.IO) {
+            runCatching {
+                @Suppress("DEPRECATION")
+                Geocoder(context, Locale.getDefault())
+                    .getFromLocation(latitude, longitude, 1)
+                    ?.firstOrNull()
+                    ?.getAddressLine(0)
+            }.getOrNull()
+        }
+    } else {
+        null
+    }
+    val coords = if (latitude != null && longitude != null) {
+        String.format(Locale.getDefault(), "%.5f, %.5f", latitude, longitude)
+    } else {
+        null
+    }
+    val dateTime = exif?.getAttribute(ExifInterface.TAG_DATETIME_ORIGINAL)
+        ?: exif?.getAttribute(ExifInterface.TAG_DATETIME)
+    val formattedDateTime = dateTime?.let { raw ->
+        runCatching {
+            val parsed = SimpleDateFormat("yyyy:MM:dd HH:mm:ss", Locale.getDefault()).parse(raw)
+            SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(parsed ?: Date())
+        }.getOrNull()
+    } ?: SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date(file.lastModified()))
+
+    val headerLine = "$assetLabel - $eventName"
+    val locationLine = when {
+        !address.isNullOrBlank() && coords != null -> "$address ($coords)"
+        coords != null -> coords
+        else -> "Ubicación no disponible"
+    }
+    val timeLine = formattedDateTime
+    return "$headerLine\n$locationLine\n$timeLine"
+}
+
+private fun annotateImageWithLabel(file: File, label: String) {
+    val bitmap = BitmapFactory.decodeFile(file.absolutePath) ?: return
+    val mutable = bitmap.copy(Bitmap.Config.ARGB_8888, true)
+    val canvas = Canvas(mutable)
+    val padding = (mutable.width * 0.03f).coerceIn(12f, 36f)
+    val textSize = (mutable.width * 0.035f).coerceIn(20f, 48f)
+    val textPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = android.graphics.Color.WHITE
+        this.textSize = textSize
+    }
+    val maxWidth = (mutable.width - padding * 2).toInt()
+    val layout = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+        StaticLayout.Builder
+            .obtain(label, 0, label.length, textPaint, maxWidth)
+            .setAlignment(Layout.Alignment.ALIGN_CENTER)
+            .setLineSpacing(0f, 1f)
+            .build()
+    } else {
+        @Suppress("DEPRECATION")
+        StaticLayout(
+            label,
+            textPaint,
+            maxWidth,
+            Layout.Alignment.ALIGN_CENTER,
+            1f,
+            0f,
+            false
+        )
+    }
+    val backgroundPaint = Paint().apply {
+        color = android.graphics.Color.argb(170, 0, 0, 0)
+    }
+    val totalHeight = layout.height + (padding * 2).toInt()
+    val top = (mutable.height - totalHeight).coerceAtLeast(0)
+    canvas.drawRect(
+        0f,
+        top.toFloat(),
+        mutable.width.toFloat(),
+        mutable.height.toFloat(),
+        backgroundPaint
+    )
+    canvas.save()
+    val textX = (mutable.width - layout.width) / 2f
+    canvas.translate(textX, top + padding)
+    layout.draw(canvas)
+    canvas.restore()
+
+    FileOutputStream(file).use { out ->
+        mutable.compress(Bitmap.CompressFormat.JPEG, 90, out)
+    }
+}
+
 @Composable
 private fun AssetFileSection(
     context: Context,
+    navController: NavController,
     reportFolder: String,
     asset: Asset
 ) {
@@ -1195,31 +1376,38 @@ private fun AssetFileSection(
 
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { isExpanded = !isExpanded },
-                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Archivos de Mediciones", style = MaterialTheme.typography.titleMedium)
-                Icon(
-                    if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                    contentDescription = null
+                Text(
+                    "Carga de Mediciones",
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f)
                 )
+                IconButton(onClick = { isExpanded = !isExpanded }) {
+                    Icon(
+                        if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                        contentDescription = if (isExpanded) "Colapsar" else "Expandir"
+                    )
+                }
             }
             if (isExpanded) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(onClick = {
                         if (viaviIntent != null) {
+                            navController.currentBackStackEntry?.savedStateHandle?.apply {
+                                set(PendingMeasurementReportIdKey, asset.reportId)
+                                set(PendingMeasurementAssetIdKey, asset.id)
+                            }
                             runCatching { context.startActivity(viaviIntent) }
                                 .onFailure {
                                     Toast.makeText(
