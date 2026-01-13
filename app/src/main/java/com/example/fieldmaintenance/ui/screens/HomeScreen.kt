@@ -17,6 +17,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Settings
@@ -63,6 +64,7 @@ fun HomeScreen(navController: NavController) {
     var searchQuery by remember { mutableStateOf("") }
     var showSearch by remember { mutableStateOf(false) }
     var reportToDelete by remember { mutableStateOf<MaintenanceReport?>(null) }
+    var showTrashChooser by remember { mutableStateOf(false) }
 
     val focusRequester = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
@@ -115,7 +117,8 @@ fun HomeScreen(navController: NavController) {
                     selected = false,
                     onClick = {
                         val reportId = viewModel.createNewReport()
-                        MaintenanceStorage.ensureReportDir(context, reportId)
+                        val reportFolder = MaintenanceStorage.reportFolderName(null, reportId)
+                        MaintenanceStorage.ensureReportDir(context, reportFolder)
                         navController.navigate(Screen.GeneralInfo.createRoute(reportId))
                     },
                     icon = { Icon(Icons.Default.Add, contentDescription = "Nuevo") },
@@ -150,7 +153,7 @@ fun HomeScreen(navController: NavController) {
                 )
                 NavigationBarItem(
                     selected = false,
-                    onClick = { navController.navigate(Screen.Trash.route) },
+                    onClick = { showTrashChooser = true },
                     icon = { Icon(Icons.Default.Delete, contentDescription = "Papelera") },
                     label = { Text("Papelera") }
                 )
@@ -161,6 +164,9 @@ fun HomeScreen(navController: NavController) {
             TopAppBar(
                 title = { Text("Inicio del Mantenimiento") },
                 actions = {
+                    IconButton(onClick = { navController.navigate(Screen.ShareImport.route) }) {
+                        Icon(Icons.Default.Storage, contentDescription = "Importar mediciones")
+                    }
                     IconButton(onClick = { navController.navigate(Screen.Settings.route) }) {
                         Icon(Icons.Default.Settings, contentDescription = "Configuración")
                     }
@@ -217,6 +223,26 @@ fun HomeScreen(navController: NavController) {
                 }
             }
         }
+    }
+
+    if (showTrashChooser) {
+        AlertDialog(
+            onDismissRequest = { showTrashChooser = false },
+            title = { Text("Seleccionar papelera") },
+            text = { Text("¿A qué papelera deseas ingresar?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showTrashChooser = false
+                    navController.navigate(Screen.Trash.route)
+                }) { Text("Mantenimientos") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showTrashChooser = false
+                    navController.navigate(Screen.MeasurementsTrash.route)
+                }) { Text("Mediciones") }
+            }
+        )
     }
     
     reportToDelete?.let { report ->

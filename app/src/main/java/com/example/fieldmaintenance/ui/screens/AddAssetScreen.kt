@@ -15,6 +15,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Download
@@ -32,7 +35,9 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import coil.compose.rememberAsyncImagePainter
@@ -51,6 +56,7 @@ import com.example.fieldmaintenance.util.AppSettings
 import com.example.fieldmaintenance.util.MaintenanceStorage
 import com.example.fieldmaintenance.util.PlanCache
 import com.example.fieldmaintenance.util.PlanRepository
+import com.example.fieldmaintenance.util.hasIncompleteAssets
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collectLatest
@@ -59,6 +65,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 // Note: some Material3 versions only support menuAnchor() and menuAnchor(type, enabled).
 import java.io.File
+import java.net.URLConnection
 import java.util.UUID
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -77,6 +84,7 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
     val isEdit = assetId != null
     val report by viewModel.report.collectAsState()
     var showFinalizeDialog by remember { mutableStateOf(false) }
+    var hasMissingAssets by remember { mutableStateOf(false) }
 
     // Mensaje emergente al ingresar al módulo de activos (SnackBar, para que no se corte el texto)
     val syncMsgShown = rememberSaveable(workingAssetId) { mutableStateOf(false) }
@@ -99,6 +107,7 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
     var opticsPhotoCount by remember { mutableStateOf(0) }
     var monitoringPhotoCount by remember { mutableStateOf(0) }
     var spectrumPhotoCount by remember { mutableStateOf(0) }
+    var autoSaved by rememberSaveable(workingAssetId) { mutableStateOf(false) }
 
     // Amplifier adjustment (persisted per asset)
     val amplifierAdjustment by repository.getAmplifierAdjustment(workingAssetId)
@@ -107,6 +116,55 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
 
     // Node adjustment (persisted per asset)
     val nodeAdjustment by repository.getNodeAdjustment(workingAssetId).collectAsState(initial = null)
+
+    val techNormalized = technology?.trim()?.lowercase(Locale.getDefault()) ?: ""
+    val ampAdj = currentAmplifierAdjustment ?: amplifierAdjustment
+    val autoBaseOk = frequency != null
+    val autoNodeOk = assetType != AssetType.NODE || technology != null
+    val autoAmplifierOk = assetType != AssetType.AMPLIFIER || (amplifierMode != null && port != null && portIndex != null)
+    val autoAmplifierTablesOk = if (assetType != AssetType.AMPLIFIER) true else {
+        val okAdj = (frequency != null && amplifierMode != null) &&
+            ampAdj != null &&
+            ampAdj.inputCh50Dbmv != null &&
+            ampAdj.inputCh116Dbmv != null &&
+            (ampAdj.inputHighFreqMHz == 750 || ampAdj.inputHighFreqMHz == 870) &&
+            ampAdj.planLowDbmv != null &&
+            ampAdj.planHighDbmv != null &&
+            ampAdj.outCh50Dbmv != null &&
+            ampAdj.outCh70Dbmv != null &&
+            ampAdj.outCh110Dbmv != null &&
+            ampAdj.outCh116Dbmv != null &&
+            ampAdj.outCh136Dbmv != null
+        okAdj
+    }
+
+    val autoNodeAdjOk = if (assetType != AssetType.NODE) true else {
+        val adj = nodeAdjustment
+            ?: com.example.fieldmaintenance.data.model.NodeAdjustment(assetId = workingAssetId, reportId = reportId)
+        when {
+            techNormalized == "rphy" -> {
+                adj.sfpDistance != null && adj.poDirectaConfirmed && adj.poRetornoConfirmed
+            }
+            techNormalized == "vccap" -> {
+                adj.sfpDistance != null && adj.poDirectaConfirmed && adj.poRetornoConfirmed &&
+                    adj.spectrumConfirmed && adj.docsisConfirmed && frequency != null
+            }
+            techNormalized == "legacy" -> {
+                val txOk = adj.tx1310Confirmed || adj.tx1550Confirmed
+                val poOk = adj.poConfirmed
+                val rxOk = !adj.rxPadSelection.isNullOrBlank()
+                val measOk = adj.measurementConfirmed
+                val specOk = adj.spectrumConfirmed
+                txOk && poOk && rxOk && measOk && specOk && frequency != null
+            }
+            else -> {
+                adj.nonLegacyConfirmed
+            }
+        }
+    }
+
+    val nodeAllowed = !(assetType == AssetType.NODE && hasNode && !isEdit)
+    val autoSaveReady = autoBaseOk && autoNodeOk && autoAmplifierOk && autoAmplifierTablesOk && autoNodeAdjOk && nodeAllowed
     
     LaunchedEffect(Unit) {
         hasNode = viewModel.hasNode()
@@ -144,6 +202,10 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
                 portIndex = asset.portIndex
             }
         }
+    }
+
+    LaunchedEffect(reportId, report) {
+        hasMissingAssets = hasIncompleteAssets(context, reportId, report, repository)
     }
 
     // Auto-fill technology from plan if available and not already set
@@ -234,6 +296,41 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
         return ok
     }
 
+    LaunchedEffect(
+        autoSaveReady,
+        assetType,
+        frequency,
+        technology,
+        amplifierMode,
+        port,
+        portIndex,
+        nodeAdjustment,
+        currentAmplifierAdjustment,
+        amplifierAdjustment
+    ) {
+        if (!autoSaveReady) return@LaunchedEffect
+        val asset = Asset(
+            id = workingAssetId,
+            reportId = reportId,
+            type = assetType,
+            frequencyMHz = frequency?.mhz ?: 0,
+            amplifierMode = amplifierMode,
+            port = port,
+            portIndex = portIndex,
+            technology = if (assetType == AssetType.NODE) technology else null
+        )
+        if (isEdit || autoSaved) {
+            viewModel.updateAsset(asset)
+        } else {
+            viewModel.addAsset(asset)
+        }
+        autoSaved = true
+        withContext(Dispatchers.IO) {
+            val reportFolder = MaintenanceStorage.reportFolderName(report?.eventName, reportId)
+            MaintenanceStorage.ensureAssetDir(context, reportFolder, asset)
+        }
+    }
+
     Scaffold(
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         topBar = {
@@ -280,7 +377,11 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
                                 )
                                 if (isEdit) viewModel.updateAsset(asset) else viewModel.addAsset(asset)
                                 withContext(Dispatchers.IO) {
-                                    MaintenanceStorage.ensureAssetDir(context, reportId, asset)
+                                    val reportFolder = MaintenanceStorage.reportFolderName(
+                                        report?.eventName,
+                                        reportId
+                                    )
+                                    MaintenanceStorage.ensureAssetDir(context, reportFolder, asset)
                                 }
                                 snackbarHostState.showSnackbar("Guardado")
                             } else {
@@ -720,6 +821,24 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
                     )
                 }
             }
+
+            if (autoSaved) {
+                Spacer(modifier = Modifier.height(8.dp))
+                AssetFileSection(
+                    context = context,
+                    reportFolder = MaintenanceStorage.reportFolderName(report?.eventName, reportId),
+                    asset = Asset(
+                        id = workingAssetId,
+                        reportId = reportId,
+                        type = assetType,
+                        frequencyMHz = frequency?.mhz ?: 0,
+                        amplifierMode = amplifierMode,
+                        port = port,
+                        portIndex = portIndex,
+                        technology = if (assetType == AssetType.NODE) technology else null
+                    )
+                )
+            }
             
             Spacer(modifier = Modifier.height(16.dp))
             
@@ -804,7 +923,8 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
             },
             onGoHome = {
                 navController.navigate(Screen.Home.route) { popUpTo(0) }
-            }
+            },
+            showMissingWarning = hasMissingAssets
         )
     }
 }
@@ -868,7 +988,7 @@ fun PhotoSection(
             }
         }
     }
-    
+
     // Launcher para tomar foto con la cámara
     val cameraLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.TakePicture()
@@ -1049,6 +1169,146 @@ fun PhotoSection(
             },
             dismissButton = {
                 TextButton(onClick = { photoToDelete = null }) { Text("Cancelar") }
+            }
+        )
+    }
+}
+
+@Composable
+private fun AssetFileSection(
+    context: Context,
+    reportFolder: String,
+    asset: Asset
+) {
+    val assetDir = remember(reportFolder, asset) {
+        MaintenanceStorage.ensureAssetDir(context, reportFolder, asset)
+    }
+    var files by remember(assetDir) { mutableStateOf(assetDir.listFiles()?.sortedBy { it.name } ?: emptyList()) }
+    var fileToDelete by remember { mutableStateOf<File?>(null) }
+    val scope = rememberCoroutineScope()
+
+    val viaviIntent = remember {
+        context.packageManager.getLaunchIntentForPackage("com.viavisolutions.mobiletech")
+    }
+
+    var isExpanded by remember { mutableStateOf(true) }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { isExpanded = !isExpanded },
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Archivos de Mediciones", style = MaterialTheme.typography.titleMedium)
+                Icon(
+                    if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    contentDescription = null
+                )
+            }
+            if (isExpanded) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = {
+                        if (viaviIntent != null) {
+                            runCatching { context.startActivity(viaviIntent) }
+                                .onFailure {
+                                    Toast.makeText(
+                                        context,
+                                        "No se pudo abrir Viavi",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                        } else {
+                            Toast.makeText(
+                                context,
+                                "Viavi (mobiletech) no está instalada",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    }) {
+                        Icon(Icons.Default.Description, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Agregar Mediciones")
+                    }
+                }
+
+                if (files.isEmpty()) {
+                    Text("No hay archivos adjuntos.")
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        files.forEach { file ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .combinedClickable(
+                                        onClick = {
+                                            val uri = FileProvider.getUriForFile(
+                                                context,
+                                                "${context.packageName}.fileprovider",
+                                                file
+                                            )
+                                            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                                                setDataAndType(uri, URLConnection.guessContentTypeFromName(file.name) ?: "*/*")
+                                                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                            }
+                                            runCatching { context.startActivity(intent) }
+                                                .onFailure {
+                                                    Toast.makeText(
+                                                        context,
+                                                        "No se pudo abrir el archivo",
+                                                        Toast.LENGTH_SHORT
+                                                    ).show()
+                                                }
+                                        },
+                                        onLongClick = { fileToDelete = file }
+                                    )
+                                    .padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = file.name,
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (fileToDelete != null) {
+        AlertDialog(
+            onDismissRequest = { fileToDelete = null },
+            title = { Text("Mover a papelera") },
+            text = { Text("¿Esta seguro de mover este archivo a la papelera?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    val target = fileToDelete
+                    fileToDelete = null
+                    if (target != null) {
+                        scope.launch(Dispatchers.IO) {
+                            MaintenanceStorage.moveMeasurementFileToTrash(context, target)
+                            val updated = assetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
+                            withContext(Dispatchers.Main) {
+                                files = updated
+                            }
+                        }
+                    }
+                }) { Text("Mover") }
+            },
+            dismissButton = {
+                TextButton(onClick = { fileToDelete = null }) { Text("Cancelar") }
             }
         )
     }

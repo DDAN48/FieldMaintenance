@@ -15,10 +15,13 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Work
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -34,6 +37,7 @@ import com.example.fieldmaintenance.ui.viewmodel.ReportViewModelFactory
 import com.example.fieldmaintenance.util.DatabaseProvider
 import com.example.fieldmaintenance.util.EmailManager
 import com.example.fieldmaintenance.util.ExportManager
+import com.example.fieldmaintenance.util.MaintenanceStorage
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.saveable.rememberSaveable
 
@@ -56,6 +60,8 @@ fun AssetSummaryScreen(navController: NavController, reportId: String) {
     val exportManager = remember { ExportManager(context, repository) }
     var assetToDelete by remember { mutableStateOf<Asset?>(null) }
     val hasNode = assets.any { it.type == AssetType.NODE }
+    val missingFlags = remember { mutableStateMapOf<String, Boolean>() }
+    val hasMissingAssets = missingFlags.values.any { it }
     
     Scaffold(
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
@@ -97,9 +103,79 @@ fun AssetSummaryScreen(navController: NavController, reportId: String) {
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 items(assets) { asset ->
+                    val photos by repository.getPhotosByAssetId(asset.id).collectAsState(initial = emptyList())
+                    val nodeAdjustment by repository.getNodeAdjustment(asset.id).collectAsState(initial = null)
+                    val amplifierAdjustment by repository.getAmplifierAdjustment(asset.id).collectAsState(initial = null)
+                    val reportFolder = MaintenanceStorage.reportFolderName(report?.eventName, reportId)
+                    val measurementCount = remember(asset, reportFolder) {
+                        MaintenanceStorage.ensureAssetDir(context, reportFolder, asset)
+                            .listFiles()
+                            ?.count { it.isFile } ?: 0
+                    }
+                    val hasMissingData = remember(
+                        asset,
+                        photos,
+                        nodeAdjustment,
+                        amplifierAdjustment,
+                        measurementCount
+                    ) {
+                        val techNormalized = asset.technology?.trim()?.lowercase() ?: ""
+                        val moduleCount = photos.count { it.photoType == PhotoType.MODULE }
+                        val opticsCount = photos.count { it.photoType == PhotoType.OPTICS }
+                        val moduleOk = if (asset.type == AssetType.NODE && techNormalized == "rphy") true else moduleCount == 2
+                        val opticsOk = if (asset.type == AssetType.NODE && (techNormalized == "rphy" || techNormalized == "vccap")) true
+                        else asset.type != AssetType.NODE || (opticsCount in 1..2)
+
+                        val nodeAdjOk = if (asset.type != AssetType.NODE) true else {
+                            val adj = nodeAdjustment
+                                ?: com.example.fieldmaintenance.data.model.NodeAdjustment(assetId = asset.id, reportId = reportId)
+                            when {
+                                techNormalized == "rphy" -> {
+                                    adj.sfpDistance != null && adj.poDirectaConfirmed && adj.poRetornoConfirmed
+                                }
+                                techNormalized == "vccap" -> {
+                                    adj.sfpDistance != null && adj.poDirectaConfirmed && adj.poRetornoConfirmed &&
+                                        adj.spectrumConfirmed && adj.docsisConfirmed
+                                }
+                                techNormalized == "legacy" -> {
+                                    val txOk = adj.tx1310Confirmed || adj.tx1550Confirmed
+                                    val poOk = adj.poConfirmed
+                                    val rxOk = !adj.rxPadSelection.isNullOrBlank()
+                                    val measOk = adj.measurementConfirmed
+                                    val specOk = adj.spectrumConfirmed
+                                    txOk && poOk && rxOk && measOk && specOk
+                                }
+                                else -> adj.nonLegacyConfirmed
+                            }
+                        }
+
+                        val ampAdjOk = if (asset.type != AssetType.AMPLIFIER) true else {
+                            val adj = amplifierAdjustment
+                            adj != null &&
+                                adj.inputCh50Dbmv != null &&
+                                adj.inputCh116Dbmv != null &&
+                                (adj.inputHighFreqMHz == 750 || adj.inputHighFreqMHz == 870) &&
+                                adj.planLowDbmv != null &&
+                                adj.planHighDbmv != null &&
+                                adj.outCh50Dbmv != null &&
+                                adj.outCh70Dbmv != null &&
+                                adj.outCh110Dbmv != null &&
+                                adj.outCh116Dbmv != null &&
+                                adj.outCh136Dbmv != null
+                        }
+
+                        val measurementsOk = measurementCount > 0
+                        !(moduleOk && opticsOk && nodeAdjOk && ampAdjOk && measurementsOk)
+                    }
+
+                    LaunchedEffect(hasMissingData) {
+                        missingFlags[asset.id] = hasMissingData
+                    }
+
                     AssetSummaryCard(
                         asset = asset,
                         nodeName = report?.nodeName.orEmpty(),
+                        hasMissingData = hasMissingData,
                         onClick = {
                             navController.navigate(Screen.AddAsset.createRoute(reportId, asset.id))
                         },
@@ -159,7 +235,8 @@ fun AssetSummaryScreen(navController: NavController, reportId: String) {
             },
             onGoHome = {
                 navController.navigate(Screen.Home.route) { popUpTo(0) }
-            }
+            },
+            showMissingWarning = hasMissingAssets
         )
     }
     
@@ -185,6 +262,7 @@ fun AssetSummaryScreen(navController: NavController, reportId: String) {
 fun AssetSummaryCard(
     asset: Asset,
     nodeName: String,
+    hasMissingData: Boolean,
     onClick: () -> Unit,
     onLongClick: () -> Unit
 ) {
@@ -195,7 +273,12 @@ fun AssetSummaryCard(
                 onClick = onClick,
                 onLongClick = onLongClick
             ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        colors = if (hasMissingData) {
+            CardDefaults.cardColors(containerColor = Color(0xFFDE3C2A))
+        } else {
+            CardDefaults.cardColors()
+        }
     ) {
         Row(
             modifier = Modifier
@@ -218,7 +301,8 @@ fun AssetSummaryCard(
                             "$prefix $code"
                         }
                     },
-                    style = MaterialTheme.typography.titleMedium
+                    style = MaterialTheme.typography.titleMedium,
+                    color = if (hasMissingData) Color.White else MaterialTheme.colorScheme.onSurface
                 )
                 Text(
                     text = buildString {
@@ -229,13 +313,13 @@ fun AssetSummaryCard(
                         }
                     },
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                    color = if (hasMissingData) Color.White else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                 )
             }
             Icon(
-                Icons.Default.CheckCircle,
+                if (hasMissingData) Icons.Default.Warning else Icons.Default.CheckCircle,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary
+                tint = if (hasMissingData) Color.White else MaterialTheme.colorScheme.primary
             )
         }
     }
@@ -248,7 +332,8 @@ fun FinalizeReportDialog(
     onSendEmailJson: () -> Unit,
     onExportPDF: () -> Unit,
     onExportJSON: () -> Unit,
-    onGoHome: () -> Unit
+    onGoHome: () -> Unit,
+    showMissingWarning: Boolean
 ) {
     var showEmailChoice by remember { mutableStateOf(false) }
 
@@ -259,21 +344,36 @@ fun FinalizeReportDialog(
             Column(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                TextButton(onClick = {
-                    showEmailChoice = true
-                }) {
+                TextButton(
+                    onClick = {
+                        if (!showMissingWarning) {
+                            showEmailChoice = true
+                        }
+                    },
+                    enabled = !showMissingWarning
+                ) {
                     Text("📧 Enviar por correo")
                 }
-                TextButton(onClick = {
-                    onExportPDF()
-                    onDismiss()
-                }) {
+                TextButton(
+                    onClick = {
+                        if (!showMissingWarning) {
+                            onExportPDF()
+                            onDismiss()
+                        }
+                    },
+                    enabled = !showMissingWarning
+                ) {
                     Text("📄 Exportar PDF")
                 }
-                TextButton(onClick = {
-                    onExportJSON()
-                    onDismiss()
-                }) {
+                TextButton(
+                    onClick = {
+                        if (!showMissingWarning) {
+                            onExportJSON()
+                            onDismiss()
+                        }
+                    },
+                    enabled = !showMissingWarning
+                ) {
                     Text("📦 Exportar editable (JSON)")
                 }
                 TextButton(onClick = {
@@ -284,11 +384,13 @@ fun FinalizeReportDialog(
                 }
 
                 Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                    "Recuerde sincronizar mediciones",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                )
+                if (showMissingWarning) {
+                    Text(
+                        "Debe completar datos de activos o borrarlos para poder exportar",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFFDE3C2A)
+                    )
+                }
             }
         },
         confirmButton = {
@@ -320,4 +422,3 @@ fun FinalizeReportDialog(
         )
     }
 }
-

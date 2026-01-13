@@ -10,18 +10,18 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.lifecycle.lifecycleScope
 import androidx.navigation.compose.rememberNavController
 import com.example.fieldmaintenance.ui.navigation.NavGraph
 import com.example.fieldmaintenance.ui.theme.FieldMaintenanceTheme
-import com.example.fieldmaintenance.util.MaintenanceStorage
 import com.example.fieldmaintenance.util.PlanRepository
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
+    private val sharedUrisState = mutableStateOf<List<Uri>>(emptyList())
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -38,7 +38,11 @@ class MainActivity : ComponentActivity() {
                         runCatching { PlanRepository(context).refreshOnAppStart() }
                     }
                     val navController = rememberNavController()
-                    NavGraph(navController = navController)
+                    NavGraph(
+                        navController = navController,
+                        sharedUris = sharedUrisState.value,
+                        onShareHandled = { sharedUrisState.value = emptyList() }
+                    )
                 }
             }
         }
@@ -62,11 +66,7 @@ class MainActivity : ComponentActivity() {
             else -> emptyList()
         }
         if (uris.isEmpty()) return
-        lifecycleScope.launch(Dispatchers.IO) {
-            uris.forEach { uri ->
-                MaintenanceStorage.copySharedFile(this@MainActivity, uri)
-            }
-        }
+        sharedUrisState.value = uris
         intent.action = null
         intent.replaceExtras(Bundle())
     }

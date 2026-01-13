@@ -14,15 +14,24 @@ import java.util.Locale
 
 object MaintenanceStorage {
     private const val BASE_FOLDER = "FieldMaintenance"
+    private const val TRASH_FOLDER = "Trash"
+    private const val MEASUREMENTS_TRASH_FOLDER = "Measurements"
+
+    fun reportFolderName(eventName: String?, fallbackId: String): String {
+        return sanitizeName(eventName?.takeIf { it.isNotBlank() } ?: fallbackId)
+    }
 
     fun baseDir(context: Context): File {
         val root = context.getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS) ?: context.filesDir
         return File(root, BASE_FOLDER).apply { mkdirs() }
     }
 
+    fun measurementTrashDir(context: Context): File {
+        return File(baseDir(context), "$TRASH_FOLDER/$MEASUREMENTS_TRASH_FOLDER").apply { mkdirs() }
+    }
+
     fun ensureReportDir(context: Context, reportFolderName: String): File {
-        val sanitized = sanitizeName(reportFolderName)
-        return File(baseDir(context), sanitized).apply { mkdirs() }
+        return File(baseDir(context), sanitizeName(reportFolderName)).apply { mkdirs() }
     }
 
     fun ensureAssetDir(context: Context, reportFolderName: String, asset: Asset): File {
@@ -37,13 +46,64 @@ object MaintenanceStorage {
         val fileName = sanitizeName(displayName ?: "shared_${System.currentTimeMillis()}")
         val baseName = fileName.substringBeforeLast('.', fileName)
         val reportDir = ensureReportDir(context, baseName)
-        val targetFile = uniqueFile(reportDir, fileName)
+        return copySharedFileToDir(context, uri, reportDir, fileName)
+    }
+
+    fun copySharedFileToDir(
+        context: Context,
+        uri: Uri,
+        targetDir: File,
+        overrideFileName: String? = null
+    ): File? {
+        targetDir.mkdirs()
+        val displayName = queryDisplayName(context, uri)
+        val fileName = sanitizeName(overrideFileName ?: displayName ?: "shared_${System.currentTimeMillis()}")
+        val targetFile = uniqueFile(targetDir, fileName)
         context.contentResolver.openInputStream(uri)?.use { input ->
             FileOutputStream(targetFile).use { output ->
                 input.copyTo(output)
             }
         } ?: return null
         return targetFile
+    }
+
+    fun moveMeasurementFileToTrash(context: Context, source: File): File? {
+        val base = baseDir(context)
+        val trashRoot = measurementTrashDir(context)
+        val relative = source.relativeToOrNull(base)?.path
+        val destination = if (relative != null) {
+            File(trashRoot, relative)
+        } else {
+            File(trashRoot, source.name)
+        }
+        destination.parentFile?.mkdirs()
+        val target = if (destination.exists()) {
+            uniqueFile(destination.parentFile ?: trashRoot, destination.name)
+        } else {
+            destination
+        }
+        return if (source.renameTo(target)) target else null
+    }
+
+    fun restoreMeasurementFile(context: Context, trashed: File): File? {
+        val base = baseDir(context)
+        val trashRoot = measurementTrashDir(context)
+        val relative = trashed.relativeToOrNull(trashRoot)?.path ?: trashed.name
+        val destination = File(base, relative)
+        destination.parentFile?.mkdirs()
+        val target = if (destination.exists()) {
+            uniqueFile(destination.parentFile ?: base, destination.name)
+        } else {
+            destination
+        }
+        return if (trashed.renameTo(target)) target else null
+    }
+
+    fun listMeasurementTrashFiles(context: Context): List<File> {
+        val trashRoot = measurementTrashDir(context)
+        return trashRoot.walkTopDown()
+            .filter { it.isFile }
+            .toList()
     }
 
     private fun assetFolderName(asset: Asset): String {

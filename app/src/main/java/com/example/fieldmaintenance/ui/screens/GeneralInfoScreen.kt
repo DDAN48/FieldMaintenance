@@ -29,10 +29,12 @@ import com.example.fieldmaintenance.ui.components.ReportBottomBar
 import com.example.fieldmaintenance.ui.components.ReportTab
 import com.example.fieldmaintenance.util.EmailManager
 import com.example.fieldmaintenance.util.ExportManager
+import com.example.fieldmaintenance.util.MaintenanceStorage
 import com.example.fieldmaintenance.util.PlanCache
 import com.example.fieldmaintenance.util.PlanRepository
 import com.example.fieldmaintenance.util.SettingsStore
 import com.example.fieldmaintenance.util.AppSettings
+import com.example.fieldmaintenance.util.hasIncompleteAssets
 import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -56,6 +58,7 @@ fun GeneralInfoScreen(navController: NavController, reportId: String) {
     val settingsStore = remember { SettingsStore(context.applicationContext) }
     val settings by settingsStore.settings.collectAsState(initial = AppSettings())
     var showFinalizeDialog by remember { mutableStateOf(false) }
+    var hasMissingAssets by remember { mutableStateOf(false) }
     
     var eventName by remember { mutableStateOf(report?.eventName ?: "") }
     var nodeName by remember { mutableStateOf(report?.nodeName ?: "") }
@@ -223,6 +226,8 @@ fun GeneralInfoScreen(navController: NavController, reportId: String) {
                         applyPlanToFields(findPlanRowByNode(), showNoMatchWarning = true)
                         if (validate()) {
                             viewModel.saveGeneralInfo(eventName, nodeName, responsible, contractor, meterNumber)
+                            val reportFolder = MaintenanceStorage.reportFolderName(eventName, reportId)
+                            MaintenanceStorage.ensureReportDir(context, reportFolder)
                             scope.launch { snackbarHostState.showSnackbar("Guardado") }
                         }
                     }) {
@@ -358,6 +363,8 @@ fun GeneralInfoScreen(navController: NavController, reportId: String) {
                     applyPlanToFields(findPlanRowByNode(), showNoMatchWarning = true)
                     if (validate()) {
                         viewModel.saveGeneralInfo(eventName, nodeName, responsible, contractor, meterNumber)
+                        val reportFolder = MaintenanceStorage.reportFolderName(eventName, reportId)
+                        MaintenanceStorage.ensureReportDir(context, reportFolder)
                         navController.navigate(Screen.AssetSummary.createRoute(reportId))
                     }
                 },
@@ -377,6 +384,10 @@ fun GeneralInfoScreen(navController: NavController, reportId: String) {
             deleteDraftIfEmptyAndIncomplete()
             navController.popBackStack()
         }
+    }
+
+    LaunchedEffect(reportId, report) {
+        hasMissingAssets = hasIncompleteAssets(context, reportId, report, repository)
     }
 
     if (showFinalizeDialog && report != null) {
@@ -408,8 +419,8 @@ fun GeneralInfoScreen(navController: NavController, reportId: String) {
             },
             onGoHome = {
                 navController.navigate(Screen.Home.route) { popUpTo(0) }
-            }
+            },
+            showMissingWarning = hasMissingAssets
         )
     }
 }
-
