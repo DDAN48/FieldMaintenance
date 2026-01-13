@@ -22,9 +22,11 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -34,6 +36,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -49,6 +52,8 @@ import androidx.navigation.NavController
 import com.example.fieldmaintenance.data.model.Asset
 import com.example.fieldmaintenance.data.model.AssetType
 import com.example.fieldmaintenance.data.model.MaintenanceReport
+import com.example.fieldmaintenance.ui.navigation.PendingMeasurementAssetIdKey
+import com.example.fieldmaintenance.ui.navigation.PendingMeasurementReportIdKey
 import com.example.fieldmaintenance.ui.navigation.Screen
 import com.example.fieldmaintenance.util.DatabaseProvider
 import com.example.fieldmaintenance.util.MaintenanceStorage
@@ -68,6 +73,43 @@ fun ShareImportScreen(
     val reports by repository.getAllReports().collectAsState(initial = emptyList())
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+    val previousEntry = navController.previousBackStackEntry
+    val pendingReportId = previousEntry?.savedStateHandle?.get<String>(PendingMeasurementReportIdKey)
+    val pendingAssetId = previousEntry?.savedStateHandle?.get<String>(PendingMeasurementAssetIdKey)
+    val hasPendingAsset = !pendingReportId.isNullOrBlank() && !pendingAssetId.isNullOrBlank()
+
+    LaunchedEffect(sharedUris, hasPendingAsset) {
+        if (!hasPendingAsset || sharedUris.isEmpty()) return@LaunchedEffect
+        val reportId = pendingReportId ?: return@LaunchedEffect
+        val assetId = pendingAssetId ?: return@LaunchedEffect
+        val report = withContext(Dispatchers.IO) { repository.getReportById(reportId) }
+        val asset = withContext(Dispatchers.IO) { repository.getAssetById(assetId) }
+        if (report == null || asset == null) {
+            previousEntry?.savedStateHandle?.remove<String>(PendingMeasurementReportIdKey)
+            previousEntry?.savedStateHandle?.remove<String>(PendingMeasurementAssetIdKey)
+            return@LaunchedEffect
+        }
+        val assetLabel = when (asset.type) {
+            AssetType.NODE -> "Nodo"
+            AssetType.AMPLIFIER -> {
+                val portName = asset.port?.name ?: ""
+                val portIndex = asset.portIndex?.let { String.format("%02d", it) } ?: ""
+                "Amplificador $portName$portIndex".trim()
+            }
+        }
+        withContext(Dispatchers.IO) {
+            val reportFolder = MaintenanceStorage.reportFolderName(report.eventName, report.id)
+            val assetDir = MaintenanceStorage.ensureAssetDir(context, reportFolder, asset)
+            sharedUris.forEach { uri ->
+                MaintenanceStorage.copySharedFileToDir(context, uri, assetDir)
+            }
+        }
+        previousEntry?.savedStateHandle?.remove<String>(PendingMeasurementReportIdKey)
+        previousEntry?.savedStateHandle?.remove<String>(PendingMeasurementAssetIdKey)
+        snackbarHostState.showSnackbar("Archivos guardados en $assetLabel")
+        onShareHandled()
+        navController.popBackStack()
+    }
 
     Scaffold(
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
@@ -75,11 +117,19 @@ fun ShareImportScreen(
             TopAppBar(
                 title = { Text("Importar Mediciones") },
                 navigationIcon = {
-                    androidx.compose.material3.IconButton(onClick = {
+                    IconButton(onClick = {
                         onShareHandled()
                         navController.popBackStack(Screen.Home.route, inclusive = false)
                     }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Atrás")
+                    }
+                },
+                actions = {
+                    IconButton(onClick = {
+                        onShareHandled()
+                        navController.navigate(Screen.Home.route)
+                    }) {
+                        Icon(Icons.Default.Home, contentDescription = "Inicio")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -102,12 +152,8 @@ fun ShareImportScreen(
             Spacer(modifier = Modifier.height(12.dp))
 
             if (sharedUris.isEmpty()) {
-                Text("No hay archivos para importar.")
+                Text("No hay archivos para importar. Puedes revisar las mediciones guardadas abajo.")
                 Spacer(modifier = Modifier.height(12.dp))
-                Button(onClick = { navController.navigate(Screen.Home.route) }) {
-                    Text("Ir al inicio")
-                }
-                return@Column
             }
 
             if (reports.isEmpty()) {
@@ -120,7 +166,11 @@ fun ShareImportScreen(
             }
 
             Text(
-                text = "Seleccione una carpeta para guardar las mediciones.",
+                text = if (sharedUris.isEmpty()) {
+                    "Seleccione un mantenimiento para ver las mediciones."
+                } else {
+                    "Seleccione una carpeta para guardar las mediciones."
+                },
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.SemiBold
             )
@@ -135,7 +185,13 @@ fun ShareImportScreen(
                         report = report,
                         sharedUris = sharedUris,
                         context = context,
-                        onShareHandled = onShareHandled,
+                        autoReturn = hasPendingAsset,
+                        onImportFinished = {
+                            onShareHandled()
+                            if (!navController.popBackStack()) {
+                                navController.navigate(Screen.Home.route)
+                            }
+                        },
                         onShowMessage = { message ->
                             scope.launch { snackbarHostState.showSnackbar(message) }
                         }
@@ -151,7 +207,8 @@ private fun ReportShareCard(
     report: MaintenanceReport,
     sharedUris: List<Uri>,
     context: Context,
-    onShareHandled: () -> Unit,
+    autoReturn: Boolean,
+    onImportFinished: () -> Unit,
     onShowMessage: (String) -> Unit
 ) {
     val repository = DatabaseProvider.getRepository()
@@ -203,7 +260,8 @@ private fun ReportShareCard(
                             reportFolder = reportFolder,
                             sharedUris = sharedUris,
                             context = context,
-                            onShareHandled = onShareHandled,
+                            autoReturn = autoReturn,
+                            onImportFinished = onImportFinished,
                             onShowMessage = onShowMessage
                         )
                     }
@@ -230,7 +288,8 @@ private fun AssetShareRow(
     reportFolder: String,
     sharedUris: List<Uri>,
     context: Context,
-    onShareHandled: () -> Unit,
+    autoReturn: Boolean,
+    onImportFinished: () -> Unit,
     onShowMessage: (String) -> Unit
 ) {
     val scope = rememberCoroutineScope()
@@ -255,14 +314,17 @@ private fun AssetShareRow(
                     MaintenanceStorage.copySharedFileToDir(context, uri, assetDir)
                 }
                 val updated = assetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
-                onShareHandled()
                 withContext(Dispatchers.Main) {
                     files = updated
                     onShowMessage("Archivos guardados en $assetLabel")
+                    if (autoReturn) {
+                        onImportFinished()
+                    }
                 }
             }
         },
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier.fillMaxWidth(),
+        enabled = sharedUris.isNotEmpty()
     ) {
         Icon(Icons.Default.Folder, contentDescription = null)
         Spacer(modifier = Modifier.width(8.dp))
