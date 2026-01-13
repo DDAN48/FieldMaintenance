@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Save
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
@@ -119,11 +120,23 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
     }
     
     var assetType by remember { mutableStateOf(AssetType.NODE) }
-    var frequency by remember { mutableStateOf<Frequency?>(null) }
-    var technology by remember { mutableStateOf<String?>(null) }
-    var amplifierMode by remember { mutableStateOf<AmplifierMode?>(null) }
-    var port by remember { mutableStateOf<Port?>(null) }
-    var portIndex by remember { mutableStateOf<Int?>(null) }
+    val frequencySaver = Saver<Frequency?, String?>(
+        save = { it?.name },
+        restore = { it?.let(Frequency::valueOf) }
+    )
+    val amplifierModeSaver = Saver<AmplifierMode?, String?>(
+        save = { it?.name },
+        restore = { it?.let(AmplifierMode::valueOf) }
+    )
+    val portSaver = Saver<Port?, String?>(
+        save = { it?.name },
+        restore = { it?.let(Port::valueOf) }
+    )
+    var frequency by rememberSaveable(stateSaver = frequencySaver) { mutableStateOf<Frequency?>(null) }
+    var technology by rememberSaveable { mutableStateOf<String?>(null) }
+    var amplifierMode by rememberSaveable(stateSaver = amplifierModeSaver) { mutableStateOf<AmplifierMode?>(null) }
+    var port by rememberSaveable(stateSaver = portSaver) { mutableStateOf<Port?>(null) }
+    var portIndex by rememberSaveable { mutableStateOf<Int?>(null) }
     var hasNode by remember { mutableStateOf(false) }
     var attemptedSave by remember { mutableStateOf(false) }
     var modulePhotoCount by remember { mutableStateOf(0) }
@@ -1349,8 +1362,8 @@ private fun annotateImageWithLabel(file: File, labelInfo: PhotoLabelInfo) {
     val bitmap = BitmapFactory.decodeFile(file.absolutePath) ?: return
     val mutable = bitmap.copy(Bitmap.Config.ARGB_8888, true)
     val canvas = Canvas(mutable)
-    val padding = (mutable.width * 0.02f).coerceIn(8f, 28f)
-    val textSize = (mutable.width * 0.04f).coerceIn(22f, 54f)
+    val padding = (mutable.width * 0.012f).coerceIn(6f, 20f)
+    val textSize = (mutable.width * 0.055f).coerceIn(26f, 68f)
     val textPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
         color = android.graphics.Color.WHITE
         this.textSize = textSize
@@ -1378,7 +1391,7 @@ private fun annotateImageWithLabel(file: File, labelInfo: PhotoLabelInfo) {
     val backgroundPaint = Paint().apply {
         color = android.graphics.Color.argb(170, 0, 0, 0)
     }
-    val mapHeight = (mutable.height * 0.18f).roundToInt()
+    val mapHeight = (mutable.height * 0.1f).roundToInt()
     val mapWidth = (mapHeight * 1.3f).roundToInt()
     val totalHeight = maxOf(layout.height + (padding * 2).toInt(), mapHeight + (padding * 2).toInt())
     val top = (mutable.height - totalHeight).coerceAtLeast(0)
