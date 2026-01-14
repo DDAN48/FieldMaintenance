@@ -568,27 +568,19 @@ private fun ConfirmRow(
             modifier = Modifier.weight(1f),
             style = MaterialTheme.typography.bodySmall
         )
-        if (confirmed) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
+        OutlinedButton(
+            onClick = onToggle,
+            enabled = enabled
+        ) {
+            if (confirmed) {
                 Icon(
                     imageVector = Icons.Default.CheckCircle,
                     contentDescription = "Confirmado",
                     tint = Color(0xFF2E7D32)
                 )
-                Text(
-                    "Confirmado",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color(0xFF2E7D32)
-                )
-            }
-        } else {
-            OutlinedButton(
-                onClick = onToggle,
-                enabled = enabled
-            ) {
+                Spacer(Modifier.width(6.dp))
+                Text("Confirmado", color = Color(0xFF2E7D32))
+            } else {
                 Text("Confirmar")
             }
         }

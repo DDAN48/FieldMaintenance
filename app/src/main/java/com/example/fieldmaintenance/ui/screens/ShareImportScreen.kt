@@ -54,6 +54,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.navigation.NavController
+import androidx.core.content.FileProvider
+import android.content.Intent
+import java.io.File
+import java.net.URLConnection
 import com.example.fieldmaintenance.data.model.Asset
 import com.example.fieldmaintenance.data.model.AssetType
 import com.example.fieldmaintenance.data.model.MaintenanceReport
@@ -160,16 +164,7 @@ fun ShareImportScreen(
                     .fillMaxSize()
                     .padding(16.dp)
             ) {
-                Text(
-                    text = "Ruta base: ${MaintenanceStorage.baseDir(context).path}",
-                    style = MaterialTheme.typography.bodySmall
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-
-                if (sharedUris.isEmpty()) {
-                    Text("No hay archivos para importar. Puedes revisar las mediciones guardadas abajo.")
-                    Spacer(modifier = Modifier.height(12.dp))
-                }
+            Spacer(modifier = Modifier.height(12.dp))
 
                 if (reports.isEmpty()) {
                     Text("No hay mantenimientos creados todavía.")
@@ -382,7 +377,24 @@ private fun AssetShareRow(
                     Text(
                         text = file.name,
                         style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable {
+                                val uri = FileProvider.getUriForFile(
+                                    context,
+                                    "${context.packageName}.fileprovider",
+                                    file
+                                )
+                                val intent = Intent(Intent.ACTION_VIEW).apply {
+                                    setDataAndType(
+                                        uri,
+                                        URLConnection.guessContentTypeFromName(file.name) ?: "*/*"
+                                    )
+                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                }
+                                runCatching { context.startActivity(intent) }
+                                    .onFailure { onShowMessage("No se pudo abrir el archivo") }
+                            }
                     )
                     TextButton(onClick = {
                         scope.launch(Dispatchers.IO) {

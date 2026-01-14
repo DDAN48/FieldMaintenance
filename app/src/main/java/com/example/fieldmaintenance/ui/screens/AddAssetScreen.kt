@@ -52,6 +52,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
@@ -1274,11 +1276,13 @@ fun PhotoSection(
         var scale by remember { mutableStateOf(1f) }
         var offsetX by remember { mutableStateOf(0f) }
         var offsetY by remember { mutableStateOf(0f) }
-        val scopePreview = rememberCoroutineScope()
+        var containerSize by remember { mutableStateOf(IntSize.Zero) }
         val transformState = rememberTransformableState { zoomChange, panChange, _ ->
             scale = (scale * zoomChange).coerceIn(1f, 5f)
-            offsetX += panChange.x
-            offsetY += panChange.y
+            val maxX = ((containerSize.width * (scale - 1f)) / 2f).coerceAtLeast(0f)
+            val maxY = ((containerSize.height * (scale - 1f)) / 2f).coerceAtLeast(0f)
+            offsetX = (offsetX + panChange.x).coerceIn(-maxX, maxX)
+            offsetY = (offsetY + panChange.y).coerceIn(-maxY, maxY)
         }
         LaunchedEffect(scale) {
             if (scale <= 1.01f) {
@@ -1297,19 +1301,25 @@ fun PhotoSection(
                         .fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    androidx.compose.foundation.Image(
-                        painter = rememberAsyncImagePainter(File(photo.filePath)),
-                        contentDescription = null,
+                    Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .graphicsLayer(
-                                scaleX = scale,
-                                scaleY = scale,
-                                translationX = offsetX,
-                                translationY = offsetY
-                            )
+                            .onSizeChanged { size -> containerSize = size }
                             .transformable(transformState)
-                    )
+                    ) {
+                        androidx.compose.foundation.Image(
+                            painter = rememberAsyncImagePainter(File(photo.filePath)),
+                            contentDescription = null,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .graphicsLayer(
+                                    scaleX = scale,
+                                    scaleY = scale,
+                                    translationX = offsetX,
+                                    translationY = offsetY
+                                )
+                        )
+                    }
                     TextButton(
                         onClick = { photoToPreview = null },
                         modifier = Modifier.align(Alignment.End)
