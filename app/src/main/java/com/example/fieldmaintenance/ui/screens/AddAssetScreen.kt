@@ -1620,6 +1620,41 @@ private fun collectChannelRows(json: Any?): List<ChannelRow> {
         }
     }
 
+    fun collectFromDigitalFullScan(results: JSONObject) {
+        val tableData = results.optJSONObject("08_digitalFullScanResults")?.optJSONArray("tableData") ?: return
+        for (i in 0 until tableData.length()) {
+            val row = tableData.optJSONArray(i) ?: continue
+            if (row.length() < 9) continue
+            val channelValue = row.optJSONObject(0)?.optString("value")
+            val frequencyValue = row.optJSONObject(1)?.optString("value")
+            val levelValue = row.optJSONObject(2)?.optString("value")
+            val merValue = row.optJSONObject(3)?.optString("value")
+            val berPreValue = row.optJSONObject(4)?.optString("value")
+            val berPostValue = row.optJSONObject(5)?.optString("value")
+            val icfrValue = row.optJSONObject(8)?.optString("value")
+            val channel = parseInt(channelValue)
+            val frequency = parseNumber(frequencyValue)
+            val level = parseNumber(levelValue)
+            val mer = parseNumber(merValue)
+            val berPre = parseNumber(berPreValue)
+            val berPost = parseNumber(berPostValue)
+            val icfr = parseNumber(icfrValue)
+            if (channel != null || frequency != null || level != null || mer != null || berPre != null || berPost != null || icfr != null) {
+                rows.add(
+                    ChannelRow(
+                        channel = channel,
+                        frequencyMHz = frequency,
+                        levelDbmv = level,
+                        merDb = mer,
+                        berPre = berPre,
+                        berPost = berPost,
+                        icfrDb = icfr
+                    )
+                )
+            }
+        }
+    }
+
     fun collectFromSingleFullScan(results: JSONObject) {
         val tableData = results.optJSONObject("0A_singleFullScanResults")?.optJSONArray("tableData") ?: return
         for (i in 0 until tableData.length()) {
@@ -1650,6 +1685,9 @@ private fun collectChannelRows(json: Any?): List<ChannelRow> {
     fun walk(value: Any?) {
         when (value) {
             is JSONObject -> {
+                if (value.has("08_digitalFullScanResults")) {
+                    collectFromDigitalFullScan(value)
+                }
                 if (value.has("0A_singleFullScanResults")) {
                     collectFromSingleFullScan(value)
                 }
@@ -1728,7 +1766,14 @@ private fun validateMeasurementValues(
     val results = test.optJSONObject("results")
     val testPointOffset = parseTestPointOffset(test)
     val rows = collectChannelRows(results)
-    val merPairs = collectMerPairs(results)
+    val merPairs = if (rows.any { it.merDb != null }) {
+        rows.mapNotNull { row ->
+            val mer = row.merDb ?: return@mapNotNull null
+            (row.frequencyMHz ?: 0.0) to mer
+        }
+    } else {
+        collectMerPairs(results)
+    }
 
     if (type == "docsisexpert") {
         val ruleTable = rules.optJSONObject("docsisexpert")
@@ -1775,6 +1820,9 @@ private fun validateMeasurementValues(
         val berPostMax = common?.optJSONObject("berPost")?.optDouble("max", Double.NaN)
         val icfrMax = common?.optJSONObject("icfr")?.optDouble("max", Double.NaN)
         rows.filter { row -> row.channel != null && row.channel in 14..115 }.forEach { row ->
+            if (merMin != null && !merMin.isNaN() && row.merDb != null && row.merDb < merMin) {
+                issues.add("MER bajo en canal ${row.channel}.")
+            }
             if (berPreMax != null && !berPreMax.isNaN() && row.berPre != null && row.berPre > berPreMax) {
                 issues.add("BER previo alto en canal ${row.channel}.")
             }
