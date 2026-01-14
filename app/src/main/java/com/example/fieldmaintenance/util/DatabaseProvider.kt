@@ -26,6 +26,7 @@ object DatabaseProvider {
                 .addMigrations(AppDatabase.MIGRATION_8_9)
                 .addMigrations(AppDatabase.MIGRATION_9_10)
                 .addMigrations(AppDatabase.MIGRATION_10_11)
+                .addMigrations(AppDatabase.MIGRATION_11_12)
                 .build()
             
             repository = MaintenanceRepository(
@@ -44,4 +45,3 @@ object DatabaseProvider {
         return repository ?: throw IllegalStateException("Database not initialized")
     }
 }
-
