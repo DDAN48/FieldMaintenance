@@ -36,8 +36,9 @@ import androidx.compose.ui.text.font.FontWeight
 import android.net.Uri
 import android.widget.Toast
 import android.location.Geocoder
-import android.location.Location
 import android.location.LocationManager
+import android.location.Location
+import android.location.LocationListener
 import android.os.Build
 import android.text.Layout
 import android.text.StaticLayout
@@ -83,6 +84,7 @@ import java.util.Date
 import java.net.URL
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
+import android.os.Looper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.map
@@ -1010,6 +1012,8 @@ fun PhotoSection(
 
     var photoToDelete by remember { mutableStateOf<com.example.fieldmaintenance.data.model.Photo?>(null) }
     var photoToPreview by remember { mutableStateOf<com.example.fieldmaintenance.data.model.Photo?>(null) }
+    var latestLocation by remember { mutableStateOf<Location?>(null) }
+    var locationPermissionGranted by remember { mutableStateOf(false) }
     // These must survive configuration changes (e.g., rotating to landscape opens camera and Activity may recreate)
     var pendingCameraFilePath by rememberSaveable { mutableStateOf<String?>(null) }
     var pendingCameraUriString by rememberSaveable { mutableStateOf<String?>(null) }
@@ -1057,7 +1061,13 @@ fun PhotoSection(
         if (!ok) return@rememberLauncherForActivityResult
 
         scope.launch {
-            val labelInfo = buildPhotoLabel(context, file, assetLabel, eventName)
+            val labelInfo = buildPhotoLabel(
+                context = context,
+                file = file,
+                assetLabel = assetLabel,
+                eventName = eventName,
+                overrideLocation = latestLocation
+            )
             if (labelInfo != null) {
                 annotateImageWithLabel(file, labelInfo)
             }
@@ -1094,8 +1104,37 @@ fun PhotoSection(
     val locationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { granted ->
+        locationPermissionGranted = granted
         if (!granted) {
             Toast.makeText(context, "Permiso de ubicación denegado", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        locationPermissionGranted = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.ACCESS_FINE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+    }
+
+    DisposableEffect(locationPermissionGranted) {
+        if (!locationPermissionGranted) return@DisposableEffect onDispose {}
+        val manager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
+        if (manager == null) return@DisposableEffect onDispose {}
+        val listener = LocationListener { location ->
+            latestLocation = location
+        }
+        val providers = listOf(
+            LocationManager.GPS_PROVIDER,
+            LocationManager.NETWORK_PROVIDER
+        )
+        providers.forEach { provider ->
+            runCatching {
+                manager.requestLocationUpdates(provider, 1000L, 1f, listener, Looper.getMainLooper())
+            }
+        }
+        onDispose {
+            runCatching { manager.removeUpdates(listener) }
         }
     }
 
@@ -1169,6 +1208,19 @@ fun PhotoSection(
                     text = "Máximo permitido: $maxAllowed foto(s) (borra las extra)",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error
+                )
+            }
+
+            if (locationPermissionGranted) {
+                val gpsText = latestLocation?.let { location ->
+                    val coords = String.format(Locale.getDefault(), "%.5f, %.5f", location.latitude, location.longitude)
+                    val accuracy = location.accuracy.roundToInt()
+                    "GPS: $coords (±${accuracy}m)"
+                } ?: "GPS: buscando señal..."
+                Text(
+                    text = gpsText,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                 )
             }
             
@@ -1307,16 +1359,16 @@ private suspend fun buildPhotoLabel(
     context: Context,
     file: File,
     assetLabel: String,
-    eventName: String
+    eventName: String,
+    overrideLocation: Location?
 ): PhotoLabelInfo? {
     val latLong = readExifLatLongWithRetry(file)
-    val fallbackLocation = if (latLong == null) {
-        getLastKnownLocation(context)
-    } else {
-        null
+    val bestLocation = selectBestLocation(latLong, overrideLocation, getLastKnownLocation(context))
+    if (latLong == null && bestLocation != null) {
+        applyLocationToExif(file, bestLocation)
     }
-    val latitude = latLong?.getOrNull(0) ?: fallbackLocation?.latitude
-    val longitude = latLong?.getOrNull(1) ?: fallbackLocation?.longitude
+    val latitude = latLong?.getOrNull(0) ?: bestLocation?.latitude
+    val longitude = latLong?.getOrNull(1) ?: bestLocation?.longitude
     val address = if (latitude != null && longitude != null) {
         withContext(Dispatchers.IO) {
             runCatching {
@@ -1374,6 +1426,28 @@ private suspend fun readExifLatLongWithRetry(file: File): DoubleArray? {
         }
     }
     return null
+}
+
+private fun selectBestLocation(
+    exifLatLong: DoubleArray?,
+    liveLocation: Location?,
+    fallbackLocation: Location?
+): Location? {
+    if (exifLatLong != null) return null
+    val liveOk = liveLocation?.accuracy?.let { it <= 30f } == true
+    return when {
+        liveOk -> liveLocation
+        fallbackLocation != null -> fallbackLocation
+        else -> null
+    }
+}
+
+private fun applyLocationToExif(file: File, location: Location) {
+    runCatching {
+        val exif = ExifInterface(file.absolutePath)
+        exif.setGpsInfo(location)
+        exif.saveAttributes()
+    }
 }
 
 private fun annotateImageWithLabel(file: File, labelInfo: PhotoLabelInfo) {
