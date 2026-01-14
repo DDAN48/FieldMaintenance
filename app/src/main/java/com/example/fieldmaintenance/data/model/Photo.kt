@@ -11,6 +11,7 @@ data class Photo(
     val assetId: String,
     val photoType: PhotoType,
     val filePath: String,
-    val fileName: String
+    val fileName: String,
+    val latitude: Double? = null,
+    val longitude: Double? = null
 )
-
