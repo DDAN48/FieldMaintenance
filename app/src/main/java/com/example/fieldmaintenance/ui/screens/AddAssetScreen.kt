@@ -888,7 +888,10 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
                 }
             }
 
-            if (autoSaved) {
+            val techNormalized = technology?.trim()?.lowercase(Locale.getDefault()) ?: ""
+            val isRphyNode = assetType == AssetType.NODE && techNormalized == "rphy"
+
+            if (autoSaved && !isRphyNode) {
                 Spacer(modifier = Modifier.height(8.dp))
                 AssetFileSection(
                     context = context,
