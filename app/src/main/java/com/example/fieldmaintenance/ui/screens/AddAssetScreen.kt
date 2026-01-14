@@ -1557,10 +1557,16 @@ private suspend fun loadStaticMap(latitude: Double, longitude: Double): Bitmap? 
 private data class MeasurementVerificationResult(
     val docsisExpert: Int,
     val channelExpert: Int,
+    val docsisNames: List<String>,
+    val channelNames: List<String>,
     val invalidTypeCount: Int,
+    val invalidTypeNames: List<String>,
     val parseErrorCount: Int,
+    val parseErrorNames: List<String>,
     val duplicateFileCount: Int,
-    val duplicateEntryCount: Int
+    val duplicateFileNames: List<String>,
+    val duplicateEntryCount: Int,
+    val duplicateEntryNames: List<String>
 )
 
 private data class MeasurementVerificationSummary(
@@ -1588,10 +1594,34 @@ private fun verifyMeasurementFiles(
     val seenIds = mutableSetOf<String>()
     var docsisCount = 0
     var channelCount = 0
+    val docsisNames = linkedSetOf<String>()
+    val channelNames = linkedSetOf<String>()
     var invalidTypeCount = 0
+    val invalidTypeNames = linkedSetOf<String>()
     var parseErrorCount = 0
+    val parseErrorNames = linkedSetOf<String>()
     var duplicateFileCount = 0
+    val duplicateFileNames = linkedSetOf<String>()
     var duplicateEntryCount = 0
+    val duplicateEntryNames = linkedSetOf<String>()
+
+    val dedupedFiles = buildList {
+        val seenNames = mutableSetOf<String>()
+        files.forEach { file ->
+            val key = file.name.lowercase(Locale.getDefault())
+            if (seenNames.add(key)) {
+                add(file)
+            } else {
+                if (file.exists() && file.delete()) {
+                    duplicateFileCount += 1
+                    duplicateFileNames.add(file.name)
+                } else {
+                    parseErrorCount += 1
+                    parseErrorNames.add(file.name)
+                }
+            }
+        }
+    }
 
     fun hashId(type: String, testTime: String, testDurationMs: String, geoLocation: String): String {
         val input = listOf(type, testTime, testDurationMs, geoLocation).joinToString("|")
@@ -1603,12 +1633,14 @@ private fun verifyMeasurementFiles(
         val jsonText = runCatching { String(bytes) }.getOrNull()
         if (jsonText.isNullOrBlank()) {
             parseErrorCount += 1
+            parseErrorNames.add(sourceLabel)
             return
         }
         val json = runCatching { JSONObject(jsonText) }.getOrNull()
         val tests = json?.optJSONArray("tests")
         if (tests == null) {
             parseErrorCount += 1
+            parseErrorNames.add(sourceLabel)
             return
         }
         var fileHasDuplicate = false
@@ -1626,21 +1658,33 @@ private fun verifyMeasurementFiles(
                     fileHasDuplicate = true
                 } else {
                     duplicateEntryCount += 1
+                    duplicateEntryNames.add(sourceLabel)
                 }
                 continue
             }
             when (normalizedType) {
-                "docsisexpert" -> docsisCount += 1
-                "channelexpert" -> channelCount += 1
-                else -> invalidTypeCount += 1
+                "docsisexpert" -> {
+                    docsisCount += 1
+                    docsisNames.add(sourceLabel)
+                }
+                "channelexpert" -> {
+                    channelCount += 1
+                    channelNames.add(sourceLabel)
+                }
+                else -> {
+                    invalidTypeCount += 1
+                    invalidTypeNames.add(sourceLabel)
+                }
             }
         }
 
         if (fileHasDuplicate && sourceFile != null) {
             if (sourceFile.exists() && sourceFile.delete()) {
                 duplicateFileCount += 1
+                duplicateFileNames.add(sourceLabel)
             } else {
                 parseErrorCount += 1
+                parseErrorNames.add(sourceLabel)
             }
         }
     }
@@ -1653,12 +1697,16 @@ private fun verifyMeasurementFiles(
                 val bytes = runCatching { inputStream.readBytes() }.getOrNull()
                 if (bytes == null) {
                     parseErrorCount += 1
+                    parseErrorNames.add(entry.name)
                 } else if (entryName.endsWith(".zip")) {
                     runCatching {
                         ZipInputStream(ByteArrayInputStream(bytes)).use { nested ->
                             handleZipInputStream(nested, sourceFile = null)
                         }
-                    }.onFailure { parseErrorCount += 1 }
+                    }.onFailure {
+                        parseErrorCount += 1
+                        parseErrorNames.add(entry.name)
+                    }
                 } else if (entryName.endsWith(".json")) {
                     handleJsonBytes(bytes, sourceFile = sourceFile, sourceLabel = entry.name)
                 }
@@ -1667,19 +1715,25 @@ private fun verifyMeasurementFiles(
         }
     }
 
-    files.forEach { file ->
+    dedupedFiles.forEach { file ->
         val name = file.name.lowercase(Locale.getDefault())
         when {
             name.endsWith(".json") -> {
                 runCatching { handleJsonBytes(file.readBytes(), sourceFile = file, sourceLabel = file.name) }
-                    .onFailure { parseErrorCount += 1 }
+                    .onFailure {
+                        parseErrorCount += 1
+                        parseErrorNames.add(file.name)
+                    }
             }
             name.endsWith(".zip") -> {
                 runCatching {
                     ZipInputStream(file.inputStream()).use { zip ->
                         handleZipInputStream(zip, sourceFile = null)
                     }
-                }.onFailure { parseErrorCount += 1 }
+                }.onFailure {
+                    parseErrorCount += 1
+                    parseErrorNames.add(file.name)
+                }
             }
         }
     }
@@ -1698,8 +1752,11 @@ private fun verifyMeasurementFiles(
         if (invalidTypeCount > 0) {
             add("Se encontraron mediciones con tipo inválido ($invalidTypeCount). Elimine las que no correspondan.")
         }
-        if (duplicateFileCount > 0 || duplicateEntryCount > 0) {
+        if (duplicateFileCount > 0) {
             add("Se detectaron duplicados y se eliminaron $duplicateFileCount archivo(s).")
+        }
+        if (duplicateEntryCount > 0) {
+            add("Se detectaron duplicados en ZIP ($duplicateEntryCount).")
         }
         if (parseErrorCount > 0) {
             add("No se pudieron leer $parseErrorCount archivo(s) o entradas.")
@@ -1712,10 +1769,16 @@ private fun verifyMeasurementFiles(
         result = MeasurementVerificationResult(
             docsisExpert = docsisCount,
             channelExpert = channelCount,
+            docsisNames = docsisNames.toList(),
+            channelNames = channelNames.toList(),
             invalidTypeCount = invalidTypeCount,
+            invalidTypeNames = invalidTypeNames.toList(),
             parseErrorCount = parseErrorCount,
             duplicateFileCount = duplicateFileCount,
-            duplicateEntryCount = duplicateEntryCount
+            parseErrorNames = parseErrorNames.toList(),
+            duplicateFileNames = duplicateFileNames.toList(),
+            duplicateEntryCount = duplicateEntryCount,
+            duplicateEntryNames = duplicateEntryNames.toList()
         ),
         warnings = warnings
     )
@@ -1826,19 +1889,53 @@ private fun AssetFileSection(
                     }
                 }
                 verificationSummary?.let { summary ->
+                    val smallTextStyle = MaterialTheme.typography.bodySmall
+                    val mutedColor = MaterialTheme.colorScheme.onSurfaceVariant
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(
-                            "Mediciones docsisexpert ${summary.result.docsisExpert}/${summary.expectedDocsis}"
+                            "Mediciones docsisexpert ${summary.result.docsisExpert}/${summary.expectedDocsis}",
+                            fontWeight = FontWeight.SemiBold
                         )
+                        summary.result.docsisNames.forEach { name ->
+                            Text("• $name", style = smallTextStyle, color = mutedColor)
+                        }
                         Text(
-                            "Mediciones channelexpert ${summary.result.channelExpert}/${summary.expectedChannel}"
+                            "Mediciones channelexpert ${summary.result.channelExpert}/${summary.expectedChannel}",
+                            fontWeight = FontWeight.SemiBold
                         )
+                        summary.result.channelNames.forEach { name ->
+                            Text("• $name", style = smallTextStyle, color = mutedColor)
+                        }
                         summary.warnings.forEach { warning ->
                             Text(
                                 warning,
                                 color = MaterialTheme.colorScheme.error,
-                                style = MaterialTheme.typography.bodySmall
+                                style = smallTextStyle
                             )
+                        }
+                        if (summary.result.duplicateFileNames.isNotEmpty()) {
+                            Text("Archivos eliminados:", fontWeight = FontWeight.SemiBold)
+                            summary.result.duplicateFileNames.forEach { name ->
+                                Text("• $name", style = smallTextStyle, color = mutedColor)
+                            }
+                        }
+                        if (summary.result.invalidTypeNames.isNotEmpty()) {
+                            Text("Mediciones inválidas:", fontWeight = FontWeight.SemiBold)
+                            summary.result.invalidTypeNames.forEach { name ->
+                                Text("• $name", style = smallTextStyle, color = mutedColor)
+                            }
+                        }
+                        if (summary.result.parseErrorNames.isNotEmpty()) {
+                            Text("No se pudieron leer:", fontWeight = FontWeight.SemiBold)
+                            summary.result.parseErrorNames.forEach { name ->
+                                Text("• $name", style = smallTextStyle, color = mutedColor)
+                            }
+                        }
+                        if (summary.result.duplicateEntryNames.isNotEmpty()) {
+                            Text("Duplicados en ZIP:", fontWeight = FontWeight.SemiBold)
+                            summary.result.duplicateEntryNames.forEach { name ->
+                                Text("• $name", style = smallTextStyle, color = mutedColor)
+                            }
                         }
                     }
                 }
