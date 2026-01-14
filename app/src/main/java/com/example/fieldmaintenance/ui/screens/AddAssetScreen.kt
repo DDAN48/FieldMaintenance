@@ -71,6 +71,7 @@ import com.example.fieldmaintenance.ui.navigation.Screen
 import com.example.fieldmaintenance.ui.viewmodel.ReportViewModel
 import com.example.fieldmaintenance.ui.viewmodel.ReportViewModelFactory
 import com.example.fieldmaintenance.util.DatabaseProvider
+import com.example.fieldmaintenance.util.CiscoHfcAmpCalculator
 import com.example.fieldmaintenance.util.ImageStore
 import com.example.fieldmaintenance.util.PhotoManager
 import com.example.fieldmaintenance.util.SettingsStore
@@ -901,6 +902,7 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
                 AssetFileSection(
                     context = context,
                     navController = navController,
+                    repository = repository,
                     reportFolder = MaintenanceStorage.reportFolderName(report?.eventName, reportId),
                     nodeName = report?.nodeName,
                     asset = Asset(
@@ -1554,6 +1556,269 @@ private suspend fun loadStaticMap(latitude: Double, longitude: Double): Bitmap? 
     }
 }
 
+private fun loadMeasurementRules(context: Context): JSONObject? {
+    return runCatching {
+        context.assets.open("measurement_validation.json").use { input ->
+            val text = input.bufferedReader().use { it.readText() }
+            JSONObject(text)
+        }
+    }.getOrNull()
+}
+
+private fun equipmentKeyFor(asset: Asset): String {
+    return when (asset.frequencyMHz) {
+        42 -> "42_55"
+        85 -> "85_105"
+        else -> "unknown"
+    }
+}
+
+private data class ChannelRow(
+    val channel: Int?,
+    val frequencyMHz: Double?,
+    val levelDbmv: Double?,
+    val merDb: Double?,
+    val berPre: Double?,
+    val berPost: Double?,
+    val icfrDb: Double?
+)
+
+private fun collectChannelRows(json: Any?): List<ChannelRow> {
+    val rows = mutableListOf<ChannelRow>()
+
+    fun parseNumber(value: Any?): Double? = when (value) {
+        is Number -> value.toDouble()
+        is String -> value.toDoubleOrNull()
+        else -> null
+    }
+
+    fun parseInt(value: Any?): Int? = when (value) {
+        is Number -> value.toInt()
+        is String -> value.toIntOrNull()
+        else -> null
+    }
+
+    fun collectFromMap(map: Map<String, Any?>) {
+        val channel = parseInt(map["channel"] ?: map["canal"])
+        val frequency = parseNumber(map["frequency"] ?: map["frecuencia"] ?: map["frequencymhz"] ?: map["freqmhz"])
+        val level = parseNumber(map["level"] ?: map["nivel"] ?: map["leveldbmv"] ?: map["niveldbmv"])
+        val mer = parseNumber(map["mer"])
+        val berPre = parseNumber(map["berpre"] ?: map["ber_pre"] ?: map["berprevio"])
+        val berPost = parseNumber(map["berpost"] ?: map["ber_post"] ?: map["berposterior"])
+        val icfr = parseNumber(map["icfr"])
+        if (channel != null || frequency != null || level != null || mer != null || berPre != null || berPost != null || icfr != null) {
+            rows.add(
+                ChannelRow(
+                    channel = channel,
+                    frequencyMHz = frequency,
+                    levelDbmv = level,
+                    merDb = mer,
+                    berPre = berPre,
+                    berPost = berPost,
+                    icfrDb = icfr
+                )
+            )
+        }
+    }
+
+    fun walk(value: Any?) {
+        when (value) {
+            is JSONObject -> {
+                val map = mutableMapOf<String, Any?>()
+                val keys = value.keys()
+                while (keys.hasNext()) {
+                    val key = keys.next()
+                    map[key.lowercase(Locale.getDefault())] = value.opt(key)
+                }
+                collectFromMap(map)
+                map.values.forEach { walk(it) }
+            }
+            is org.json.JSONArray -> {
+                for (i in 0 until value.length()) {
+                    walk(value.opt(i))
+                }
+            }
+        }
+    }
+
+    walk(json)
+    return rows
+}
+
+private fun collectMerPairs(json: JSONObject?): List<Pair<Double, Double>> {
+    val pairs = mutableListOf<Pair<Double, Double>>()
+
+    fun walk(value: Any?) {
+        when (value) {
+            is JSONObject -> {
+                val keys = value.keys()
+                while (keys.hasNext()) {
+                    walk(value.opt(keys.next()))
+                }
+            }
+            is org.json.JSONArray -> {
+                if (value.length() == 2) {
+                    val first = value.opt(0)
+                    val second = value.opt(1)
+                    if (first is Number && second is Number) {
+                        pairs.add(first.toDouble() to second.toDouble())
+                    }
+                }
+                for (i in 0 until value.length()) {
+                    walk(value.opt(i))
+                }
+            }
+        }
+    }
+
+    walk(json)
+    return pairs
+}
+
+private fun parseTestPointOffset(test: JSONObject): Double {
+    val config = test.optJSONObject("configuration")
+    val networkConfig = config?.optJSONObject("networkConfig")
+    val forwardTPC = networkConfig?.optJSONObject("forwardTPC")?.optDouble("value", Double.NaN)
+    val templateValue = networkConfig?.optJSONObject("testPointTemplate")?.optString("value")
+    val parsedTemplate = templateValue
+        ?.replace(",", ".")
+        ?.filter { it.isDigit() || it == '.' || it == '-' }
+        ?.toDoubleOrNull()
+    val tpcValue = when {
+        forwardTPC != null && !forwardTPC.isNaN() -> forwardTPC
+        parsedTemplate != null -> parsedTemplate
+        else -> null
+    }
+    return if (tpcValue == null || tpcValue != 20.0) 20.0 else 0.0
+}
+
+private fun validateMeasurementValues(
+    rules: JSONObject?,
+    test: JSONObject,
+    type: String,
+    equipmentKey: String,
+    assetType: AssetType,
+    amplifierTargets: Map<Int, Double>?
+): List<String> {
+    if (rules == null) return listOf("No se pudo cargar la tabla de validación.")
+    val issues = mutableListOf<String>()
+    val assetKey = when (assetType) {
+        AssetType.NODE -> "node"
+        AssetType.AMPLIFIER -> "amplifier"
+        else -> return emptyList()
+    }
+    val results = test.optJSONObject("results")
+    val testPointOffset = parseTestPointOffset(test)
+    val rows = collectChannelRows(results)
+    val merPairs = collectMerPairs(results)
+
+    if (type == "docsisexpert") {
+        val ruleTable = rules.optJSONObject("docsisexpert")
+            ?.optJSONObject(assetKey)
+            ?.optJSONObject(equipmentKey)
+        if (ruleTable == null) {
+            return listOf("No hay reglas de DOCSIS para $assetKey/$equipmentKey.")
+        }
+        val targetFrequencies = listOf(16.8, 20.0, 24.8, 35.0)
+        targetFrequencies.forEach { freq ->
+            val rule = ruleTable.optJSONObject(freq.toString())
+            if (rule == null) {
+                issues.add("Sin rango para ${freq} MHz.")
+            } else {
+                val row = rows.firstOrNull { it.frequencyMHz != null && kotlin.math.abs(it.frequencyMHz - freq) <= 0.5 }
+                val level = row?.levelDbmv
+                if (level == null) {
+                    issues.add("No se encontró nivel para ${freq} MHz.")
+                } else {
+                    val adjusted = level + testPointOffset
+                    val min = rule.optDouble("min", Double.NaN)
+                    val max = rule.optDouble("max", Double.NaN)
+                    if (!min.isNaN() && adjusted < min) {
+                        issues.add("Nivel ${freq} MHz bajo (${adjusted}).")
+                    }
+                    if (!max.isNaN() && adjusted > max) {
+                        issues.add("Nivel ${freq} MHz alto (${adjusted}).")
+                    }
+                }
+            }
+        }
+    }
+
+    if (type == "channelexpert") {
+        val common = rules.optJSONObject("channelexpert")?.optJSONObject("common")
+        val merMin = common?.optJSONObject("mer")?.optDouble("min", Double.NaN)
+        if (merMin != null && !merMin.isNaN()) {
+            val lowMer = merPairs.filter { it.second < merMin }
+            if (lowMer.isNotEmpty()) {
+                issues.add("MER por debajo de ${merMin} dB en ${lowMer.size} punto(s).")
+            }
+        }
+        val berPreMax = common?.optJSONObject("berPre")?.optDouble("max", Double.NaN)
+        val berPostMax = common?.optJSONObject("berPost")?.optDouble("max", Double.NaN)
+        val icfrMax = common?.optJSONObject("icfr")?.optDouble("max", Double.NaN)
+        rows.filter { row -> row.channel != null && row.channel in 14..115 }.forEach { row ->
+            if (berPreMax != null && !berPreMax.isNaN() && row.berPre != null && row.berPre > berPreMax) {
+                issues.add("BER previo alto en canal ${row.channel}.")
+            }
+            if (berPostMax != null && !berPostMax.isNaN() && row.berPost != null && row.berPost > berPostMax) {
+                issues.add("BER posterior alto en canal ${row.channel}.")
+            }
+            if (icfrMax != null && !icfrMax.isNaN() && row.icfrDb != null && row.icfrDb > icfrMax) {
+                issues.add("ICFR alto en canal ${row.channel}.")
+            }
+        }
+        val channelRules = rules.optJSONObject("channelexpert")
+            ?.optJSONObject(assetKey)
+            ?.optJSONObject(equipmentKey)
+            ?.optJSONObject("channels")
+        if (channelRules == null) {
+            issues.add("No hay reglas de niveles para canales en $assetKey/$equipmentKey.")
+        } else {
+            val channels = listOf(50, 70, 110, 116, 136)
+            channels.forEach { channel ->
+                val rule = channelRules.optJSONObject(channel.toString())
+                if (rule == null) {
+                    issues.add("Sin regla para canal $channel.")
+                } else if (rule.has("source")) {
+                    val target = amplifierTargets?.get(channel)
+                    if (target == null) {
+                        issues.add("Falta tabla interna para canal $channel.")
+                    } else {
+                        val row = rows.firstOrNull { it.channel == channel }
+                        val level = row?.levelDbmv
+                        if (level == null) {
+                            issues.add("No se encontró nivel para canal $channel.")
+                        } else {
+                            val tolerance = rule.optDouble("tolerance", 1.5)
+                            val adjusted = level + testPointOffset
+                            if (adjusted < target - tolerance || adjusted > target + tolerance) {
+                                issues.add("Nivel fuera de rango en canal $channel.")
+                            }
+                        }
+                    }
+                } else {
+                    val row = rows.firstOrNull { it.channel == channel }
+                    val level = row?.levelDbmv
+                    if (level == null) {
+                        issues.add("No se encontró nivel para canal $channel.")
+                    } else {
+                        val target = rule.optDouble("target", Double.NaN)
+                        val tolerance = rule.optDouble("tolerance", Double.NaN)
+                        if (!target.isNaN() && !tolerance.isNaN()) {
+                            val adjusted = level + testPointOffset
+                            if (adjusted < target - tolerance || adjusted > target + tolerance) {
+                                issues.add("Nivel fuera de rango en canal $channel.")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    return issues
+}
+
 private data class MeasurementVerificationResult(
     val docsisExpert: Int,
     val channelExpert: Int,
@@ -1566,7 +1831,8 @@ private data class MeasurementVerificationResult(
     val duplicateFileCount: Int,
     val duplicateFileNames: List<String>,
     val duplicateEntryCount: Int,
-    val duplicateEntryNames: List<String>
+    val duplicateEntryNames: List<String>,
+    val validationIssueNames: List<String>
 )
 
 private data class MeasurementVerificationSummary(
@@ -1576,10 +1842,13 @@ private data class MeasurementVerificationSummary(
     val warnings: List<String>
 )
 
-private fun verifyMeasurementFiles(
+private suspend fun verifyMeasurementFiles(
+    context: Context,
     files: List<File>,
-    assetType: AssetType
+    asset: Asset,
+    repository: com.example.fieldmaintenance.data.repository.MaintenanceRepository
 ): MeasurementVerificationSummary {
+    val assetType = asset.type
     val expectedDocsis = when (assetType) {
         AssetType.NODE -> 4
         AssetType.AMPLIFIER -> 4
@@ -1604,6 +1873,24 @@ private fun verifyMeasurementFiles(
     val duplicateFileNames = linkedSetOf<String>()
     var duplicateEntryCount = 0
     val duplicateEntryNames = linkedSetOf<String>()
+    val validationIssueNames = linkedSetOf<String>()
+    val rules = loadMeasurementRules(context)
+    val equipmentKey = equipmentKeyFor(asset)
+    val amplifierTargets = if (assetType == AssetType.AMPLIFIER) {
+        val adjustment = repository.getAmplifierAdjustmentOne(asset.id)
+        val calculated = adjustment?.let { CiscoHfcAmpCalculator.nivelesSalidaCalculados(it) }
+        calculated?.let {
+            mapOf(
+                50 to it["CH50"],
+                70 to it["CH70"],
+                110 to it["CH110"],
+                116 to it["CH116"],
+                136 to it["CH136"]
+            ).filterValues { value -> value != null }.mapValues { it.value!! }
+        }
+    } else {
+        null
+    }
 
     val dedupedFiles = buildList {
         val seenNames = mutableSetOf<String>()
@@ -1674,6 +1961,19 @@ private fun verifyMeasurementFiles(
                 else -> {
                     invalidTypeCount += 1
                     invalidTypeNames.add(sourceLabel)
+                }
+            }
+            if (normalizedType == "docsisexpert" || normalizedType == "channelexpert") {
+                val issues = validateMeasurementValues(
+                    rules = rules,
+                    test = test,
+                    type = normalizedType,
+                    equipmentKey = equipmentKey,
+                    assetType = assetType,
+                    amplifierTargets = amplifierTargets
+                )
+                issues.forEach { issue ->
+                    validationIssueNames.add("$sourceLabel: $issue")
                 }
             }
         }
@@ -1761,6 +2061,9 @@ private fun verifyMeasurementFiles(
         if (parseErrorCount > 0) {
             add("No se pudieron leer $parseErrorCount archivo(s) o entradas.")
         }
+        if (validationIssueNames.isNotEmpty()) {
+            add("Se encontraron mediciones fuera de rango (${validationIssueNames.size}).")
+        }
     }
 
     return MeasurementVerificationSummary(
@@ -1778,7 +2081,8 @@ private fun verifyMeasurementFiles(
             parseErrorNames = parseErrorNames.toList(),
             duplicateFileNames = duplicateFileNames.toList(),
             duplicateEntryCount = duplicateEntryCount,
-            duplicateEntryNames = duplicateEntryNames.toList()
+            duplicateEntryNames = duplicateEntryNames.toList(),
+            validationIssueNames = validationIssueNames.toList()
         ),
         warnings = warnings
     )
@@ -1788,6 +2092,7 @@ private fun verifyMeasurementFiles(
 private fun AssetFileSection(
     context: Context,
     navController: NavController,
+    repository: com.example.fieldmaintenance.data.repository.MaintenanceRepository,
     reportFolder: String,
     nodeName: String?,
     asset: Asset
@@ -1862,23 +2167,25 @@ private fun AssetFileSection(
                     }
                     Button(
                         onClick = {
-                            val summary = verifyMeasurementFiles(files, asset.type)
-                            verificationSummary = summary
-                            if (summary.result.duplicateFileCount > 0) {
-                                files = assetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
-                            }
-                            if (summary.warnings.isEmpty()) {
-                                Toast.makeText(
-                                    context,
-                                    "Verificación inicial completa: se encontraron todas las mediciones.",
-                                    Toast.LENGTH_LONG
-                                ).show()
-                            } else {
-                                Toast.makeText(
-                                    context,
-                                    summary.warnings.first(),
-                                    Toast.LENGTH_LONG
-                                ).show()
+                            scope.launch {
+                                val summary = verifyMeasurementFiles(context, files, asset, repository)
+                                verificationSummary = summary
+                                if (summary.result.duplicateFileCount > 0) {
+                                    files = assetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
+                                }
+                                if (summary.warnings.isEmpty()) {
+                                    Toast.makeText(
+                                        context,
+                                        "Verificación inicial completa: se encontraron todas las mediciones.",
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                } else {
+                                    Toast.makeText(
+                                        context,
+                                        summary.warnings.first(),
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                }
                             }
                         },
                         enabled = files.isNotEmpty() && asset.type in setOf(AssetType.NODE, AssetType.AMPLIFIER)
@@ -1934,6 +2241,12 @@ private fun AssetFileSection(
                         if (summary.result.duplicateEntryNames.isNotEmpty()) {
                             Text("Duplicados en ZIP:", fontWeight = FontWeight.SemiBold)
                             summary.result.duplicateEntryNames.forEach { name ->
+                                Text("• $name", style = smallTextStyle, color = mutedColor)
+                            }
+                        }
+                        if (summary.result.validationIssueNames.isNotEmpty()) {
+                            Text("Validación de valores:", fontWeight = FontWeight.SemiBold)
+                            summary.result.validationIssueNames.forEach { name ->
                                 Text("• $name", style = smallTextStyle, color = mutedColor)
                             }
                         }
