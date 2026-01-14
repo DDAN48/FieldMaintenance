@@ -82,6 +82,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.net.URL
 import kotlin.math.roundToInt
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.map
@@ -1065,7 +1066,9 @@ fun PhotoSection(
                     assetId = assetId,
                     photoType = photoType,
                     filePath = file.absolutePath,
-                    fileName = file.name
+                    fileName = file.name,
+                    latitude = labelInfo?.latitude,
+                    longitude = labelInfo?.longitude
                 )
             )
             // clear pending
@@ -1295,7 +1298,9 @@ fun PhotoSection(
 
 private data class PhotoLabelInfo(
     val lines: List<String>,
-    val mapBitmap: Bitmap?
+    val mapBitmap: Bitmap?,
+    val latitude: Double?,
+    val longitude: Double?
 )
 
 private suspend fun buildPhotoLabel(
@@ -1304,8 +1309,7 @@ private suspend fun buildPhotoLabel(
     assetLabel: String,
     eventName: String
 ): PhotoLabelInfo? {
-    val exif = runCatching { ExifInterface(file.absolutePath) }.getOrNull()
-    val latLong = exif?.latLong
+    val latLong = readExifLatLongWithRetry(file)
     val fallbackLocation = if (latLong == null) {
         getLastKnownLocation(context)
     } else {
@@ -1331,6 +1335,7 @@ private suspend fun buildPhotoLabel(
     } else {
         null
     }
+    val exif = runCatching { ExifInterface(file.absolutePath) }.getOrNull()
     val dateTime = exif?.getAttribute(ExifInterface.TAG_DATETIME_ORIGINAL)
         ?: exif?.getAttribute(ExifInterface.TAG_DATETIME)
     val formattedDateTime = dateTime?.let { raw ->
@@ -1354,8 +1359,21 @@ private suspend fun buildPhotoLabel(
     }
     return PhotoLabelInfo(
         lines = listOf(headerLine, locationLine, timeLine),
-        mapBitmap = mapBitmap
+        mapBitmap = mapBitmap,
+        latitude = latitude,
+        longitude = longitude
     )
+}
+
+private suspend fun readExifLatLongWithRetry(file: File): DoubleArray? {
+    repeat(6) { attempt ->
+        val latLong = runCatching { ExifInterface(file.absolutePath).latLong }.getOrNull()
+        if (latLong != null) return latLong
+        if (attempt < 5) {
+            delay(400)
+        }
+    }
+    return null
 }
 
 private fun annotateImageWithLabel(file: File, labelInfo: PhotoLabelInfo) {
