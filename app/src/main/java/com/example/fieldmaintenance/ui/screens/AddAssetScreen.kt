@@ -15,6 +15,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
@@ -897,6 +898,7 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
                     context = context,
                     navController = navController,
                     reportFolder = MaintenanceStorage.reportFolderName(report?.eventName, reportId),
+                    nodeName = report?.nodeName,
                     asset = Asset(
                         id = workingAssetId,
                         reportId = reportId,
@@ -1548,11 +1550,61 @@ private suspend fun loadStaticMap(latitude: Double, longitude: Double): Bitmap? 
     }
 }
 
+private data class MeasurementCounts(
+    val docsisExpert: Int,
+    val channelExpert: Int
+)
+
+private fun countMeasurementFiles(
+    files: List<File>,
+    nodeName: String,
+    filterByNodeName: Boolean
+): MeasurementCounts {
+    val normalizedNode = nodeName.trim().lowercase(Locale.getDefault())
+    var docsisCount = 0
+    var channelCount = 0
+
+    fun shouldInclude(name: String): Boolean {
+        if (!filterByNodeName || normalizedNode.isBlank()) return true
+        return name.lowercase(Locale.getDefault()).contains(normalizedNode)
+    }
+
+    fun countName(name: String) {
+        val normalized = name.lowercase(Locale.getDefault())
+        if (!normalized.endsWith(".json") || !shouldInclude(normalized)) return
+        when {
+            normalized.contains("docsisexpert") -> docsisCount += 1
+            normalized.contains("channelexpert") -> channelCount += 1
+        }
+    }
+
+    files.forEach { file ->
+        val name = file.name
+        when {
+            name.endsWith(".zip", ignoreCase = true) -> {
+                runCatching {
+                    java.util.zip.ZipFile(file).use { zip ->
+                        zip.entries().asSequence()
+                            .filter { !it.isDirectory }
+                            .forEach { entry ->
+                                countName(entry.name)
+                            }
+                    }
+                }
+            }
+            else -> countName(name)
+        }
+    }
+
+    return MeasurementCounts(docsisCount, channelCount)
+}
+
 @Composable
 private fun AssetFileSection(
     context: Context,
     navController: NavController,
     reportFolder: String,
+    nodeName: String?,
     asset: Asset
 ) {
     val assetDir = remember(reportFolder, asset) {
@@ -1567,6 +1619,7 @@ private fun AssetFileSection(
     }
 
     var isExpanded by remember { mutableStateOf(true) }
+    val nodeNameFilter = remember(nodeName) { nodeName?.trim().orEmpty() }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -1621,6 +1674,44 @@ private fun AssetFileSection(
                         Icon(Icons.Default.Description, contentDescription = null)
                         Spacer(modifier = Modifier.width(8.dp))
                         Text("Agregar Mediciones")
+                    }
+                    Button(
+                        onClick = {
+                            val expectedDocsis = when (asset.type) {
+                                AssetType.NODE -> 4
+                                AssetType.AMPLIFIER -> 4
+                                else -> 0
+                            }
+                            val expectedChannel = when (asset.type) {
+                                AssetType.NODE -> 5
+                                AssetType.AMPLIFIER -> 4
+                                else -> 0
+                            }
+                            val counts = countMeasurementFiles(files, nodeNameFilter, asset.type == AssetType.NODE)
+                            val missingDocsis = (expectedDocsis - counts.docsisExpert).coerceAtLeast(0)
+                            val missingChannel = (expectedChannel - counts.channelExpert).coerceAtLeast(0)
+                            val message = if (missingDocsis == 0 && missingChannel == 0) {
+                                "Verificación inicial completa: se encontraron todas las mediciones."
+                            } else {
+                                buildString {
+                                    append("Faltan mediciones: ")
+                                    if (missingDocsis > 0) {
+                                        append("DocsisExpert ($missingDocsis)")
+                                    }
+                                    if (missingChannel > 0) {
+                                        if (missingDocsis > 0) append(", ")
+                                        append("ChannelExpert ($missingChannel)")
+                                    }
+                                    append(".")
+                                }
+                            }
+                            Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+                        },
+                        enabled = files.isNotEmpty() && asset.type in setOf(AssetType.NODE, AssetType.AMPLIFIER)
+                    ) {
+                        Icon(Icons.Default.CheckCircle, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Verificar")
                     }
                 }
 
