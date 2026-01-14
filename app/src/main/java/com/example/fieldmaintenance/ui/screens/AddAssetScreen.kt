@@ -80,6 +80,9 @@ import com.example.fieldmaintenance.util.PlanCache
 import com.example.fieldmaintenance.util.PlanRepository
 import com.example.fieldmaintenance.util.hasIncompleteAssets
 import java.util.Locale
+import java.io.ByteArrayInputStream
+import java.security.MessageDigest
+import java.util.zip.ZipInputStream
 import java.io.FileOutputStream
 import androidx.exifinterface.media.ExifInterface
 import java.text.SimpleDateFormat
@@ -97,6 +100,7 @@ import kotlinx.coroutines.launch
 import java.io.File
 import java.net.URLConnection
 import java.util.UUID
+import org.json.JSONObject
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -1550,53 +1554,171 @@ private suspend fun loadStaticMap(latitude: Double, longitude: Double): Bitmap? 
     }
 }
 
-private data class MeasurementCounts(
+private data class MeasurementVerificationResult(
     val docsisExpert: Int,
-    val channelExpert: Int
+    val channelExpert: Int,
+    val invalidTypeCount: Int,
+    val parseErrorCount: Int,
+    val duplicateFileCount: Int,
+    val duplicateEntryCount: Int
 )
 
-private fun countMeasurementFiles(
-    files: List<File>,
-    nodeName: String,
-    filterByNodeName: Boolean
-): MeasurementCounts {
-    val normalizedNode = nodeName.trim().lowercase(Locale.getDefault())
-    var docsisCount = 0
-    var channelCount = 0
+private data class MeasurementVerificationSummary(
+    val expectedDocsis: Int,
+    val expectedChannel: Int,
+    val result: MeasurementVerificationResult,
+    val warnings: List<String>
+)
 
-    fun shouldInclude(name: String): Boolean {
-        if (!filterByNodeName || normalizedNode.isBlank()) return true
-        return name.lowercase(Locale.getDefault()).contains(normalizedNode)
+private fun verifyMeasurementFiles(
+    files: List<File>,
+    assetType: AssetType
+): MeasurementVerificationSummary {
+    val expectedDocsis = when (assetType) {
+        AssetType.NODE -> 4
+        AssetType.AMPLIFIER -> 4
+        else -> 0
+    }
+    val expectedChannel = when (assetType) {
+        AssetType.NODE -> 5
+        AssetType.AMPLIFIER -> 4
+        else -> 0
     }
 
-    fun countName(name: String) {
-        val normalized = name.lowercase(Locale.getDefault())
-        if (!normalized.endsWith(".json") || !shouldInclude(normalized)) return
-        when {
-            normalized.contains("docsisexpert") -> docsisCount += 1
-            normalized.contains("channelexpert") -> channelCount += 1
+    val seenIds = mutableSetOf<String>()
+    var docsisCount = 0
+    var channelCount = 0
+    var invalidTypeCount = 0
+    var parseErrorCount = 0
+    var duplicateFileCount = 0
+    var duplicateEntryCount = 0
+
+    fun hashId(type: String, testTime: String, testDurationMs: String, geoLocation: String): String {
+        val input = listOf(type, testTime, testDurationMs, geoLocation).joinToString("|")
+        val digest = MessageDigest.getInstance("SHA-256").digest(input.toByteArray())
+        return digest.joinToString("") { "%02x".format(it) }
+    }
+
+    fun handleJsonBytes(bytes: ByteArray, sourceFile: File?, sourceLabel: String) {
+        val jsonText = runCatching { String(bytes) }.getOrNull()
+        if (jsonText.isNullOrBlank()) {
+            parseErrorCount += 1
+            return
+        }
+        val json = runCatching { JSONObject(jsonText) }.getOrNull()
+        val tests = json?.optJSONArray("tests")
+        if (tests == null) {
+            parseErrorCount += 1
+            return
+        }
+        var fileHasDuplicate = false
+        for (i in 0 until tests.length()) {
+            val test = tests.optJSONObject(i) ?: continue
+            val type = test.optString("type").trim()
+            val results = test.optJSONObject("results")
+            val testTime = results?.optString("testTime").orEmpty()
+            val testDurationMs = results?.optString("testDurationMs").orEmpty()
+            val geoLocation = results?.optString("geoLocation").orEmpty()
+            val normalizedType = type.lowercase(Locale.getDefault())
+            val id = hashId(type, testTime, testDurationMs, geoLocation)
+            if (!seenIds.add(id)) {
+                if (sourceFile != null) {
+                    fileHasDuplicate = true
+                } else {
+                    duplicateEntryCount += 1
+                }
+                continue
+            }
+            when (normalizedType) {
+                "docsisexpert" -> docsisCount += 1
+                "channelexpert" -> channelCount += 1
+                else -> invalidTypeCount += 1
+            }
+        }
+
+        if (fileHasDuplicate && sourceFile != null) {
+            if (sourceFile.exists() && sourceFile.delete()) {
+                duplicateFileCount += 1
+            } else {
+                parseErrorCount += 1
+            }
+        }
+    }
+
+    fun handleZipInputStream(inputStream: ZipInputStream, sourceFile: File?) {
+        var entry = inputStream.nextEntry
+        while (entry != null) {
+            if (!entry.isDirectory) {
+                val entryName = entry.name.lowercase(Locale.getDefault())
+                val bytes = runCatching { inputStream.readBytes() }.getOrNull()
+                if (bytes == null) {
+                    parseErrorCount += 1
+                } else if (entryName.endsWith(".zip")) {
+                    runCatching {
+                        ZipInputStream(ByteArrayInputStream(bytes)).use { nested ->
+                            handleZipInputStream(nested, sourceFile = null)
+                        }
+                    }.onFailure { parseErrorCount += 1 }
+                } else if (entryName.endsWith(".json")) {
+                    handleJsonBytes(bytes, sourceFile = sourceFile, sourceLabel = entry.name)
+                }
+            }
+            entry = inputStream.nextEntry
         }
     }
 
     files.forEach { file ->
-        val name = file.name
+        val name = file.name.lowercase(Locale.getDefault())
         when {
-            name.endsWith(".zip", ignoreCase = true) -> {
-                runCatching {
-                    java.util.zip.ZipFile(file).use { zip ->
-                        zip.entries().asSequence()
-                            .filter { !it.isDirectory }
-                            .forEach { entry ->
-                                countName(entry.name)
-                            }
-                    }
-                }
+            name.endsWith(".json") -> {
+                runCatching { handleJsonBytes(file.readBytes(), sourceFile = file, sourceLabel = file.name) }
+                    .onFailure { parseErrorCount += 1 }
             }
-            else -> countName(name)
+            name.endsWith(".zip") -> {
+                runCatching {
+                    ZipInputStream(file.inputStream()).use { zip ->
+                        handleZipInputStream(zip, sourceFile = null)
+                    }
+                }.onFailure { parseErrorCount += 1 }
+            }
         }
     }
 
-    return MeasurementCounts(docsisCount, channelCount)
+    val warnings = buildList {
+        if (docsisCount < expectedDocsis) {
+            add("Faltan mediciones DocsisExpert (${docsisCount}/$expectedDocsis).")
+        } else if (docsisCount > expectedDocsis) {
+            add("Sobran mediciones DocsisExpert (${docsisCount}/$expectedDocsis). Elimine una.")
+        }
+        if (channelCount < expectedChannel) {
+            add("Faltan mediciones ChannelExpert (${channelCount}/$expectedChannel).")
+        } else if (channelCount > expectedChannel) {
+            add("Sobran mediciones ChannelExpert (${channelCount}/$expectedChannel). Elimine una.")
+        }
+        if (invalidTypeCount > 0) {
+            add("Se encontraron mediciones con tipo inválido ($invalidTypeCount). Elimine las que no correspondan.")
+        }
+        if (duplicateFileCount > 0 || duplicateEntryCount > 0) {
+            add("Se detectaron duplicados y se eliminaron $duplicateFileCount archivo(s).")
+        }
+        if (parseErrorCount > 0) {
+            add("No se pudieron leer $parseErrorCount archivo(s) o entradas.")
+        }
+    }
+
+    return MeasurementVerificationSummary(
+        expectedDocsis = expectedDocsis,
+        expectedChannel = expectedChannel,
+        result = MeasurementVerificationResult(
+            docsisExpert = docsisCount,
+            channelExpert = channelCount,
+            invalidTypeCount = invalidTypeCount,
+            parseErrorCount = parseErrorCount,
+            duplicateFileCount = duplicateFileCount,
+            duplicateEntryCount = duplicateEntryCount
+        ),
+        warnings = warnings
+    )
 }
 
 @Composable
@@ -1619,7 +1741,7 @@ private fun AssetFileSection(
     }
 
     var isExpanded by remember { mutableStateOf(true) }
-    val nodeNameFilter = remember(nodeName) { nodeName?.trim().orEmpty() }
+    var verificationSummary by remember { mutableStateOf<MeasurementVerificationSummary?>(null) }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -1677,41 +1799,47 @@ private fun AssetFileSection(
                     }
                     Button(
                         onClick = {
-                            val expectedDocsis = when (asset.type) {
-                                AssetType.NODE -> 4
-                                AssetType.AMPLIFIER -> 4
-                                else -> 0
+                            val summary = verifyMeasurementFiles(files, asset.type)
+                            verificationSummary = summary
+                            if (summary.result.duplicateFileCount > 0) {
+                                files = assetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
                             }
-                            val expectedChannel = when (asset.type) {
-                                AssetType.NODE -> 5
-                                AssetType.AMPLIFIER -> 4
-                                else -> 0
-                            }
-                            val counts = countMeasurementFiles(files, nodeNameFilter, asset.type == AssetType.NODE)
-                            val missingDocsis = (expectedDocsis - counts.docsisExpert).coerceAtLeast(0)
-                            val missingChannel = (expectedChannel - counts.channelExpert).coerceAtLeast(0)
-                            val message = if (missingDocsis == 0 && missingChannel == 0) {
-                                "Verificación inicial completa: se encontraron todas las mediciones."
+                            if (summary.warnings.isEmpty()) {
+                                Toast.makeText(
+                                    context,
+                                    "Verificación inicial completa: se encontraron todas las mediciones.",
+                                    Toast.LENGTH_LONG
+                                ).show()
                             } else {
-                                buildString {
-                                    append("Faltan mediciones: ")
-                                    if (missingDocsis > 0) {
-                                        append("DocsisExpert ($missingDocsis)")
-                                    }
-                                    if (missingChannel > 0) {
-                                        if (missingDocsis > 0) append(", ")
-                                        append("ChannelExpert ($missingChannel)")
-                                    }
-                                    append(".")
-                                }
+                                Toast.makeText(
+                                    context,
+                                    summary.warnings.first(),
+                                    Toast.LENGTH_LONG
+                                ).show()
                             }
-                            Toast.makeText(context, message, Toast.LENGTH_LONG).show()
                         },
                         enabled = files.isNotEmpty() && asset.type in setOf(AssetType.NODE, AssetType.AMPLIFIER)
                     ) {
                         Icon(Icons.Default.CheckCircle, contentDescription = null)
                         Spacer(modifier = Modifier.width(8.dp))
                         Text("Verificar")
+                    }
+                }
+                verificationSummary?.let { summary ->
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            "Mediciones docsisexpert ${summary.result.docsisExpert}/${summary.expectedDocsis}"
+                        )
+                        Text(
+                            "Mediciones channelexpert ${summary.result.channelExpert}/${summary.expectedChannel}"
+                        )
+                        summary.warnings.forEach { warning ->
+                            Text(
+                                warning,
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
                     }
                 }
 
