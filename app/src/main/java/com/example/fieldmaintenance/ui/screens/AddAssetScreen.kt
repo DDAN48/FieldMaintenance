@@ -1066,7 +1066,9 @@ fun PhotoSection(
                     assetId = assetId,
                     photoType = photoType,
                     filePath = file.absolutePath,
-                    fileName = file.name
+                    fileName = file.name,
+                    latitude = labelInfo?.latitude,
+                    longitude = labelInfo?.longitude
                 )
             )
             // clear pending
@@ -1296,7 +1298,9 @@ fun PhotoSection(
 
 private data class PhotoLabelInfo(
     val lines: List<String>,
-    val mapBitmap: Bitmap?
+    val mapBitmap: Bitmap?,
+    val latitude: Double?,
+    val longitude: Double?
 )
 
 private suspend fun buildPhotoLabel(
@@ -1355,7 +1359,9 @@ private suspend fun buildPhotoLabel(
     }
     return PhotoLabelInfo(
         lines = listOf(headerLine, locationLine, timeLine),
-        mapBitmap = mapBitmap
+        mapBitmap = mapBitmap,
+        latitude = latitude,
+        longitude = longitude
     )
 }
 
