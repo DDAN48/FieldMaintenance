@@ -1211,19 +1211,6 @@ fun PhotoSection(
                 )
             }
 
-            if (locationPermissionGranted) {
-                val gpsText = latestLocation?.let { location ->
-                    val coords = String.format(Locale.getDefault(), "%.5f, %.5f", location.latitude, location.longitude)
-                    val accuracy = location.accuracy.roundToInt()
-                    "GPS: $coords (±${accuracy}m)"
-                } ?: "GPS: buscando señal..."
-                Text(
-                    text = gpsText,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                )
-            }
-            
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -1287,10 +1274,17 @@ fun PhotoSection(
         var scale by remember { mutableStateOf(1f) }
         var offsetX by remember { mutableStateOf(0f) }
         var offsetY by remember { mutableStateOf(0f) }
+        val scopePreview = rememberCoroutineScope()
         val transformState = rememberTransformableState { zoomChange, panChange, _ ->
             scale = (scale * zoomChange).coerceIn(1f, 5f)
             offsetX += panChange.x
             offsetY += panChange.y
+        }
+        LaunchedEffect(scale) {
+            if (scale <= 1.01f) {
+                offsetX = 0f
+                offsetY = 0f
+            }
         }
         androidx.compose.ui.window.Dialog(onDismissRequest = { photoToPreview = null }) {
             Surface(
