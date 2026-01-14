@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -1621,9 +1622,77 @@ private fun collectChannelRows(json: Any?): List<ChannelRow> {
         }
     }
 
+    fun collectFromDigitalFullScan(results: JSONObject) {
+        val tableData = results.optJSONObject("08_digitalFullScanResults")?.optJSONArray("tableData") ?: return
+        for (i in 0 until tableData.length()) {
+            val row = tableData.optJSONArray(i) ?: continue
+            if (row.length() < 9) continue
+            val channelValue = row.optJSONObject(0)?.optString("value")
+            val frequencyValue = row.optJSONObject(1)?.optString("value")
+            val levelValue = row.optJSONObject(2)?.optString("value")
+            val merValue = row.optJSONObject(3)?.optString("value")
+            val berPreValue = row.optJSONObject(4)?.optString("value")
+            val berPostValue = row.optJSONObject(5)?.optString("value")
+            val icfrValue = row.optJSONObject(8)?.optString("value")
+            val channel = parseInt(channelValue)
+            val frequency = parseNumber(frequencyValue)
+            val level = parseNumber(levelValue)
+            val mer = parseNumber(merValue)
+            val berPre = parseNumber(berPreValue)
+            val berPost = parseNumber(berPostValue)
+            val icfr = parseNumber(icfrValue)
+            if (channel != null || frequency != null || level != null || mer != null || berPre != null || berPost != null || icfr != null) {
+                rows.add(
+                    ChannelRow(
+                        channel = channel,
+                        frequencyMHz = frequency,
+                        levelDbmv = level,
+                        merDb = mer,
+                        berPre = berPre,
+                        berPost = berPost,
+                        icfrDb = icfr
+                    )
+                )
+            }
+        }
+    }
+
+    fun collectFromSingleFullScan(results: JSONObject) {
+        val tableData = results.optJSONObject("0A_singleFullScanResults")?.optJSONArray("tableData") ?: return
+        for (i in 0 until tableData.length()) {
+            val row = tableData.optJSONArray(i) ?: continue
+            if (row.length() < 3) continue
+            val channelValue = row.optJSONObject(0)?.optString("value")
+            val frequencyValue = row.optJSONObject(1)?.optString("value")
+            val levelValue = row.optJSONObject(2)?.optString("value")
+            val channel = parseInt(channelValue)
+            val frequency = parseNumber(frequencyValue)
+            val level = parseNumber(levelValue)
+            if (channel != null || frequency != null || level != null) {
+                rows.add(
+                    ChannelRow(
+                        channel = channel,
+                        frequencyMHz = frequency,
+                        levelDbmv = level,
+                        merDb = null,
+                        berPre = null,
+                        berPost = null,
+                        icfrDb = null
+                    )
+                )
+            }
+        }
+    }
+
     fun walk(value: Any?) {
         when (value) {
             is JSONObject -> {
+                if (value.has("08_digitalFullScanResults")) {
+                    collectFromDigitalFullScan(value)
+                }
+                if (value.has("0A_singleFullScanResults")) {
+                    collectFromSingleFullScan(value)
+                }
                 val map = mutableMapOf<String, Any?>()
                 val keys = value.keys()
                 while (keys.hasNext()) {
@@ -1645,33 +1714,22 @@ private fun collectChannelRows(json: Any?): List<ChannelRow> {
     return rows
 }
 
-private fun collectMerPairs(json: JSONObject?): List<Pair<Double, Double>> {
+private fun collectMerPairs(results: JSONObject?): List<Pair<Double, Double>> {
     val pairs = mutableListOf<Pair<Double, Double>>()
-
-    fun walk(value: Any?) {
-        when (value) {
-            is JSONObject -> {
-                val keys = value.keys()
-                while (keys.hasNext()) {
-                    walk(value.opt(keys.next()))
-                }
-            }
-            is org.json.JSONArray -> {
-                if (value.length() == 2) {
-                    val first = value.opt(0)
-                    val second = value.opt(1)
-                    if (first is Number && second is Number) {
-                        pairs.add(first.toDouble() to second.toDouble())
-                    }
-                }
-                for (i in 0 until value.length()) {
-                    walk(value.opt(i))
-                }
-            }
+    val data = results
+        ?.optJSONObject("02_downstreamMerView")
+        ?.optJSONObject("Passed")
+        ?.optJSONArray("data")
+        ?: return pairs
+    for (i in 0 until data.length()) {
+        val pair = data.optJSONArray(i) ?: continue
+        if (pair.length() < 2) continue
+        val first = pair.opt(0)
+        val second = pair.opt(1)
+        if (first is Number && second is Number) {
+            pairs.add(first.toDouble() to second.toDouble())
         }
     }
-
-    walk(json)
     return pairs
 }
 
@@ -1710,7 +1768,14 @@ private fun validateMeasurementValues(
     val results = test.optJSONObject("results")
     val testPointOffset = parseTestPointOffset(test)
     val rows = collectChannelRows(results)
-    val merPairs = collectMerPairs(results)
+    val merPairs = if (rows.any { it.merDb != null }) {
+        rows.mapNotNull { row ->
+            val mer = row.merDb ?: return@mapNotNull null
+            (row.frequencyMHz ?: 0.0) to mer
+        }
+    } else {
+        collectMerPairs(results)
+    }
 
     if (type == "docsisexpert") {
         val ruleTable = rules.optJSONObject("docsisexpert")
@@ -1757,6 +1822,9 @@ private fun validateMeasurementValues(
         val berPostMax = common?.optJSONObject("berPost")?.optDouble("max", Double.NaN)
         val icfrMax = common?.optJSONObject("icfr")?.optDouble("max", Double.NaN)
         rows.filter { row -> row.channel != null && row.channel in 14..115 }.forEach { row ->
+            if (merMin != null && !merMin.isNaN() && row.merDb != null && row.merDb < merMin) {
+                issues.add("MER bajo en canal ${row.channel}.")
+            }
             if (berPreMax != null && !berPreMax.isNaN() && row.berPre != null && row.berPre > berPreMax) {
                 issues.add("BER previo alto en canal ${row.channel}.")
             }
@@ -1819,11 +1887,21 @@ private fun validateMeasurementValues(
     return issues
 }
 
+private fun isWithinRange(value: Double, min: Double?, max: Double?): Boolean {
+    if (min != null && value < min) return false
+    if (max != null && value > max) return false
+    return true
+}
+
+private fun formatDbmv(value: Double?): String =
+    if (value == null) "—" else String.format(Locale.getDefault(), "%.1f", value)
+
 private data class MeasurementVerificationResult(
     val docsisExpert: Int,
     val channelExpert: Int,
     val docsisNames: List<String>,
     val channelNames: List<String>,
+    val measurementEntries: List<MeasurementEntry>,
     val invalidTypeCount: Int,
     val invalidTypeNames: List<String>,
     val parseErrorCount: Int,
@@ -1833,6 +1911,29 @@ private data class MeasurementVerificationResult(
     val duplicateEntryCount: Int,
     val duplicateEntryNames: List<String>,
     val validationIssueNames: List<String>
+)
+
+private data class MeasurementEntry(
+    val label: String,
+    val type: String,
+    val docsisLevels: Map<Double, Double>,
+    val docsisLevelOk: Map<Double, Boolean>,
+    val pilotLevels: Map<Int, Double>,
+    val pilotLevelOk: Map<Int, Boolean>,
+    val digitalRows: List<DigitalChannelRow>
+)
+
+private data class DigitalChannelRow(
+    val channel: Int,
+    val frequencyMHz: Double?,
+    val mer: Double?,
+    val berPre: Double?,
+    val berPost: Double?,
+    val icfr: Double?,
+    val merOk: Boolean?,
+    val berPreOk: Boolean?,
+    val berPostOk: Boolean?,
+    val icfrOk: Boolean?
 )
 
 private data class MeasurementVerificationSummary(
@@ -1865,6 +1966,7 @@ private suspend fun verifyMeasurementFiles(
     var channelCount = 0
     val docsisNames = linkedSetOf<String>()
     val channelNames = linkedSetOf<String>()
+    val measurementEntries = mutableListOf<MeasurementEntry>()
     var invalidTypeCount = 0
     val invalidTypeNames = linkedSetOf<String>()
     var parseErrorCount = 0
@@ -1964,6 +2066,96 @@ private suspend fun verifyMeasurementFiles(
                 }
             }
             if (normalizedType == "docsisexpert" || normalizedType == "channelexpert") {
+                val testPointOffset = parseTestPointOffset(test)
+                val rows = collectChannelRows(results)
+                val docsisFrequencies = listOf(16.8, 20.0, 24.8, 35.0)
+                val pilotChannels = listOf(50, 70, 110, 116, 136)
+
+                val docsisLevels = docsisFrequencies.associateWith { freq ->
+                    rows.firstOrNull { it.frequencyMHz != null && kotlin.math.abs(it.frequencyMHz - freq) <= 0.5 }
+                        ?.levelDbmv
+                }.filterValues { it != null }.mapValues { it.value!! }
+
+                val pilotLevels = pilotChannels.associateWith { channel ->
+                    rows.firstOrNull { it.channel == channel }?.levelDbmv
+                }.filterValues { it != null }.mapValues { it.value!! }
+
+                val docsisOk = mutableMapOf<Double, Boolean>()
+                val pilotOk = mutableMapOf<Int, Boolean>()
+
+                if (rules != null) {
+                    val assetKey = if (assetType == AssetType.NODE) "node" else "amplifier"
+                    val docsisRules = rules.optJSONObject("docsisexpert")
+                        ?.optJSONObject(assetKey)
+                        ?.optJSONObject(equipmentKey)
+                    docsisLevels.forEach { (freq, level) ->
+                        val rule = docsisRules?.optJSONObject(freq.toString())
+                        val min = rule?.optDouble("min", Double.NaN)?.takeIf { !it.isNaN() }
+                        val max = rule?.optDouble("max", Double.NaN)?.takeIf { !it.isNaN() }
+                        val adjusted = level + testPointOffset
+                        docsisOk[freq] = isWithinRange(adjusted, min, max)
+                    }
+
+                    val channelRules = rules.optJSONObject("channelexpert")
+                        ?.optJSONObject(assetKey)
+                        ?.optJSONObject(equipmentKey)
+                        ?.optJSONObject("channels")
+                    pilotLevels.forEach { (channel, level) ->
+                        val rule = channelRules?.optJSONObject(channel.toString())
+                        val adjusted = level + testPointOffset
+                        if (rule?.has("source") == true) {
+                            val target = amplifierTargets?.get(channel)
+                            val tolerance = rule.optDouble("tolerance", 1.5)
+                            pilotOk[channel] = target != null &&
+                                adjusted >= target - tolerance &&
+                                adjusted <= target + tolerance
+                        } else {
+                            val target = rule?.optDouble("target", Double.NaN)?.takeIf { !it.isNaN() }
+                            val tolerance = rule?.optDouble("tolerance", Double.NaN)?.takeIf { !it.isNaN() }
+                            pilotOk[channel] = if (target != null && tolerance != null) {
+                                adjusted >= target - tolerance && adjusted <= target + tolerance
+                            } else {
+                                true
+                            }
+                        }
+                    }
+                }
+
+                val common = rules?.optJSONObject("channelexpert")?.optJSONObject("common")
+                val merMin = common?.optJSONObject("mer")?.optDouble("min", Double.NaN)?.takeIf { !it.isNaN() }
+                val berPreMax = common?.optJSONObject("berPre")?.optDouble("max", Double.NaN)?.takeIf { !it.isNaN() }
+                val berPostMax = common?.optJSONObject("berPost")?.optDouble("max", Double.NaN)?.takeIf { !it.isNaN() }
+                val icfrMax = common?.optJSONObject("icfr")?.optDouble("max", Double.NaN)?.takeIf { !it.isNaN() }
+
+                val digitalRows = rows.filter { it.channel != null && it.channel in 14..115 }
+                    .mapNotNull { row ->
+                        val channel = row.channel ?: return@mapNotNull null
+                        DigitalChannelRow(
+                            channel = channel,
+                            frequencyMHz = row.frequencyMHz,
+                            mer = row.merDb,
+                            berPre = row.berPre,
+                            berPost = row.berPost,
+                            icfr = row.icfrDb,
+                            merOk = row.merDb?.let { merMin == null || it >= merMin },
+                            berPreOk = row.berPre?.let { berPreMax == null || it <= berPreMax },
+                            berPostOk = row.berPost?.let { berPostMax == null || it <= berPostMax },
+                            icfrOk = row.icfrDb?.let { icfrMax == null || it <= icfrMax }
+                        )
+                    }
+
+                measurementEntries.add(
+                    MeasurementEntry(
+                        label = sourceLabel,
+                        type = normalizedType,
+                        docsisLevels = docsisLevels,
+                        docsisLevelOk = docsisOk,
+                        pilotLevels = pilotLevels,
+                        pilotLevelOk = pilotOk,
+                        digitalRows = digitalRows
+                    )
+                )
+
                 val issues = validateMeasurementValues(
                     rules = rules,
                     test = test,
@@ -2074,6 +2266,7 @@ private suspend fun verifyMeasurementFiles(
             channelExpert = channelCount,
             docsisNames = docsisNames.toList(),
             channelNames = channelNames.toList(),
+            measurementEntries = measurementEntries.toList(),
             invalidTypeCount = invalidTypeCount,
             invalidTypeNames = invalidTypeNames.toList(),
             parseErrorCount = parseErrorCount,
@@ -2198,6 +2391,13 @@ private fun AssetFileSection(
                 verificationSummary?.let { summary ->
                     val smallTextStyle = MaterialTheme.typography.bodySmall
                     val mutedColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    val warningColor = MaterialTheme.colorScheme.error
+                    val pendingColor = MaterialTheme.colorScheme.tertiary
+                    val docsisEntries = summary.result.measurementEntries.filter { it.type == "docsisexpert" }
+                    val channelEntries = summary.result.measurementEntries.filter { it.type == "channelexpert" }
+                    val entryLabels = summary.result.measurementEntries.mapIndexed { index, entry ->
+                        "M${index + 1}" to entry.label
+                    }.toMap()
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(
                             "Mediciones docsisexpert ${summary.result.docsisExpert}/${summary.expectedDocsis}",
@@ -2248,6 +2448,136 @@ private fun AssetFileSection(
                             Text("Validación de valores:", fontWeight = FontWeight.SemiBold)
                             summary.result.validationIssueNames.forEach { name ->
                                 Text("• $name", style = smallTextStyle, color = mutedColor)
+                            }
+                        }
+
+                        if (docsisEntries.isNotEmpty()) {
+                            Text("DocsisExpert (niveles):", fontWeight = FontWeight.SemiBold)
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text("Frecuencia", modifier = Modifier.weight(1f), style = smallTextStyle)
+                                docsisEntries.forEachIndexed { index, entry ->
+                                    Text("M${index + 1}", modifier = Modifier.weight(1f), style = smallTextStyle)
+                                }
+                            }
+                            val docsisFrequencies = listOf(16.8, 20.0, 24.8, 35.0)
+                            docsisFrequencies.forEach { freq ->
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text("${freq} MHz", modifier = Modifier.weight(1f), style = smallTextStyle)
+                                    docsisEntries.forEach { entry ->
+                                        val value = entry.docsisLevels[freq]
+                                        val ok = entry.docsisLevelOk[freq] ?: true
+                                        Text(
+                                            formatDbmv(value),
+                                            modifier = Modifier.weight(1f),
+                                            style = smallTextStyle,
+                                            color = if (ok) mutedColor else warningColor
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        if (channelEntries.isNotEmpty()) {
+                            Text("Canales piloto (ChannelExpert):", fontWeight = FontWeight.SemiBold)
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text("Canal", modifier = Modifier.weight(1f), style = smallTextStyle)
+                                channelEntries.forEachIndexed { index, entry ->
+                                    Text("M${index + 1}", modifier = Modifier.weight(1f), style = smallTextStyle)
+                                }
+                            }
+                            val pilotChannels = listOf(50, 70, 110, 116, 136)
+                            pilotChannels.forEach { channel ->
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text("Canal $channel", modifier = Modifier.weight(1f), style = smallTextStyle)
+                                    channelEntries.forEach { entry ->
+                                        val value = entry.pilotLevels[channel]
+                                        val ok = entry.pilotLevelOk[channel] ?: true
+                                        Text(
+                                            formatDbmv(value),
+                                            modifier = Modifier.weight(1f),
+                                            style = smallTextStyle,
+                                            color = if (ok) mutedColor else warningColor
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        if (channelEntries.isNotEmpty()) {
+                            Text("ChannelExpert (canales digitales):", fontWeight = FontWeight.SemiBold)
+                            channelEntries.forEachIndexed { index, entry ->
+                                val label = entryLabels[entry.label] ?: "M${index + 1}"
+                                val hasIssues = entry.digitalRows.any { row ->
+                                    (row.merOk == false) || (row.berPreOk == false) || (row.berPostOk == false) || (row.icfrOk == false)
+                                }
+                                var expanded by remember(entry.label) { mutableStateOf(false) }
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { expanded = !expanded }
+                                        .padding(vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    if (hasIssues) {
+                                        Icon(
+                                            Icons.Default.Warning,
+                                            contentDescription = null,
+                                            tint = pendingColor
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                    }
+                                    Text("$label - ${entry.label}", style = smallTextStyle, modifier = Modifier.weight(1f))
+                                    Icon(
+                                        if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                        contentDescription = null
+                                    )
+                                }
+                                if (expanded) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Text("Canal", modifier = Modifier.weight(1f), style = smallTextStyle)
+                                        Text("Freq", modifier = Modifier.weight(1f), style = smallTextStyle)
+                                        Text("MER", modifier = Modifier.weight(1f), style = smallTextStyle)
+                                        Text("BER pre", modifier = Modifier.weight(1f), style = smallTextStyle)
+                                        Text("BER post", modifier = Modifier.weight(1f), style = smallTextStyle)
+                                        Text("ICFR", modifier = Modifier.weight(1f), style = smallTextStyle)
+                                    }
+                                    entry.digitalRows.forEach { row ->
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            Text("${row.channel}", modifier = Modifier.weight(1f), style = smallTextStyle)
+                                            Text(formatDbmv(row.frequencyMHz), modifier = Modifier.weight(1f), style = smallTextStyle)
+                                            Text(
+                                                formatDbmv(row.mer),
+                                                modifier = Modifier.weight(1f),
+                                                style = smallTextStyle,
+                                                color = if (row.merOk == false) warningColor else mutedColor
+                                            )
+                                            Text(
+                                                row.berPre?.toString() ?: "—",
+                                                modifier = Modifier.weight(1f),
+                                                style = smallTextStyle,
+                                                color = if (row.berPreOk == false) warningColor else mutedColor
+                                            )
+                                            Text(
+                                                row.berPost?.toString() ?: "—",
+                                                modifier = Modifier.weight(1f),
+                                                style = smallTextStyle,
+                                                color = if (row.berPostOk == false) warningColor else mutedColor
+                                            )
+                                            Text(
+                                                formatDbmv(row.icfr),
+                                                modifier = Modifier.weight(1f),
+                                                style = smallTextStyle,
+                                                color = if (row.icfrOk == false) warningColor else mutedColor
+                                            )
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
