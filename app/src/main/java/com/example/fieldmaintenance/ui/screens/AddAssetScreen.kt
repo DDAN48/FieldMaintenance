@@ -902,6 +902,7 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
                     context = context,
                     navController = navController,
                     reportFolder = MaintenanceStorage.reportFolderName(report?.eventName, reportId),
+                    nodeName = report?.nodeName,
                     asset = Asset(
                         id = workingAssetId,
                         reportId = reportId,
@@ -1725,6 +1726,7 @@ private fun AssetFileSection(
     context: Context,
     navController: NavController,
     reportFolder: String,
+    nodeName: String?,
     asset: Asset
 ) {
     val assetDir = remember(reportFolder, asset) {
