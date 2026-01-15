@@ -2551,26 +2551,9 @@ private fun AssetFileSection(
     val discardedFile = remember(assetDir) { File(assetDir, ".discarded_measurements.txt") }
     var discardedLabels by remember(assetDir) { mutableStateOf(loadDiscardedLabels(discardedFile)) }
     var lastFileNames by remember(assetDir) { mutableStateOf(files.map { it.name }.toSet()) }
-
-    val headerLine = "$assetLabel - $eventName"
-    val locationLine = when {
-        !address.isNullOrBlank() && coords != null -> "$address ($coords)"
-        coords != null -> coords
-        else -> "Ubicación no disponible"
+    val viaviIntent = remember {
+        context.packageManager.getLaunchIntentForPackage("com.viavi.smartaccess")
     }
-    val timeLine = formattedDateTime
-    val mapBitmap = if (latitude != null && longitude != null) {
-        loadStaticMap(latitude, longitude)
-    } else {
-        null
-    }
-    return PhotoLabelInfo(
-        lines = listOf(headerLine, locationLine, timeLine),
-        mapBitmap = mapBitmap,
-        latitude = latitude,
-        longitude = longitude
-    )
-}
 
     var isExpanded by remember { mutableStateOf(true) }
     var verificationSummary by remember { mutableStateOf<MeasurementVerificationSummary?>(null) }
@@ -2660,44 +2643,32 @@ private fun AssetFileSection(
                 }
             }
             if (isExpanded) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = {
-                        onInteraction()
-                        if (viaviIntent != null) {
-                            navController.currentBackStackEntry?.savedStateHandle?.apply {
-                                set(PendingMeasurementReportIdKey, asset.reportId)
-                                set(PendingMeasurementAssetIdKey, asset.id)
-                            }
-                            runCatching { context.startActivity(viaviIntent) }
-                                .onFailure {
-                                    Toast.makeText(
-                                        context,
-                                        "No se pudo abrir Viavi",
-                                        Toast.LENGTH_SHORT
-                                    ).show()
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = {
+                            onInteraction()
+                            if (viaviIntent != null) {
+                                navController.currentBackStackEntry?.savedStateHandle?.apply {
+                                    set(PendingMeasurementReportIdKey, asset.reportId)
+                                    set(PendingMeasurementAssetIdKey, asset.id)
                                 }
-                        } else {
-                            val tolerance = rule.optDouble("tolerance", 1.5)
-                            val adjusted = level + testPointOffset
-                            if (adjusted < target - tolerance || adjusted > target + tolerance) {
-                                issues.add("Nivel fuera de rango en canal $channel.")
+                                runCatching { context.startActivity(viaviIntent) }
+                                    .onFailure {
+                                        Toast.makeText(
+                                            context,
+                                            "No se pudo abrir Viavi",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
                             }
-                        }
-                    }
-                } else {
-                    val row = rows.firstOrNull { it.channel == channel }
-                    val level = row?.levelDbmv
-                    if (level == null) {
-                        issues.add("No se encontró nivel para canal $channel.")
-                    } else {
-                        val target = rule.optDouble("target", Double.NaN)
-                        val tolerance = rule.optDouble("tolerance", Double.NaN)
-                        if (!target.isNaN() && !tolerance.isNaN()) {
-                            val adjusted = level + testPointOffset
-                            if (adjusted < target - tolerance || adjusted > target + tolerance) {
-                                issues.add("Nivel fuera de rango en canal $channel.")
-                            }
-                        }
+                        },
+                        enabled = viaviIntent != null,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Abrir Viavi")
                     }
                 }
                 verificationSummary?.let { summary ->
