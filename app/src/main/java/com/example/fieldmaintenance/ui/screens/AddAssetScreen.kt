@@ -2413,6 +2413,27 @@ private suspend fun verifyMeasurementFiles(
         }
     }
 
+    fun handleGzipBytes(bytes: ByteArray, sourceLabel: String) {
+        val decompressed = runCatching {
+            GZIPInputStream(ByteArrayInputStream(bytes)).use { it.readBytes() }
+        }.getOrNull()
+        if (decompressed == null) {
+            parseErrorCount += 1
+            parseErrorNames.add(sourceLabel)
+            return
+        }
+        if (isZipBytes(decompressed)) {
+            val nested = ZipInputStream(ByteArrayInputStream(decompressed))
+            try {
+                handleZipInputStream(nested, sourceFile = null)
+            } finally {
+                nested.close()
+            }
+            return
+        }
+        handleJsonBytes(decompressed, sourceFile = null, sourceLabel = sourceLabel)
+    }
+
     dedupedFiles.forEach { file ->
         val name = file.name.lowercase(Locale.getDefault())
         when {
