@@ -66,6 +66,7 @@ fun AmplifierAdjustmentCard(
     amplifierMode: AmplifierMode?,
     initial: AmplifierAdjustment?,
     showRequiredErrors: Boolean,
+    collapseSignal: Int,
     onCurrentChange: (AmplifierAdjustment) -> Unit,
     onPersist: suspend (AmplifierAdjustment) -> Unit
 ) {
@@ -80,6 +81,10 @@ fun AmplifierAdjustmentCard(
     var recoExpanded by rememberSaveable(assetId) { mutableStateOf(true) }
 
     var dirty by rememberSaveable(assetId) { mutableStateOf(false) }
+
+    LaunchedEffect(collapseSignal) {
+        moduleExpanded = false
+    }
 
     fun parseDbmv(text: String): Double? =
         text.trim().takeIf { it.isNotBlank() }?.replace(',', '.')?.toDoubleOrNull()
@@ -762,5 +767,4 @@ private fun CompareHeaderRow() {
     }
     Spacer(Modifier.height(6.dp))
 }
-
 
