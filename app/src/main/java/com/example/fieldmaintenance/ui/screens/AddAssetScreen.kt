@@ -2552,26 +2552,6 @@ private fun AssetFileSection(
     var discardedLabels by remember(assetDir) { mutableStateOf(loadDiscardedLabels(discardedFile)) }
     var lastFileNames by remember(assetDir) { mutableStateOf(files.map { it.name }.toSet()) }
 
-    val headerLine = "$assetLabel - $eventName"
-    val locationLine = when {
-        !address.isNullOrBlank() && coords != null -> "$address ($coords)"
-        coords != null -> coords
-        else -> "Ubicación no disponible"
-    }
-    val timeLine = formattedDateTime
-    val mapBitmap = if (latitude != null && longitude != null) {
-        loadStaticMap(latitude, longitude)
-    } else {
-        null
-    }
-    return PhotoLabelInfo(
-        lines = listOf(headerLine, locationLine, timeLine),
-        mapBitmap = mapBitmap,
-        latitude = latitude,
-        longitude = longitude
-    )
-}
-
     var isExpanded by remember { mutableStateOf(true) }
     var verificationSummary by remember { mutableStateOf<MeasurementVerificationSummary?>(null) }
 
