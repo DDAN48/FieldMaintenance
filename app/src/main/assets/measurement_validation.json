@@ -32,8 +32,8 @@
   "channelexpert": {
     "common": {
       "mer": {"min": 39},
-      "berPre": {"max": 1.0e-9},
-      "berPost": {"max": 1.0e-9},
+      "berPre": {"max": 1.0e-8},
+      "berPost": {"max": 1.0e-8},
       "icfr": {"max": 2}
     },
     "node": {
