@@ -90,6 +90,7 @@ dependencies {
     
     // ZIP
     implementation(libs.zip4j)
+    implementation("com.github.junrar:junrar:7.5.5")
     
     // Icons Extended
     implementation("androidx.compose.material:material-icons-extended")
