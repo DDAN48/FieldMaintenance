@@ -43,9 +43,13 @@ fun NodeAdjustmentCard(
     planRow: PlanRow?,
     adjustment: NodeAdjustment?,
     showRequiredErrors: Boolean,
+    collapseSignal: Int,
     onPersist: (NodeAdjustment) -> Unit
 ) {
     var expanded by remember(assetId) { mutableStateOf(true) }
+    LaunchedEffect(collapseSignal) {
+        expanded = false
+    }
 
     // Determine if we have plan data
     val hasPlanData = planRow != null

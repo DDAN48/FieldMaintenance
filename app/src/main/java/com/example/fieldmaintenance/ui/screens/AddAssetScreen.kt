@@ -156,6 +156,8 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
     var monitoringPhotoCount by remember { mutableStateOf(0) }
     var spectrumPhotoCount by remember { mutableStateOf(0) }
     var autoSaved by rememberSaveable(workingAssetId) { mutableStateOf(false) }
+    var collapseAdjustmentsSignal by rememberSaveable { mutableStateOf(0) }
+    val triggerAdjustmentsCollapse = { collapseAdjustmentsSignal += 1 }
 
     // Amplifier adjustment (persisted per asset)
     val amplifierAdjustment by repository.getAmplifierAdjustment(workingAssetId)
@@ -598,6 +600,7 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
                     planRow = planRowForNode,
                     adjustment = nodeAdjustment,
                     showRequiredErrors = attemptedSave,
+                    collapseSignal = collapseAdjustmentsSignal,
                     onPersist = { adj ->
                         scope.launch { repository.upsertNodeAdjustment(adj) }
                     }
@@ -776,6 +779,7 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
                         amplifierMode = amplifierMode,
                         initial = amplifierAdjustment,
                         showRequiredErrors = attemptedSave,
+                        collapseSignal = collapseAdjustmentsSignal,
                         onCurrentChange = { currentAmplifierAdjustment = it },
                         onPersist = { adj -> repository.upsertAmplifierAdjustment(adj.copy(assetId = workingAssetId)) }
                     )
@@ -819,7 +823,12 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
                     minRequired = if (assetType == AssetType.NODE && technology != "RPHY") 2 else 0,
                     showRequiredError = attemptedSave && (assetType != AssetType.NODE || technology != "RPHY"),
                     maxAllowed = 2,
-                    onCountChange = { modulePhotoCount = it }
+                    onCountChange = {
+                        if (it > modulePhotoCount) {
+                            triggerAdjustmentsCollapse()
+                        }
+                        modulePhotoCount = it
+                    }
                 )
             }
             
@@ -837,7 +846,12 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
                     minRequired = 1,
                     showRequiredError = attemptedSave,
                     maxAllowed = 2,
-                    onCountChange = { opticsPhotoCount = it }
+                    onCountChange = {
+                        if (it > opticsPhotoCount) {
+                            triggerAdjustmentsCollapse()
+                        }
+                        opticsPhotoCount = it
+                    }
                 )
             }
 
@@ -853,7 +867,12 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
                     minRequired = 0,
                     showRequiredError = false,
                     maxAllowed = 2,
-                    onCountChange = { monitoringPhotoCount = it }
+                    onCountChange = {
+                        if (it > monitoringPhotoCount) {
+                            triggerAdjustmentsCollapse()
+                        }
+                        monitoringPhotoCount = it
+                    }
                 )
             }
             
@@ -872,7 +891,12 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
                     minRequired = 0,
                     showRequiredError = false,
                     maxAllowed = maxSpectrumPhotos,
-                    onCountChange = { spectrumPhotoCount = it }
+                    onCountChange = {
+                        if (it > spectrumPhotoCount) {
+                            triggerAdjustmentsCollapse()
+                        }
+                        spectrumPhotoCount = it
+                    }
                 )
             }
             
@@ -905,6 +929,7 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
                     navController = navController,
                     repository = repository,
                     reportFolder = MaintenanceStorage.reportFolderName(report?.eventName, reportId),
+                    onInteraction = triggerAdjustmentsCollapse,
                     asset = Asset(
                         id = workingAssetId,
                         reportId = reportId,
@@ -2316,6 +2341,7 @@ private fun AssetFileSection(
     navController: NavController,
     repository: com.example.fieldmaintenance.data.repository.MaintenanceRepository,
     reportFolder: String,
+    onInteraction: () -> Unit,
     asset: Asset
 ) {
     val assetDir = remember(reportFolder, asset) {
@@ -2351,7 +2377,10 @@ private fun AssetFileSection(
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.weight(1f)
                 )
-                IconButton(onClick = { isExpanded = !isExpanded }) {
+                IconButton(onClick = {
+                    onInteraction()
+                    isExpanded = !isExpanded
+                }) {
                     Icon(
                         if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
                         contentDescription = if (isExpanded) "Colapsar" else "Expandir"
@@ -2361,6 +2390,7 @@ private fun AssetFileSection(
             if (isExpanded) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(onClick = {
+                        onInteraction()
                         if (viaviIntent != null) {
                             navController.currentBackStackEntry?.savedStateHandle?.apply {
                                 set(PendingMeasurementReportIdKey, asset.reportId)
@@ -2388,6 +2418,7 @@ private fun AssetFileSection(
                     }
                     Button(
                         onClick = {
+                            onInteraction()
                             scope.launch {
                                 val summary = verifyMeasurementFiles(context, files, asset, repository)
                                 verificationSummary = summary
@@ -2621,6 +2652,11 @@ private fun AssetFileSection(
                                     .fillMaxWidth()
                                     .combinedClickable(
                                         onClick = {
+                                            onInteraction()
+                                            fileToDelete = file
+                                        },
+                                        onLongClick = {
+                                            onInteraction()
                                             val uri = FileProvider.getUriForFile(
                                                 context,
                                                 "${context.packageName}.fileprovider",
@@ -2638,8 +2674,7 @@ private fun AssetFileSection(
                                                         Toast.LENGTH_SHORT
                                                     ).show()
                                                 }
-                                        },
-                                        onLongClick = { fileToDelete = file }
+                                        }
                                     )
                                     .padding(vertical = 4.dp),
                                 verticalAlignment = Alignment.CenterVertically
