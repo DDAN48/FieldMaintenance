@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.background
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -15,6 +16,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
@@ -2491,9 +2493,25 @@ private fun AssetFileSection(
     var discardedLabels by remember(assetDir) { mutableStateOf(loadDiscardedLabels(discardedFile)) }
     var lastFileNames by remember(assetDir) { mutableStateOf(files.map { it.name }.toSet()) }
 
-    val viaviIntent = remember {
-        context.packageManager.getLaunchIntentForPackage("com.viavisolutions.mobiletech")
+    val headerLine = "$assetLabel - $eventName"
+    val locationLine = when {
+        !address.isNullOrBlank() && coords != null -> "$address ($coords)"
+        coords != null -> coords
+        else -> "Ubicación no disponible"
     }
+    val timeLine = formattedDateTime
+    val mapBitmap = if (latitude != null && longitude != null) {
+        loadStaticMap(latitude, longitude)
+    } else {
+        null
+    }
+    return PhotoLabelInfo(
+        lines = listOf(headerLine, locationLine, timeLine),
+        mapBitmap = mapBitmap,
+        latitude = latitude,
+        longitude = longitude
+    )
+}
 
     var isExpanded by remember { mutableStateOf(true) }
     var verificationSummary by remember { mutableStateOf<MeasurementVerificationSummary?>(null) }
@@ -2600,16 +2618,27 @@ private fun AssetFileSection(
                                     ).show()
                                 }
                         } else {
-                            Toast.makeText(
-                                context,
-                                "Viavi (mobiletech) no está instalada",
-                                Toast.LENGTH_SHORT
-                            ).show()
+                            val tolerance = rule.optDouble("tolerance", 1.5)
+                            val adjusted = level + testPointOffset
+                            if (adjusted < target - tolerance || adjusted > target + tolerance) {
+                                issues.add("Nivel fuera de rango en canal $channel.")
+                            }
                         }
-                    }) {
-                        Icon(Icons.Default.Description, contentDescription = null)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Agregar Mediciones")
+                    }
+                } else {
+                    val row = rows.firstOrNull { it.channel == channel }
+                    val level = row?.levelDbmv
+                    if (level == null) {
+                        issues.add("No se encontró nivel para canal $channel.")
+                    } else {
+                        val target = rule.optDouble("target", Double.NaN)
+                        val tolerance = rule.optDouble("tolerance", Double.NaN)
+                        if (!target.isNaN() && !tolerance.isNaN()) {
+                            val adjusted = level + testPointOffset
+                            if (adjusted < target - tolerance || adjusted > target + tolerance) {
+                                issues.add("Nivel fuera de rango en canal $channel.")
+                            }
+                        }
                     }
                 }
                 verificationSummary?.let { summary ->
