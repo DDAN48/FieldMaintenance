@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.background
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -1020,6 +1021,15 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
     }
 }
 
+private fun loadDiscardedLabels(file: File): Set<String> {
+    if (!file.exists()) return emptySet()
+    return file.readLines().map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+}
+
+private fun saveDiscardedLabels(file: File, labels: Set<String>) {
+    file.writeText(labels.joinToString(separator = "\n"))
+}
+
 @Composable
 fun PhotoSection(
     title: String,
@@ -1950,6 +1960,9 @@ private fun isWithinRange(value: Double, min: Double?, max: Double?): Boolean {
 private fun formatDbmv(value: Double?): String =
     if (value == null) "—" else String.format(Locale.getDefault(), "%.1f", value)
 
+private fun formatMHz(value: Double?): String =
+    if (value == null) "—" else String.format(Locale.getDefault(), "%.1f", value)
+
 private data class MeasurementVerificationResult(
     val docsisExpert: Int,
     val channelExpert: Int,
@@ -1970,11 +1983,20 @@ private data class MeasurementVerificationResult(
 private data class MeasurementEntry(
     val label: String,
     val type: String,
+    val fromZip: Boolean,
+    val isDiscarded: Boolean,
+    val docsisMeta: Map<Double, ChannelMeta>,
     val docsisLevels: Map<Double, Double>,
     val docsisLevelOk: Map<Double, Boolean>,
+    val pilotMeta: Map<Int, ChannelMeta>,
     val pilotLevels: Map<Int, Double>,
     val pilotLevelOk: Map<Int, Boolean>,
     val digitalRows: List<DigitalChannelRow>
+)
+
+private data class ChannelMeta(
+    val channel: Int?,
+    val frequencyMHz: Double?
 )
 
 private data class DigitalChannelRow(
@@ -2001,7 +2023,8 @@ private suspend fun verifyMeasurementFiles(
     context: Context,
     files: List<File>,
     asset: Asset,
-    repository: com.example.fieldmaintenance.data.repository.MaintenanceRepository
+    repository: com.example.fieldmaintenance.data.repository.MaintenanceRepository,
+    discardedLabels: Set<String>
 ): MeasurementVerificationSummary {
     val assetType = asset.type
     val expectedDocsis = when (assetType) {
@@ -2073,17 +2096,22 @@ private suspend fun verifyMeasurementFiles(
     }
 
     fun handleJsonBytes(bytes: ByteArray, sourceFile: File?, sourceLabel: String) {
+        val isDiscarded = discardedLabels.contains(sourceLabel)
         val jsonText = runCatching { String(bytes) }.getOrNull()
         if (jsonText.isNullOrBlank()) {
-            parseErrorCount += 1
-            parseErrorNames.add(sourceLabel)
+            if (!isDiscarded) {
+                parseErrorCount += 1
+                parseErrorNames.add(sourceLabel)
+            }
             return
         }
         val json = runCatching { JSONObject(jsonText) }.getOrNull()
         val tests = json?.optJSONArray("tests")
         if (tests == null) {
-            parseErrorCount += 1
-            parseErrorNames.add(sourceLabel)
+            if (!isDiscarded) {
+                parseErrorCount += 1
+                parseErrorNames.add(sourceLabel)
+            }
             return
         }
         var fileHasDuplicate = false
@@ -2097,26 +2125,34 @@ private suspend fun verifyMeasurementFiles(
             val normalizedType = type.lowercase(Locale.getDefault())
             val id = hashId(type, testTime, testDurationMs, geoLocation)
             if (!seenIds.add(id)) {
-                if (sourceFile != null) {
-                    fileHasDuplicate = true
-                } else {
-                    duplicateEntryCount += 1
-                    duplicateEntryNames.add(sourceLabel)
+                if (!isDiscarded) {
+                    if (sourceFile != null) {
+                        fileHasDuplicate = true
+                    } else {
+                        duplicateEntryCount += 1
+                        duplicateEntryNames.add(sourceLabel)
+                    }
                 }
                 continue
             }
             when (normalizedType) {
                 "docsisexpert" -> {
-                    docsisCount += 1
-                    docsisNames.add(sourceLabel)
+                    if (!isDiscarded) {
+                        docsisCount += 1
+                        docsisNames.add(sourceLabel)
+                    }
                 }
                 "channelexpert" -> {
-                    channelCount += 1
-                    channelNames.add(sourceLabel)
+                    if (!isDiscarded) {
+                        channelCount += 1
+                        channelNames.add(sourceLabel)
+                    }
                 }
                 else -> {
-                    invalidTypeCount += 1
-                    invalidTypeNames.add(sourceLabel)
+                    if (!isDiscarded) {
+                        invalidTypeCount += 1
+                        invalidTypeNames.add(sourceLabel)
+                    }
                 }
             }
             if (normalizedType == "docsisexpert" || normalizedType == "channelexpert") {
@@ -2124,6 +2160,16 @@ private suspend fun verifyMeasurementFiles(
                 val rows = collectChannelRows(results)
                 val docsisFrequencies = listOf(16.8, 20.0, 24.8, 35.0)
                 val pilotChannels = listOf(50, 70, 110, 116, 136)
+
+                val docsisMeta = docsisFrequencies.associateWith { freq ->
+                    val row = rows.firstOrNull { it.frequencyMHz != null && kotlin.math.abs(it.frequencyMHz - freq) <= 0.5 }
+                    ChannelMeta(channel = row?.channel, frequencyMHz = row?.frequencyMHz)
+                }
+
+                val pilotMeta = pilotChannels.associateWith { channel ->
+                    val row = rows.firstOrNull { it.channel == channel }
+                    ChannelMeta(channel = row?.channel, frequencyMHz = row?.frequencyMHz)
+                }
 
                 val docsisLevels = docsisFrequencies.associateWith { freq ->
                     rows.firstOrNull { it.frequencyMHz != null && kotlin.math.abs(it.frequencyMHz - freq) <= 0.5 }
@@ -2202,29 +2248,35 @@ private suspend fun verifyMeasurementFiles(
                     MeasurementEntry(
                         label = sourceLabel,
                         type = normalizedType,
+                        fromZip = sourceFile == null,
+                        isDiscarded = isDiscarded,
+                        docsisMeta = docsisMeta,
                         docsisLevels = docsisLevels,
                         docsisLevelOk = docsisOk,
+                        pilotMeta = pilotMeta,
                         pilotLevels = pilotLevels,
                         pilotLevelOk = pilotOk,
                         digitalRows = digitalRows
                     )
                 )
 
-                val issues = validateMeasurementValues(
-                    rules = rules,
-                    test = test,
-                    type = normalizedType,
-                    equipmentKey = equipmentKey,
-                    assetType = assetType,
-                    amplifierTargets = amplifierTargets
-                )
-                issues.forEach { issue ->
-                    validationIssueNames.add("$sourceLabel: $issue")
+                if (!isDiscarded) {
+                    val issues = validateMeasurementValues(
+                        rules = rules,
+                        test = test,
+                        type = normalizedType,
+                        equipmentKey = equipmentKey,
+                        assetType = assetType,
+                        amplifierTargets = amplifierTargets
+                    )
+                    issues.forEach { issue ->
+                        validationIssueNames.add("$sourceLabel: $issue")
+                    }
                 }
             }
         }
 
-        if (fileHasDuplicate && sourceFile != null) {
+        if (!isDiscarded && fileHasDuplicate && sourceFile != null) {
             if (sourceFile.exists() && sourceFile.delete()) {
                 duplicateFileCount += 1
                 duplicateFileNames.add(sourceLabel)
@@ -2350,6 +2402,8 @@ private fun AssetFileSection(
     var files by remember(assetDir) { mutableStateOf(assetDir.listFiles()?.sortedBy { it.name } ?: emptyList()) }
     var fileToDelete by remember { mutableStateOf<File?>(null) }
     val scope = rememberCoroutineScope()
+    val discardedFile = remember(assetDir) { File(assetDir, ".discarded_measurements.txt") }
+    var discardedLabels by remember(assetDir) { mutableStateOf(loadDiscardedLabels(discardedFile)) }
 
     val viaviIntent = remember {
         context.packageManager.getLaunchIntentForPackage("com.viavisolutions.mobiletech")
@@ -2357,6 +2411,30 @@ private fun AssetFileSection(
 
     var isExpanded by remember { mutableStateOf(true) }
     var verificationSummary by remember { mutableStateOf<MeasurementVerificationSummary?>(null) }
+
+    fun displayLabel(entry: MeasurementEntry): String {
+        return if (entry.isDiscarded && !entry.label.contains("DESCARTADA", ignoreCase = true)) {
+            "${entry.label} DESCARTADA"
+        } else {
+            entry.label
+        }
+    }
+
+    fun toggleDiscard(entry: MeasurementEntry) {
+        if (!entry.fromZip) return
+        val updated = discardedLabels.toMutableSet()
+        if (entry.isDiscarded) {
+            updated.remove(entry.label)
+        } else {
+            updated.add(entry.label)
+        }
+        discardedLabels = updated
+        saveDiscardedLabels(discardedFile, updated)
+        scope.launch {
+            val summary = verifyMeasurementFiles(context, files, asset, repository, updated)
+            verificationSummary = summary
+        }
+    }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -2420,7 +2498,13 @@ private fun AssetFileSection(
                         onClick = {
                             onInteraction()
                             scope.launch {
-                                val summary = verifyMeasurementFiles(context, files, asset, repository)
+                                val summary = verifyMeasurementFiles(
+                                    context,
+                                    files,
+                                    asset,
+                                    repository,
+                                    discardedLabels
+                                )
                                 verificationSummary = summary
                                 if (summary.result.duplicateFileCount > 0) {
                                     files = assetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
@@ -2452,25 +2536,119 @@ private fun AssetFileSection(
                     val mutedColor = MaterialTheme.colorScheme.onSurfaceVariant
                     val warningColor = MaterialTheme.colorScheme.error
                     val pendingColor = MaterialTheme.colorScheme.tertiary
+                    val discardedBackground = Color(0xFFD9A6A6)
                     val docsisEntries = summary.result.measurementEntries.filter { it.type == "docsisexpert" }
                     val channelEntries = summary.result.measurementEntries.filter { it.type == "channelexpert" }
-                    val entryLabels = summary.result.measurementEntries.mapIndexed { index, entry ->
-                        "M${index + 1}" to entry.label
-                    }.toMap()
+
+                    val docsisTableEntries = docsisEntries.take(5)
+                    val channelTableEntries = channelEntries.take(5)
+
+                    @Composable
+                    fun MeasurementHeaderCell(entry: MeasurementEntry, index: Int) {
+                        val modifier = if (entry.fromZip) {
+                            Modifier
+                                .weight(1f)
+                                .clickable { toggleDiscard(entry) }
+                        } else {
+                            Modifier.weight(1f)
+                        }
+                        Column(modifier = modifier) {
+                            Text(
+                                "M${index + 1}",
+                                style = smallTextStyle,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                displayLabel(entry),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = mutedColor
+                            )
+                        }
+                    }
+
+                    @Composable
+                    fun MeasurementValueCell(value: String, ok: Boolean, discarded: Boolean) {
+                        val textColor = if (discarded) Color.Black else if (ok) mutedColor else warningColor
+                        val cellModifier = Modifier
+                            .weight(1f)
+                            .padding(vertical = 2.dp)
+                            .then(
+                                if (discarded) Modifier.background(discardedBackground).padding(4.dp)
+                                else Modifier
+                            )
+                        Text(
+                            value,
+                            modifier = cellModifier,
+                            style = smallTextStyle,
+                            color = textColor
+                        )
+                    }
+
+                    fun docsisChannel(freq: Double): String {
+                        val channel = docsisTableEntries.mapNotNull { it.docsisMeta[freq]?.channel }.firstOrNull()
+                        return channel?.toString() ?: "—"
+                    }
+
+                    fun docsisFrequency(freq: Double): String {
+                        val frequency = docsisTableEntries.mapNotNull { it.docsisMeta[freq]?.frequencyMHz }.firstOrNull()
+                        return formatMHz(frequency ?: freq)
+                    }
+
+                    fun pilotFrequency(channel: Int): String {
+                        val frequency = channelTableEntries.mapNotNull { it.pilotMeta[channel]?.frequencyMHz }.firstOrNull()
+                        return formatMHz(frequency)
+                    }
+
+                    val docsisActiveEntries = docsisEntries.filterNot { it.isDiscarded }
+                    val docsisDiscardedEntries = docsisEntries.filter { it.isDiscarded }
+                    val channelActiveEntries = channelEntries.filterNot { it.isDiscarded }
+                    val channelDiscardedEntries = channelEntries.filter { it.isDiscarded }
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(
                             "Mediciones docsisexpert ${summary.result.docsisExpert}/${summary.expectedDocsis}",
                             fontWeight = FontWeight.SemiBold
                         )
-                        summary.result.docsisNames.forEach { name ->
-                            Text("• $name", style = smallTextStyle, color = mutedColor)
+                        docsisActiveEntries.forEach { entry ->
+                            val modifier = if (entry.fromZip) {
+                                Modifier.clickable { toggleDiscard(entry) }
+                            } else {
+                                Modifier
+                            }
+                            Text("• ${displayLabel(entry)}", style = smallTextStyle, color = mutedColor, modifier = modifier)
+                        }
+                        if (docsisDiscardedEntries.isNotEmpty()) {
+                            Text("Descartadas:", fontWeight = FontWeight.SemiBold)
+                            docsisDiscardedEntries.forEach { entry ->
+                                Text(
+                                    "• ${displayLabel(entry)}",
+                                    style = smallTextStyle,
+                                    color = mutedColor,
+                                    modifier = Modifier.clickable { toggleDiscard(entry) }
+                                )
+                            }
                         }
                         Text(
                             "Mediciones channelexpert ${summary.result.channelExpert}/${summary.expectedChannel}",
                             fontWeight = FontWeight.SemiBold
                         )
-                        summary.result.channelNames.forEach { name ->
-                            Text("• $name", style = smallTextStyle, color = mutedColor)
+                        channelActiveEntries.forEach { entry ->
+                            val modifier = if (entry.fromZip) {
+                                Modifier.clickable { toggleDiscard(entry) }
+                            } else {
+                                Modifier
+                            }
+                            Text("• ${displayLabel(entry)}", style = smallTextStyle, color = mutedColor, modifier = modifier)
+                        }
+                        if (channelDiscardedEntries.isNotEmpty()) {
+                            Text("Descartadas:", fontWeight = FontWeight.SemiBold)
+                            channelDiscardedEntries.forEach { entry ->
+                                Text(
+                                    "• ${displayLabel(entry)}",
+                                    style = smallTextStyle,
+                                    color = mutedColor,
+                                    modifier = Modifier.clickable { toggleDiscard(entry) }
+                                )
+                            }
                         }
                         summary.warnings.forEach { warning ->
                             Text(
@@ -2512,24 +2690,32 @@ private fun AssetFileSection(
 
                         if (docsisEntries.isNotEmpty()) {
                             Text("DocsisExpert (niveles):", fontWeight = FontWeight.SemiBold)
+                            if (docsisEntries.size > 5) {
+                                Text(
+                                    "Solo se muestran 5 mediciones (M1 a M5).",
+                                    style = smallTextStyle,
+                                    color = mutedColor
+                                )
+                            }
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Text("Frecuencia", modifier = Modifier.weight(1f), style = smallTextStyle)
-                                docsisEntries.forEachIndexed { index, entry ->
-                                    Text("M${index + 1}", modifier = Modifier.weight(1f), style = smallTextStyle)
+                                Text("Canal", modifier = Modifier.weight(1f), style = smallTextStyle, fontWeight = FontWeight.SemiBold)
+                                Text("Freq", modifier = Modifier.weight(1f), style = smallTextStyle, fontWeight = FontWeight.SemiBold)
+                                docsisTableEntries.forEachIndexed { index, entry ->
+                                    MeasurementHeaderCell(entry, index)
                                 }
                             }
                             val docsisFrequencies = listOf(16.8, 20.0, 24.8, 35.0)
                             docsisFrequencies.forEach { freq ->
                                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Text("${freq} MHz", modifier = Modifier.weight(1f), style = smallTextStyle)
-                                    docsisEntries.forEach { entry ->
+                                    Text(docsisChannel(freq), modifier = Modifier.weight(1f), style = smallTextStyle)
+                                    Text("${docsisFrequency(freq)} MHz", modifier = Modifier.weight(1f), style = smallTextStyle)
+                                    docsisTableEntries.forEach { entry ->
                                         val value = entry.docsisLevels[freq]
                                         val ok = entry.docsisLevelOk[freq] ?: true
-                                        Text(
-                                            formatDbmv(value),
-                                            modifier = Modifier.weight(1f),
-                                            style = smallTextStyle,
-                                            color = if (ok) mutedColor else warningColor
+                                        MeasurementValueCell(
+                                            value = formatDbmv(value),
+                                            ok = ok,
+                                            discarded = entry.isDiscarded
                                         )
                                     }
                                 }
@@ -2538,24 +2724,32 @@ private fun AssetFileSection(
 
                         if (channelEntries.isNotEmpty()) {
                             Text("Canales piloto (ChannelExpert):", fontWeight = FontWeight.SemiBold)
+                            if (channelEntries.size > 5) {
+                                Text(
+                                    "Solo se muestran 5 mediciones (M1 a M5).",
+                                    style = smallTextStyle,
+                                    color = mutedColor
+                                )
+                            }
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Text("Canal", modifier = Modifier.weight(1f), style = smallTextStyle)
-                                channelEntries.forEachIndexed { index, entry ->
-                                    Text("M${index + 1}", modifier = Modifier.weight(1f), style = smallTextStyle)
+                                Text("Canal", modifier = Modifier.weight(1f), style = smallTextStyle, fontWeight = FontWeight.SemiBold)
+                                Text("Freq", modifier = Modifier.weight(1f), style = smallTextStyle, fontWeight = FontWeight.SemiBold)
+                                channelTableEntries.forEachIndexed { index, entry ->
+                                    MeasurementHeaderCell(entry, index)
                                 }
                             }
                             val pilotChannels = listOf(50, 70, 110, 116, 136)
                             pilotChannels.forEach { channel ->
                                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Text("Canal $channel", modifier = Modifier.weight(1f), style = smallTextStyle)
-                                    channelEntries.forEach { entry ->
+                                    Text("$channel", modifier = Modifier.weight(1f), style = smallTextStyle)
+                                    Text("${pilotFrequency(channel)} MHz", modifier = Modifier.weight(1f), style = smallTextStyle)
+                                    channelTableEntries.forEach { entry ->
                                         val value = entry.pilotLevels[channel]
                                         val ok = entry.pilotLevelOk[channel] ?: true
-                                        Text(
-                                            formatDbmv(value),
-                                            modifier = Modifier.weight(1f),
-                                            style = smallTextStyle,
-                                            color = if (ok) mutedColor else warningColor
+                                        MeasurementValueCell(
+                                            value = formatDbmv(value),
+                                            ok = ok,
+                                            discarded = entry.isDiscarded
                                         )
                                     }
                                 }
@@ -2564,8 +2758,8 @@ private fun AssetFileSection(
 
                         if (channelEntries.isNotEmpty()) {
                             Text("ChannelExpert (canales digitales):", fontWeight = FontWeight.SemiBold)
-                            channelEntries.forEachIndexed { index, entry ->
-                                val label = entryLabels[entry.label] ?: "M${index + 1}"
+                            channelTableEntries.forEachIndexed { index, entry ->
+                                val label = "M${index + 1}"
                                 val hasIssues = entry.digitalRows.any { row ->
                                     (row.merOk == false) || (row.berPreOk == false) || (row.berPostOk == false) || (row.icfrOk == false)
                                 }
@@ -2585,7 +2779,7 @@ private fun AssetFileSection(
                                         )
                                         Spacer(modifier = Modifier.width(6.dp))
                                     }
-                                    Text("$label - ${entry.label}", style = smallTextStyle, modifier = Modifier.weight(1f))
+                                    Text("$label - ${displayLabel(entry)}", style = smallTextStyle, modifier = Modifier.weight(1f))
                                     Icon(
                                         if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
                                         contentDescription = null
@@ -2596,12 +2790,12 @@ private fun AssetFileSection(
                                         modifier = Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
-                                        Text("Canal", modifier = Modifier.weight(1f), style = smallTextStyle)
-                                        Text("Freq", modifier = Modifier.weight(1f), style = smallTextStyle)
-                                        Text("MER", modifier = Modifier.weight(1f), style = smallTextStyle)
-                                        Text("BER pre", modifier = Modifier.weight(1f), style = smallTextStyle)
-                                        Text("BER post", modifier = Modifier.weight(1f), style = smallTextStyle)
-                                        Text("ICFR", modifier = Modifier.weight(1f), style = smallTextStyle)
+                                        Text("Canal", modifier = Modifier.weight(1f), style = smallTextStyle, fontWeight = FontWeight.SemiBold)
+                                        Text("Freq", modifier = Modifier.weight(1f), style = smallTextStyle, fontWeight = FontWeight.SemiBold)
+                                        Text("MER", modifier = Modifier.weight(1f), style = smallTextStyle, fontWeight = FontWeight.SemiBold)
+                                        Text("BER pre", modifier = Modifier.weight(1f), style = smallTextStyle, fontWeight = FontWeight.SemiBold)
+                                        Text("BER post", modifier = Modifier.weight(1f), style = smallTextStyle, fontWeight = FontWeight.SemiBold)
+                                        Text("ICFR", modifier = Modifier.weight(1f), style = smallTextStyle, fontWeight = FontWeight.SemiBold)
                                     }
                                     entry.digitalRows.forEach { row ->
                                         Row(
@@ -2610,29 +2804,25 @@ private fun AssetFileSection(
                                         ) {
                                             Text("${row.channel}", modifier = Modifier.weight(1f), style = smallTextStyle)
                                             Text(formatDbmv(row.frequencyMHz), modifier = Modifier.weight(1f), style = smallTextStyle)
-                                            Text(
-                                                formatDbmv(row.mer),
-                                                modifier = Modifier.weight(1f),
-                                                style = smallTextStyle,
-                                                color = if (row.merOk == false) warningColor else mutedColor
+                                            MeasurementValueCell(
+                                                value = formatDbmv(row.mer),
+                                                ok = row.merOk != false,
+                                                discarded = entry.isDiscarded
                                             )
-                                            Text(
-                                                row.berPre?.toString() ?: "—",
-                                                modifier = Modifier.weight(1f),
-                                                style = smallTextStyle,
-                                                color = if (row.berPreOk == false) warningColor else mutedColor
+                                            MeasurementValueCell(
+                                                value = row.berPre?.toString() ?: "—",
+                                                ok = row.berPreOk != false,
+                                                discarded = entry.isDiscarded
                                             )
-                                            Text(
-                                                row.berPost?.toString() ?: "—",
-                                                modifier = Modifier.weight(1f),
-                                                style = smallTextStyle,
-                                                color = if (row.berPostOk == false) warningColor else mutedColor
+                                            MeasurementValueCell(
+                                                value = row.berPost?.toString() ?: "—",
+                                                ok = row.berPostOk != false,
+                                                discarded = entry.isDiscarded
                                             )
-                                            Text(
-                                                formatDbmv(row.icfr),
-                                                modifier = Modifier.weight(1f),
-                                                style = smallTextStyle,
-                                                color = if (row.icfrOk == false) warningColor else mutedColor
+                                            MeasurementValueCell(
+                                                value = formatDbmv(row.icfr),
+                                                ok = row.icfrOk != false,
+                                                discarded = entry.isDiscarded
                                             )
                                         }
                                     }
