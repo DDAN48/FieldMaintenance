@@ -106,9 +106,6 @@ import java.io.File
 import java.net.URLConnection
 import java.util.UUID
 import org.json.JSONObject
-import com.github.junrar.Archive
-import com.github.junrar.exception.RarException
-import java.io.ByteArrayOutputStream
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -2362,7 +2359,9 @@ private suspend fun verifyMeasurementFiles(
         return bytes.size >= 2 && bytes[0] == 'P'.code.toByte() && bytes[1] == 'K'.code.toByte()
     }
 
-    fun handleGzipBytes(bytes: ByteArray, sourceLabel: String) {
+    lateinit var handleZipInputStream: (ZipInputStream, File?) -> Unit
+
+    val handleGzipBytes: (ByteArray, String) -> Unit = { bytes, sourceLabel ->
         val decompressed = runCatching {
             GZIPInputStream(ByteArrayInputStream(bytes)).use { it.readBytes() }
         }.getOrNull()
@@ -2372,52 +2371,18 @@ private suspend fun verifyMeasurementFiles(
             return
         }
         if (isZipBytes(decompressed)) {
-            ZipInputStream(ByteArrayInputStream(decompressed)).use { nested ->
-                handleZipInputStream(nested, sourceFile = null)
+            val nested = ZipInputStream(ByteArrayInputStream(decompressed))
+            try {
+                handleZipInputStream(nested, null)
+            } finally {
+                nested.close()
             }
             return
         }
         handleJsonBytes(decompressed, sourceFile = null, sourceLabel = sourceLabel)
     }
 
-    fun handleRarFile(file: File, sourceLabel: String) {
-        try {
-            Archive(file).use { archive ->
-                val headers = archive.fileHeaders
-                headers.forEach { header ->
-                    if (header.isDirectory) return@forEach
-                    val name = header.fileNameString
-                    val output = ByteArrayOutputStream()
-                    archive.extractFile(header, output)
-                    val bytes = output.toByteArray()
-                    when {
-                        name.lowercase(Locale.getDefault()).endsWith(".zip") || isZipBytes(bytes) -> {
-                            ZipInputStream(ByteArrayInputStream(bytes)).use { nested ->
-                                handleZipInputStream(nested, sourceFile = null)
-                            }
-                        }
-                        name.lowercase(Locale.getDefault()).endsWith(".gz") -> {
-                            handleGzipBytes(bytes, name)
-                        }
-                        isJsonLike(name) -> {
-                            handleJsonBytes(bytes, sourceFile = null, sourceLabel = name)
-                        }
-                    }
-                }
-            }
-        } catch (_: RarException) {
-            parseErrorCount += 1
-            parseErrorNames.add(sourceLabel)
-        } catch (_: Exception) {
-            parseErrorCount += 1
-            parseErrorNames.add(sourceLabel)
-        }
-    }
-
-    fun handleZipInputStream(
-        inputStream: ZipInputStream,
-        sourceFile: File?
-    ) {
+    handleZipInputStream = { inputStream, sourceFile ->
         var entry = inputStream.nextEntry
         while (entry != null) {
             if (!entry.isDirectory) {
@@ -2428,20 +2393,18 @@ private suspend fun verifyMeasurementFiles(
                     parseErrorNames.add(entry.name)
                 } else if (entryName.endsWith(".zip") || isZipBytes(bytes)) {
                     runCatching {
-                            ZipInputStream(ByteArrayInputStream(bytes)).use { nested ->
-                                handleZipInputStream(nested, sourceFile = null)
-                            }
+                        val nested = ZipInputStream(ByteArrayInputStream(bytes))
+                        try {
+                            handleZipInputStream(nested, null)
+                        } finally {
+                            nested.close()
+                        }
                     }.onFailure {
                         parseErrorCount += 1
                         parseErrorNames.add(entry.name)
                     }
                 } else if (entryName.endsWith(".gz")) {
                     handleGzipBytes(bytes, entry.name)
-                } else if (entryName.endsWith(".rar")) {
-                    val temp = File.createTempFile("measurements", ".rar", context.cacheDir)
-                    temp.writeBytes(bytes)
-                    handleRarFile(temp, entry.name)
-                    temp.delete()
                 } else if (isJsonLike(entry.name)) {
                     handleJsonBytes(bytes, sourceFile = sourceFile, sourceLabel = entry.name)
                 }
@@ -2462,7 +2425,7 @@ private suspend fun verifyMeasurementFiles(
             }
             name.endsWith(".zip") -> {
                 runCatching {
-                    ZipInputStream(file.inputStream()).use { zip ->
+                    ZipInputStream(file.inputStream()).use { zip: ZipInputStream ->
                         handleZipInputStream(zip, sourceFile = null)
                     }
                 }.onFailure {
@@ -2478,9 +2441,6 @@ private suspend fun verifyMeasurementFiles(
                     parseErrorCount += 1
                     parseErrorNames.add(file.name)
                 }
-            }
-            name.endsWith(".rar") -> {
-                handleRarFile(file, file.name)
             }
         }
     }
@@ -2551,26 +2511,9 @@ private fun AssetFileSection(
     val discardedFile = remember(assetDir) { File(assetDir, ".discarded_measurements.txt") }
     var discardedLabels by remember(assetDir) { mutableStateOf(loadDiscardedLabels(discardedFile)) }
     var lastFileNames by remember(assetDir) { mutableStateOf(files.map { it.name }.toSet()) }
-
-    val headerLine = "$assetLabel - $eventName"
-    val locationLine = when {
-        !address.isNullOrBlank() && coords != null -> "$address ($coords)"
-        coords != null -> coords
-        else -> "Ubicación no disponible"
+    val viaviIntent = remember {
+        context.packageManager.getLaunchIntentForPackage("com.viavi.smartaccess")
     }
-    val timeLine = formattedDateTime
-    val mapBitmap = if (latitude != null && longitude != null) {
-        loadStaticMap(latitude, longitude)
-    } else {
-        null
-    }
-    return PhotoLabelInfo(
-        lines = listOf(headerLine, locationLine, timeLine),
-        mapBitmap = mapBitmap,
-        latitude = latitude,
-        longitude = longitude
-    )
-}
 
     var isExpanded by remember { mutableStateOf(true) }
     var verificationSummary by remember { mutableStateOf<MeasurementVerificationSummary?>(null) }
@@ -2660,44 +2603,32 @@ private fun AssetFileSection(
                 }
             }
             if (isExpanded) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = {
-                        onInteraction()
-                        if (viaviIntent != null) {
-                            navController.currentBackStackEntry?.savedStateHandle?.apply {
-                                set(PendingMeasurementReportIdKey, asset.reportId)
-                                set(PendingMeasurementAssetIdKey, asset.id)
-                            }
-                            runCatching { context.startActivity(viaviIntent) }
-                                .onFailure {
-                                    Toast.makeText(
-                                        context,
-                                        "No se pudo abrir Viavi",
-                                        Toast.LENGTH_SHORT
-                                    ).show()
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = {
+                            onInteraction()
+                            if (viaviIntent != null) {
+                                navController.currentBackStackEntry?.savedStateHandle?.apply {
+                                    set(PendingMeasurementReportIdKey, asset.reportId)
+                                    set(PendingMeasurementAssetIdKey, asset.id)
                                 }
-                        } else {
-                            val tolerance = rule.optDouble("tolerance", 1.5)
-                            val adjusted = level + testPointOffset
-                            if (adjusted < target - tolerance || adjusted > target + tolerance) {
-                                issues.add("Nivel fuera de rango en canal $channel.")
+                                runCatching { context.startActivity(viaviIntent) }
+                                    .onFailure {
+                                        Toast.makeText(
+                                            context,
+                                            "No se pudo abrir Viavi",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
                             }
-                        }
-                    }
-                } else {
-                    val row = rows.firstOrNull { it.channel == channel }
-                    val level = row?.levelDbmv
-                    if (level == null) {
-                        issues.add("No se encontró nivel para canal $channel.")
-                    } else {
-                        val target = rule.optDouble("target", Double.NaN)
-                        val tolerance = rule.optDouble("tolerance", Double.NaN)
-                        if (!target.isNaN() && !tolerance.isNaN()) {
-                            val adjusted = level + testPointOffset
-                            if (adjusted < target - tolerance || adjusted > target + tolerance) {
-                                issues.add("Nivel fuera de rango en canal $channel.")
-                            }
-                        }
+                        },
+                        enabled = viaviIntent != null,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Abrir Viavi")
                     }
                 }
                 verificationSummary?.let { summary ->
