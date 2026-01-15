@@ -15,6 +15,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
@@ -22,20 +23,41 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.font.FontWeight
 import android.net.Uri
 import android.widget.Toast
+import android.location.Geocoder
+import android.location.LocationManager
+import android.location.Location
+import android.location.LocationListener
+import android.os.Build
+import android.text.Layout
+import android.text.StaticLayout
+import android.text.TextPaint
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Paint
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.transformable
+import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -45,10 +67,13 @@ import com.example.fieldmaintenance.data.model.*
 import com.example.fieldmaintenance.data.model.label
 import com.example.fieldmaintenance.ui.components.AmplifierAdjustmentCard
 import com.example.fieldmaintenance.ui.components.NodeAdjustmentCard
+import com.example.fieldmaintenance.ui.navigation.PendingMeasurementAssetIdKey
+import com.example.fieldmaintenance.ui.navigation.PendingMeasurementReportIdKey
 import com.example.fieldmaintenance.ui.navigation.Screen
 import com.example.fieldmaintenance.ui.viewmodel.ReportViewModel
 import com.example.fieldmaintenance.ui.viewmodel.ReportViewModelFactory
 import com.example.fieldmaintenance.util.DatabaseProvider
+import com.example.fieldmaintenance.util.CiscoHfcAmpCalculator
 import com.example.fieldmaintenance.util.ImageStore
 import com.example.fieldmaintenance.util.PhotoManager
 import com.example.fieldmaintenance.util.SettingsStore
@@ -58,6 +83,17 @@ import com.example.fieldmaintenance.util.PlanCache
 import com.example.fieldmaintenance.util.PlanRepository
 import com.example.fieldmaintenance.util.hasIncompleteAssets
 import java.util.Locale
+import java.io.ByteArrayInputStream
+import java.security.MessageDigest
+import java.util.zip.ZipInputStream
+import java.io.FileOutputStream
+import androidx.exifinterface.media.ExifInterface
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.net.URL
+import kotlin.math.roundToInt
+import kotlinx.coroutines.delay
+import android.os.Looper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.map
@@ -67,6 +103,7 @@ import kotlinx.coroutines.launch
 import java.io.File
 import java.net.URLConnection
 import java.util.UUID
+import org.json.JSONObject
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -96,11 +133,23 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
     }
     
     var assetType by remember { mutableStateOf(AssetType.NODE) }
-    var frequency by remember { mutableStateOf<Frequency?>(null) }
-    var technology by remember { mutableStateOf<String?>(null) }
-    var amplifierMode by remember { mutableStateOf<AmplifierMode?>(null) }
-    var port by remember { mutableStateOf<Port?>(null) }
-    var portIndex by remember { mutableStateOf<Int?>(null) }
+    val frequencySaver = Saver<Frequency?, String>(
+        save = { it?.name ?: "" },
+        restore = { if (it.isBlank()) null else Frequency.valueOf(it) }
+    )
+    val amplifierModeSaver = Saver<AmplifierMode?, String>(
+        save = { it?.name ?: "" },
+        restore = { if (it.isBlank()) null else AmplifierMode.valueOf(it) }
+    )
+    val portSaver = Saver<Port?, String>(
+        save = { it?.name ?: "" },
+        restore = { if (it.isBlank()) null else Port.valueOf(it) }
+    )
+    var frequency by rememberSaveable(stateSaver = frequencySaver) { mutableStateOf<Frequency?>(null) }
+    var technology by rememberSaveable { mutableStateOf<String?>(null) }
+    var amplifierMode by rememberSaveable(stateSaver = amplifierModeSaver) { mutableStateOf<AmplifierMode?>(null) }
+    var port by rememberSaveable(stateSaver = portSaver) { mutableStateOf<Port?>(null) }
+    var portIndex by rememberSaveable { mutableStateOf<Int?>(null) }
     var hasNode by remember { mutableStateOf(false) }
     var attemptedSave by remember { mutableStateOf(false) }
     var modulePhotoCount by remember { mutableStateOf(0) }
@@ -108,6 +157,8 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
     var monitoringPhotoCount by remember { mutableStateOf(0) }
     var spectrumPhotoCount by remember { mutableStateOf(0) }
     var autoSaved by rememberSaveable(workingAssetId) { mutableStateOf(false) }
+    var collapseAdjustmentsSignal by rememberSaveable { mutableStateOf(0) }
+    val triggerAdjustmentsCollapse = { collapseAdjustmentsSignal += 1 }
 
     // Amplifier adjustment (persisted per asset)
     val amplifierAdjustment by repository.getAmplifierAdjustment(workingAssetId)
@@ -550,6 +601,7 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
                     planRow = planRowForNode,
                     adjustment = nodeAdjustment,
                     showRequiredErrors = attemptedSave,
+                    collapseSignal = collapseAdjustmentsSignal,
                     onPersist = { adj ->
                         scope.launch { repository.upsertNodeAdjustment(adj) }
                     }
@@ -728,6 +780,7 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
                         amplifierMode = amplifierMode,
                         initial = amplifierAdjustment,
                         showRequiredErrors = attemptedSave,
+                        collapseSignal = collapseAdjustmentsSignal,
                         onCurrentChange = { currentAmplifierAdjustment = it },
                         onPersist = { adj -> repository.upsertAmplifierAdjustment(adj.copy(assetId = workingAssetId)) }
                     )
@@ -740,6 +793,23 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
                 "Fotos",
                 style = MaterialTheme.typography.titleMedium
             )
+
+            val assetDisplayName = remember(reportNodeName, assetType, port, portIndex) {
+                val baseNodeName = reportNodeName.ifBlank { "Nodo" }
+                if (assetType == AssetType.NODE) {
+                    baseNodeName
+                } else {
+                    val code = if (port != null && portIndex != null) {
+                        "${port?.name}${String.format("%02d", portIndex)}"
+                    } else {
+                        "SIN-COD"
+                    }
+                    "$baseNodeName $code".trim()
+                }
+            }
+            val eventName = remember(report?.eventName) {
+                report?.eventName?.trim().orEmpty().ifBlank { "Sin evento" }
+            }
             
             // Foto del Módulo (no para RPHY)
             if (assetType != AssetType.NODE || technology != "RPHY") {
@@ -748,11 +818,18 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
                     reportId = reportId,
                     assetId = workingAssetId,
                     photoType = PhotoType.MODULE,
+                    assetLabel = assetDisplayName,
+                    eventName = eventName,
                     repository = repository,
                     minRequired = if (assetType == AssetType.NODE && technology != "RPHY") 2 else 0,
                     showRequiredError = attemptedSave && (assetType != AssetType.NODE || technology != "RPHY"),
                     maxAllowed = 2,
-                    onCountChange = { modulePhotoCount = it }
+                    onCountChange = {
+                        if (it > modulePhotoCount) {
+                            triggerAdjustmentsCollapse()
+                        }
+                        modulePhotoCount = it
+                    }
                 )
             }
             
@@ -764,11 +841,18 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
                     reportId = reportId,
                     assetId = workingAssetId,
                     photoType = PhotoType.OPTICS,
+                    assetLabel = assetDisplayName,
+                    eventName = eventName,
                     repository = repository,
                     minRequired = 1,
                     showRequiredError = attemptedSave,
                     maxAllowed = 2,
-                    onCountChange = { opticsPhotoCount = it }
+                    onCountChange = {
+                        if (it > opticsPhotoCount) {
+                            triggerAdjustmentsCollapse()
+                        }
+                        opticsPhotoCount = it
+                    }
                 )
             }
 
@@ -778,11 +862,18 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
                     reportId = reportId,
                     assetId = workingAssetId,
                     photoType = PhotoType.MONITORING,
+                    assetLabel = assetDisplayName,
+                    eventName = eventName,
                     repository = repository,
                     minRequired = 0,
                     showRequiredError = false,
                     maxAllowed = 2,
-                    onCountChange = { monitoringPhotoCount = it }
+                    onCountChange = {
+                        if (it > monitoringPhotoCount) {
+                            triggerAdjustmentsCollapse()
+                        }
+                        monitoringPhotoCount = it
+                    }
                 )
             }
             
@@ -795,11 +886,18 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
                     reportId = reportId,
                     assetId = workingAssetId,
                     photoType = PhotoType.SPECTRUM,
+                    assetLabel = assetDisplayName,
+                    eventName = eventName,
                     repository = repository,
                     minRequired = 0,
                     showRequiredError = false,
                     maxAllowed = maxSpectrumPhotos,
-                    onCountChange = { spectrumPhotoCount = it }
+                    onCountChange = {
+                        if (it > spectrumPhotoCount) {
+                            triggerAdjustmentsCollapse()
+                        }
+                        spectrumPhotoCount = it
+                    }
                 )
             }
             
@@ -822,11 +920,17 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
                 }
             }
 
-            if (autoSaved) {
+            val techNormalized = technology?.trim()?.lowercase(Locale.getDefault()) ?: ""
+            val isRphyNode = assetType == AssetType.NODE && techNormalized == "rphy"
+
+            if (autoSaved && !isRphyNode) {
                 Spacer(modifier = Modifier.height(8.dp))
                 AssetFileSection(
                     context = context,
+                    navController = navController,
+                    repository = repository,
                     reportFolder = MaintenanceStorage.reportFolderName(report?.eventName, reportId),
+                    onInteraction = triggerAdjustmentsCollapse,
                     asset = Asset(
                         id = workingAssetId,
                         reportId = reportId,
@@ -897,27 +1001,15 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
         val r = report ?: return
         FinalizeReportDialog(
             onDismiss = { showFinalizeDialog = false },
-            onSendEmailPdf = {
+            onSendEmailPackage = {
                 scope.launch {
-                    val pdfFile = exportManager.exportToPDF(r)
-                    com.example.fieldmaintenance.util.EmailManager.sendEmail(context, r.eventName, listOf(pdfFile))
+                    val bundleFile = exportManager.exportToBundleZip(r)
+                    com.example.fieldmaintenance.util.EmailManager.sendEmail(context, r.eventName, listOf(bundleFile))
                 }
             },
-            onSendEmailJson = {
+            onExportPackage = {
                 scope.launch {
-                    val zipFile = exportManager.exportToZIP(r)
-                    com.example.fieldmaintenance.util.EmailManager.sendEmail(context, r.eventName, listOf(zipFile))
-                }
-            },
-            onExportPDF = {
-                scope.launch {
-                    exportManager.exportPdfToDownloads(r)
-                    snackbarHostState.showSnackbar("PDF guardado en Descargas/FieldMaintenance")
-                }
-            },
-            onExportJSON = {
-                scope.launch {
-                    exportManager.exportZipToDownloads(r)
+                    exportManager.exportBundleToDownloads(r)
                     snackbarHostState.showSnackbar("ZIP guardado en Descargas/FieldMaintenance")
                 }
             },
@@ -929,12 +1021,23 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
     }
 }
 
+private fun loadDiscardedLabels(file: File): Set<String> {
+    if (!file.exists()) return emptySet()
+    return file.readLines().map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+}
+
+private fun saveDiscardedLabels(file: File, labels: Set<String>) {
+    file.writeText(labels.joinToString(separator = "\n"))
+}
+
 @Composable
 fun PhotoSection(
     title: String,
     reportId: String,
     assetId: String,
     photoType: PhotoType,
+    assetLabel: String,
+    eventName: String,
     repository: com.example.fieldmaintenance.data.repository.MaintenanceRepository,
     minRequired: Int,
     showRequiredError: Boolean,
@@ -953,8 +1056,12 @@ fun PhotoSection(
     val isMissingRequired = showRequiredError && minRequired > 0 && photos.size < minRequired
     val isOverMax = photos.size > maxAllowed
     val isAtMax = photos.size >= maxAllowed
+    val allowsGallery = photoType != PhotoType.MODULE && photoType != PhotoType.OPTICS
 
     var photoToDelete by remember { mutableStateOf<com.example.fieldmaintenance.data.model.Photo?>(null) }
+    var photoToPreview by remember { mutableStateOf<com.example.fieldmaintenance.data.model.Photo?>(null) }
+    var latestLocation by remember { mutableStateOf<Location?>(null) }
+    var locationPermissionGranted by remember { mutableStateOf(false) }
     // These must survive configuration changes (e.g., rotating to landscape opens camera and Activity may recreate)
     var pendingCameraFilePath by rememberSaveable { mutableStateOf<String?>(null) }
     var pendingCameraUriString by rememberSaveable { mutableStateOf<String?>(null) }
@@ -1002,12 +1109,24 @@ fun PhotoSection(
         if (!ok) return@rememberLauncherForActivityResult
 
         scope.launch {
+            val labelInfo = buildPhotoLabel(
+                context = context,
+                file = file,
+                assetLabel = assetLabel,
+                eventName = eventName,
+                overrideLocation = latestLocation
+            )
+            if (labelInfo != null) {
+                annotateImageWithLabel(file, labelInfo)
+            }
             repository.insertPhoto(
                 com.example.fieldmaintenance.data.model.Photo(
                     assetId = assetId,
                     photoType = photoType,
                     filePath = file.absolutePath,
-                    fileName = file.name
+                    fileName = file.name,
+                    latitude = labelInfo?.latitude,
+                    longitude = labelInfo?.longitude
                 )
             )
             // clear pending
@@ -1029,7 +1148,44 @@ fun PhotoSection(
             Toast.makeText(context, "Permiso de cámara denegado", Toast.LENGTH_SHORT).show()
         }
     }
-    
+
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        locationPermissionGranted = granted
+        if (!granted) {
+            Toast.makeText(context, "Permiso de ubicación denegado", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        locationPermissionGranted = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.ACCESS_FINE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+    }
+
+    DisposableEffect(locationPermissionGranted) {
+        if (!locationPermissionGranted) return@DisposableEffect onDispose {}
+        val manager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
+        if (manager == null) return@DisposableEffect onDispose {}
+        val listener = LocationListener { location ->
+            latestLocation = location
+        }
+        val providers = listOf(
+            LocationManager.GPS_PROVIDER,
+            LocationManager.NETWORK_PROVIDER
+        )
+        providers.forEach { provider ->
+            runCatching {
+                manager.requestLocationUpdates(provider, 1000L, 1f, listener, Looper.getMainLooper())
+            }
+        }
+        onDispose {
+            runCatching { manager.removeUpdates(listener) }
+        }
+    }
+
     // Función para crear archivo temporal para la cámara
     val takePicture = {
         try {
@@ -1045,6 +1201,13 @@ fun PhotoSection(
             pendingCameraUriString = photoUri.toString()
 
             val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+            val locationGranted = ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.ACCESS_FINE_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED
+            if (!locationGranted) {
+                locationPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+            }
             if (granted) {
                 cameraLauncher.launch(photoUri)
             } else {
@@ -1095,19 +1258,21 @@ fun PhotoSection(
                     color = MaterialTheme.colorScheme.error
                 )
             }
-            
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                OutlinedButton(
-                    onClick = { if (!isAtMax) galleryLauncher.launch("image/*") },
-                    modifier = Modifier.weight(1f),
-                    enabled = !isAtMax
-                ) {
-                    Icon(Icons.Default.Image, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Galería")
+                if (allowsGallery) {
+                    OutlinedButton(
+                        onClick = { if (!isAtMax) galleryLauncher.launch("image/*") },
+                        modifier = Modifier.weight(1f),
+                        enabled = !isAtMax
+                    ) {
+                        Icon(Icons.Default.Image, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Galería")
+                    }
                 }
                 
                 OutlinedButton(
@@ -1136,7 +1301,7 @@ fun PhotoSection(
                         modifier = Modifier
                             .size(72.dp)
                             .combinedClickable(
-                                onClick = {},
+                                onClick = { photoToPreview = photo },
                                 onLongClick = { photoToDelete = photo }
                             ),
                         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
@@ -1149,6 +1314,65 @@ fun PhotoSection(
                     }
                 }
             }
+            }
+        }
+    }
+
+    photoToPreview?.let { photo ->
+        var scale by remember { mutableStateOf(1f) }
+        var offsetX by remember { mutableStateOf(0f) }
+        var offsetY by remember { mutableStateOf(0f) }
+        var containerSize by remember { mutableStateOf(IntSize.Zero) }
+        val transformState = rememberTransformableState { zoomChange, panChange, _ ->
+            scale = (scale * zoomChange).coerceIn(1f, 5f)
+            val maxX = ((containerSize.width * (scale - 1f)) / 2f).coerceAtLeast(0f)
+            val maxY = ((containerSize.height * (scale - 1f)) / 2f).coerceAtLeast(0f)
+            offsetX = (offsetX + panChange.x).coerceIn(-maxX, maxX)
+            offsetY = (offsetY + panChange.y).coerceIn(-maxY, maxY)
+        }
+        LaunchedEffect(scale) {
+            if (scale <= 1.01f) {
+                offsetX = 0f
+                offsetY = 0f
+            }
+        }
+        androidx.compose.ui.window.Dialog(onDismissRequest = { photoToPreview = null }) {
+            Surface(
+                shape = MaterialTheme.shapes.medium,
+                tonalElevation = 4.dp
+            ) {
+                Column(
+                    modifier = Modifier
+                        .padding(12.dp)
+                        .fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .onSizeChanged { size -> containerSize = size }
+                            .transformable(transformState)
+                    ) {
+                        androidx.compose.foundation.Image(
+                            painter = rememberAsyncImagePainter(File(photo.filePath)),
+                            contentDescription = null,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .graphicsLayer(
+                                    scaleX = scale,
+                                    scaleY = scale,
+                                    translationX = offsetX,
+                                    translationY = offsetY
+                                )
+                        )
+                    }
+                    TextButton(
+                        onClick = { photoToPreview = null },
+                        modifier = Modifier.align(Alignment.End)
+                    ) {
+                        Text("Cerrar")
+                    }
+                }
             }
         }
     }
@@ -1174,10 +1398,1002 @@ fun PhotoSection(
     }
 }
 
+private data class PhotoLabelInfo(
+    val lines: List<String>,
+    val mapBitmap: Bitmap?,
+    val latitude: Double?,
+    val longitude: Double?
+)
+
+private suspend fun buildPhotoLabel(
+    context: Context,
+    file: File,
+    assetLabel: String,
+    eventName: String,
+    overrideLocation: Location?
+): PhotoLabelInfo? {
+    val latLong = readExifLatLongWithRetry(file)
+    val bestLocation = selectBestLocation(latLong, overrideLocation, getLastKnownLocation(context))
+    if (latLong == null && bestLocation != null) {
+        applyLocationToExif(file, bestLocation)
+    }
+    val latitude = latLong?.getOrNull(0) ?: bestLocation?.latitude
+    val longitude = latLong?.getOrNull(1) ?: bestLocation?.longitude
+    val address = if (latitude != null && longitude != null) {
+        withContext(Dispatchers.IO) {
+            runCatching {
+                @Suppress("DEPRECATION")
+                Geocoder(context, Locale.getDefault())
+                    .getFromLocation(latitude, longitude, 1)
+                    ?.firstOrNull()
+                    ?.getAddressLine(0)
+            }.getOrNull()
+        }
+    } else {
+        null
+    }
+    val coords = if (latitude != null && longitude != null) {
+        String.format(Locale.getDefault(), "%.5f, %.5f", latitude, longitude)
+    } else {
+        null
+    }
+    val exif = runCatching { ExifInterface(file.absolutePath) }.getOrNull()
+    val dateTime = exif?.getAttribute(ExifInterface.TAG_DATETIME_ORIGINAL)
+        ?: exif?.getAttribute(ExifInterface.TAG_DATETIME)
+    val formattedDateTime = dateTime?.let { raw ->
+        runCatching {
+            val parsed = SimpleDateFormat("yyyy:MM:dd HH:mm:ss", Locale.getDefault()).parse(raw)
+            SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(parsed ?: Date())
+        }.getOrNull()
+    } ?: SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date(file.lastModified()))
+
+    val headerLine = "$assetLabel - $eventName"
+    val locationLine = when {
+        !address.isNullOrBlank() && coords != null -> "$address ($coords)"
+        coords != null -> coords
+        else -> "Ubicación no disponible"
+    }
+    val timeLine = formattedDateTime
+    val mapBitmap = if (latitude != null && longitude != null) {
+        loadStaticMap(latitude, longitude)
+    } else {
+        null
+    }
+    return PhotoLabelInfo(
+        lines = listOf(headerLine, locationLine, timeLine),
+        mapBitmap = mapBitmap,
+        latitude = latitude,
+        longitude = longitude
+    )
+}
+
+private suspend fun readExifLatLongWithRetry(file: File): DoubleArray? {
+    repeat(6) { attempt ->
+        val latLong = runCatching { ExifInterface(file.absolutePath).latLong }.getOrNull()
+        if (latLong != null) return latLong
+        if (attempt < 5) {
+            delay(400)
+        }
+    }
+    return null
+}
+
+private fun selectBestLocation(
+    exifLatLong: DoubleArray?,
+    liveLocation: Location?,
+    fallbackLocation: Location?
+): Location? {
+    if (exifLatLong != null) return null
+    val liveOk = liveLocation?.accuracy?.let { it <= 30f } == true
+    return when {
+        liveOk -> liveLocation
+        fallbackLocation != null -> fallbackLocation
+        else -> null
+    }
+}
+
+private fun applyLocationToExif(file: File, location: Location) {
+    runCatching {
+        val exif = ExifInterface(file.absolutePath)
+        exif.setGpsInfo(location)
+        exif.saveAttributes()
+    }
+}
+
+private fun annotateImageWithLabel(file: File, labelInfo: PhotoLabelInfo) {
+    val bitmap = BitmapFactory.decodeFile(file.absolutePath) ?: return
+    val mutable = bitmap.copy(Bitmap.Config.ARGB_8888, true)
+    val canvas = Canvas(mutable)
+    val padding = (mutable.width * 0.012f).coerceIn(6f, 20f)
+    val textSize = (mutable.width * 0.055f).coerceIn(26f, 68f)
+    val textPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = android.graphics.Color.WHITE
+        this.textSize = textSize
+    }
+    val maxWidth = (mutable.width - padding * 2).toInt()
+    val labelText = labelInfo.lines.joinToString("\n")
+    val layout = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+        StaticLayout.Builder
+            .obtain(labelText, 0, labelText.length, textPaint, maxWidth)
+            .setAlignment(Layout.Alignment.ALIGN_CENTER)
+            .setLineSpacing(0f, 1f)
+            .build()
+    } else {
+        @Suppress("DEPRECATION")
+        StaticLayout(
+            labelText,
+            textPaint,
+            maxWidth,
+            Layout.Alignment.ALIGN_CENTER,
+            1f,
+            0f,
+            false
+        )
+    }
+    val backgroundPaint = Paint().apply {
+        color = android.graphics.Color.argb(170, 0, 0, 0)
+    }
+    val mapHeight = (mutable.height * 0.1f).roundToInt()
+    val mapWidth = (mapHeight * 1.3f).roundToInt()
+    val totalHeight = maxOf(layout.height + (padding * 2).toInt(), mapHeight + (padding * 2).toInt())
+    val top = (mutable.height - totalHeight).coerceAtLeast(0)
+    canvas.drawRect(
+        0f,
+        top.toFloat(),
+        mutable.width.toFloat(),
+        mutable.height.toFloat(),
+        backgroundPaint
+    )
+    labelInfo.mapBitmap?.let { map ->
+        val destWidth = mapWidth.coerceAtMost(mutable.width)
+        val destHeight = mapHeight.coerceAtMost(mutable.height)
+        val left = padding
+        val topMap = top + ((totalHeight - destHeight) / 2f)
+        val dest = android.graphics.Rect(
+            left.toInt(),
+            topMap.toInt(),
+            (left + destWidth).toInt(),
+            (topMap + destHeight).toInt()
+        )
+        canvas.drawBitmap(map, null, dest, null)
+    }
+    canvas.save()
+    val textX = (mutable.width - layout.width) / 2f
+    canvas.translate(textX, top + padding)
+    layout.draw(canvas)
+    canvas.restore()
+
+    FileOutputStream(file).use { out ->
+        mutable.compress(Bitmap.CompressFormat.JPEG, 90, out)
+    }
+}
+
+private fun getLastKnownLocation(context: Context): Location? {
+    val manager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return null
+    val providers = listOf(
+        LocationManager.GPS_PROVIDER,
+        LocationManager.NETWORK_PROVIDER,
+        LocationManager.PASSIVE_PROVIDER
+    )
+    return providers.asSequence()
+        .mapNotNull { provider -> runCatching { manager.getLastKnownLocation(provider) }.getOrNull() }
+        .firstOrNull()
+}
+
+private suspend fun loadStaticMap(latitude: Double, longitude: Double): Bitmap? {
+    return withContext(Dispatchers.IO) {
+        val url = "https://staticmap.openstreetmap.de/staticmap.php?center=$latitude,$longitude&zoom=15&size=300x200&markers=$latitude,$longitude,red-pushpin"
+        runCatching {
+            URL(url).openStream().use { stream ->
+                BitmapFactory.decodeStream(stream)
+            }
+        }.getOrNull()
+    }
+}
+
+private fun loadMeasurementRules(context: Context): JSONObject? {
+    return runCatching {
+        context.assets.open("measurement_validation.json").use { input ->
+            val text = input.bufferedReader().use { it.readText() }
+            JSONObject(text)
+        }
+    }.getOrNull()
+}
+
+private fun equipmentKeyFor(asset: Asset): String {
+    return when (asset.frequencyMHz) {
+        42 -> "42_55"
+        85 -> "85_105"
+        else -> "unknown"
+    }
+}
+
+private data class ChannelRow(
+    val channel: Int?,
+    val frequencyMHz: Double?,
+    val levelDbmv: Double?,
+    val merDb: Double?,
+    val berPre: Double?,
+    val berPost: Double?,
+    val icfrDb: Double?
+)
+
+private fun collectChannelRows(json: Any?): List<ChannelRow> {
+    val rows = mutableListOf<ChannelRow>()
+
+    fun parseNumber(value: Any?): Double? = when (value) {
+        is Number -> value.toDouble()
+        is String -> value.toDoubleOrNull()
+        else -> null
+    }
+
+    fun parseInt(value: Any?): Int? = when (value) {
+        is Number -> value.toInt()
+        is String -> value.toIntOrNull()
+        else -> null
+    }
+
+    fun collectFromMap(map: Map<String, Any?>) {
+        val channel = parseInt(map["channel"] ?: map["canal"])
+        val frequency = parseNumber(map["frequency"] ?: map["frecuencia"] ?: map["frequencymhz"] ?: map["freqmhz"])
+        val level = parseNumber(map["level"] ?: map["nivel"] ?: map["leveldbmv"] ?: map["niveldbmv"])
+        val mer = parseNumber(map["mer"])
+        val berPre = parseNumber(map["berpre"] ?: map["ber_pre"] ?: map["berprevio"])
+        val berPost = parseNumber(map["berpost"] ?: map["ber_post"] ?: map["berposterior"])
+        val icfr = parseNumber(map["icfr"])
+        if (channel != null || frequency != null || level != null || mer != null || berPre != null || berPost != null || icfr != null) {
+            rows.add(
+                ChannelRow(
+                    channel = channel,
+                    frequencyMHz = frequency,
+                    levelDbmv = level,
+                    merDb = mer,
+                    berPre = berPre,
+                    berPost = berPost,
+                    icfrDb = icfr
+                )
+            )
+        }
+    }
+
+    fun collectFromDigitalFullScan(results: JSONObject) {
+        val tableData = results.optJSONObject("08_digitalFullScanResults")?.optJSONArray("tableData") ?: return
+        for (i in 0 until tableData.length()) {
+            val row = tableData.optJSONArray(i) ?: continue
+            if (row.length() < 9) continue
+            val channelValue = row.optJSONObject(0)?.optString("value")
+            val frequencyValue = row.optJSONObject(1)?.optString("value")
+            val levelValue = row.optJSONObject(2)?.optString("value")
+            val merValue = row.optJSONObject(3)?.optString("value")
+            val berPreValue = row.optJSONObject(4)?.optString("value")
+            val berPostValue = row.optJSONObject(5)?.optString("value")
+            val icfrValue = row.optJSONObject(8)?.optString("value")
+            val channel = parseInt(channelValue)
+            val frequency = parseNumber(frequencyValue)
+            val level = parseNumber(levelValue)
+            val mer = parseNumber(merValue)
+            val berPre = parseNumber(berPreValue)
+            val berPost = parseNumber(berPostValue)
+            val icfr = parseNumber(icfrValue)
+            if (channel != null || frequency != null || level != null || mer != null || berPre != null || berPost != null || icfr != null) {
+                rows.add(
+                    ChannelRow(
+                        channel = channel,
+                        frequencyMHz = frequency,
+                        levelDbmv = level,
+                        merDb = mer,
+                        berPre = berPre,
+                        berPost = berPost,
+                        icfrDb = icfr
+                    )
+                )
+            }
+        }
+    }
+
+    fun collectFromUpstreamTable(results: JSONObject) {
+        val tableData = results.optJSONObject("0D_upstreamTable")?.optJSONArray("tableData") ?: return
+        for (i in 0 until tableData.length()) {
+            val row = tableData.optJSONArray(i) ?: continue
+            if (row.length() < 3) continue
+            val channelValue = row.optJSONObject(0)?.optString("value")
+            val frequencyValue = row.optJSONObject(1)?.optString("value")
+            val levelValue = row.optJSONObject(2)?.optString("value")
+            val channel = parseInt(channelValue)
+            val frequency = parseNumber(frequencyValue)
+            val level = parseNumber(levelValue)
+            if (channel != null || frequency != null || level != null) {
+                rows.add(
+                    ChannelRow(
+                        channel = channel,
+                        frequencyMHz = frequency,
+                        levelDbmv = level,
+                        merDb = null,
+                        berPre = null,
+                        berPost = null,
+                        icfrDb = null
+                    )
+                )
+            }
+        }
+    }
+
+    fun collectFromSingleFullScan(results: JSONObject) {
+        val tableData = results.optJSONObject("0A_singleFullScanResults")?.optJSONArray("tableData") ?: return
+        for (i in 0 until tableData.length()) {
+            val row = tableData.optJSONArray(i) ?: continue
+            if (row.length() < 3) continue
+            val channelValue = row.optJSONObject(0)?.optString("value")
+            val frequencyValue = row.optJSONObject(1)?.optString("value")
+            val levelValue = row.optJSONObject(2)?.optString("value")
+            val channel = parseInt(channelValue)
+            val frequency = parseNumber(frequencyValue)
+            val level = parseNumber(levelValue)
+            if (channel != null || frequency != null || level != null) {
+                rows.add(
+                    ChannelRow(
+                        channel = channel,
+                        frequencyMHz = frequency,
+                        levelDbmv = level,
+                        merDb = null,
+                        berPre = null,
+                        berPost = null,
+                        icfrDb = null
+                    )
+                )
+            }
+        }
+    }
+
+    fun walk(value: Any?) {
+        when (value) {
+            is JSONObject -> {
+                if (value.has("08_digitalFullScanResults")) {
+                    collectFromDigitalFullScan(value)
+                }
+                if (value.has("0D_upstreamTable")) {
+                    collectFromUpstreamTable(value)
+                }
+                if (value.has("0A_singleFullScanResults")) {
+                    collectFromSingleFullScan(value)
+                }
+                val map = mutableMapOf<String, Any?>()
+                val keys = value.keys()
+                while (keys.hasNext()) {
+                    val key = keys.next()
+                    map[key.lowercase(Locale.getDefault())] = value.opt(key)
+                }
+                collectFromMap(map)
+                map.values.forEach { walk(it) }
+            }
+            is org.json.JSONArray -> {
+                for (i in 0 until value.length()) {
+                    walk(value.opt(i))
+                }
+            }
+        }
+    }
+
+    walk(json)
+    return rows
+}
+
+private fun collectMerPairs(results: JSONObject?): List<Pair<Double, Double>> {
+    val pairs = mutableListOf<Pair<Double, Double>>()
+    val data = results
+        ?.optJSONObject("02_downstreamMerView")
+        ?.optJSONObject("Passed")
+        ?.optJSONArray("data")
+        ?: return pairs
+    for (i in 0 until data.length()) {
+        val pair = data.optJSONArray(i) ?: continue
+        if (pair.length() < 2) continue
+        val first = pair.opt(0)
+        val second = pair.opt(1)
+        if (first is Number && second is Number) {
+            pairs.add(first.toDouble() to second.toDouble())
+        }
+    }
+    return pairs
+}
+
+private fun parseTestPointOffset(test: JSONObject): Double {
+    val config = test.optJSONObject("configuration")
+    val networkConfig = config?.optJSONObject("networkConfig")
+    val forwardTPC = networkConfig?.optJSONObject("forwardTPC")?.optDouble("value", Double.NaN)
+    val templateValue = networkConfig?.optJSONObject("testPointTemplate")?.optString("value")
+    val parsedTemplate = templateValue
+        ?.replace(",", ".")
+        ?.filter { it.isDigit() || it == '.' || it == '-' }
+        ?.toDoubleOrNull()
+    val tpcValue = when {
+        forwardTPC != null && !forwardTPC.isNaN() -> forwardTPC
+        parsedTemplate != null -> parsedTemplate
+        else -> null
+    }
+    return if (tpcValue == null || tpcValue != 20.0) 20.0 else 0.0
+}
+
+private fun validateMeasurementValues(
+    rules: JSONObject?,
+    test: JSONObject,
+    type: String,
+    equipmentKey: String,
+    assetType: AssetType,
+    amplifierTargets: Map<Int, Double>?
+): List<String> {
+    if (rules == null) return listOf("No se pudo cargar la tabla de validación.")
+    val issues = mutableListOf<String>()
+    val assetKey = when (assetType) {
+        AssetType.NODE -> "node"
+        AssetType.AMPLIFIER -> "amplifier"
+        else -> return emptyList()
+    }
+    val results = test.optJSONObject("results")
+    val testPointOffset = parseTestPointOffset(test)
+    val rows = collectChannelRows(results)
+    val merPairs = if (rows.any { it.merDb != null }) {
+        rows.mapNotNull { row ->
+            val mer = row.merDb ?: return@mapNotNull null
+            (row.frequencyMHz ?: 0.0) to mer
+        }
+    } else {
+        collectMerPairs(results)
+    }
+
+    if (type == "docsisexpert") {
+        val ruleTable = rules.optJSONObject("docsisexpert")
+            ?.optJSONObject(assetKey)
+            ?.optJSONObject(equipmentKey)
+        if (ruleTable == null) {
+            return listOf("No hay reglas de DOCSIS para $assetKey/$equipmentKey.")
+        }
+        val targetFrequencies = listOf(16.8, 20.0, 24.8, 35.0)
+        targetFrequencies.forEach { freq ->
+            val rule = ruleTable.optJSONObject(freq.toString())
+            if (rule == null) {
+                issues.add("Sin rango para ${freq} MHz.")
+            } else {
+                val row = rows.firstOrNull { it.frequencyMHz != null && kotlin.math.abs(it.frequencyMHz - freq) <= 0.5 }
+                val level = row?.levelDbmv
+                if (level == null) {
+                    issues.add("No se encontró nivel para ${freq} MHz.")
+                } else {
+                    val adjusted = level + testPointOffset
+                    val min = rule.optDouble("min", Double.NaN)
+                    val max = rule.optDouble("max", Double.NaN)
+                    if (!min.isNaN() && adjusted < min) {
+                        issues.add("Nivel ${freq} MHz bajo (${adjusted}).")
+                    }
+                    if (!max.isNaN() && adjusted > max) {
+                        issues.add("Nivel ${freq} MHz alto (${adjusted}).")
+                    }
+                }
+            }
+        }
+    }
+
+    if (type == "channelexpert") {
+        val common = rules.optJSONObject("channelexpert")?.optJSONObject("common")
+        val merMin = common?.optJSONObject("mer")?.optDouble("min", Double.NaN)
+        if (merMin != null && !merMin.isNaN()) {
+            val lowMer = merPairs.filter { it.second < merMin }
+            if (lowMer.isNotEmpty()) {
+                issues.add("MER por debajo de ${merMin} dB en ${lowMer.size} punto(s).")
+            }
+        }
+        val berPreMax = common?.optJSONObject("berPre")?.optDouble("max", Double.NaN)
+        val berPostMax = common?.optJSONObject("berPost")?.optDouble("max", Double.NaN)
+        val icfrMax = common?.optJSONObject("icfr")?.optDouble("max", Double.NaN)
+        rows.filter { row -> row.channel != null && row.channel in 14..115 }.forEach { row ->
+            if (merMin != null && !merMin.isNaN() && row.merDb != null && row.merDb < merMin) {
+                issues.add("MER bajo en canal ${row.channel}.")
+            }
+            if (berPreMax != null && !berPreMax.isNaN() && row.berPre != null && row.berPre > berPreMax) {
+                issues.add("BER previo alto en canal ${row.channel}.")
+            }
+            if (berPostMax != null && !berPostMax.isNaN() && row.berPost != null && row.berPost > berPostMax) {
+                issues.add("BER posterior alto en canal ${row.channel}.")
+            }
+            if (icfrMax != null && !icfrMax.isNaN() && row.icfrDb != null && row.icfrDb > icfrMax) {
+                issues.add("ICFR alto en canal ${row.channel}.")
+            }
+        }
+        val channelRules = rules.optJSONObject("channelexpert")
+            ?.optJSONObject(assetKey)
+            ?.optJSONObject(equipmentKey)
+            ?.optJSONObject("channels")
+        if (channelRules == null) {
+            issues.add("No hay reglas de niveles para canales en $assetKey/$equipmentKey.")
+        } else {
+            val channels = listOf(50, 70, 110, 116, 136)
+            channels.forEach { channel ->
+                val rule = channelRules.optJSONObject(channel.toString())
+                if (rule == null) {
+                    issues.add("Sin regla para canal $channel.")
+                } else if (rule.has("source")) {
+                    val target = amplifierTargets?.get(channel)
+                    if (target == null) {
+                        issues.add("Falta tabla interna para canal $channel.")
+                    } else {
+                        val row = rows.firstOrNull { it.channel == channel }
+                        val level = row?.levelDbmv
+                        if (level == null) {
+                            issues.add("No se encontró nivel para canal $channel.")
+                        } else {
+                            val tolerance = rule.optDouble("tolerance", 1.5)
+                            val adjusted = level + testPointOffset
+                            if (adjusted < target - tolerance || adjusted > target + tolerance) {
+                                issues.add("Nivel fuera de rango en canal $channel.")
+                            }
+                        }
+                    }
+                } else {
+                    val row = rows.firstOrNull { it.channel == channel }
+                    val level = row?.levelDbmv
+                    if (level == null) {
+                        issues.add("No se encontró nivel para canal $channel.")
+                    } else {
+                        val target = rule.optDouble("target", Double.NaN)
+                        val tolerance = rule.optDouble("tolerance", Double.NaN)
+                        if (!target.isNaN() && !tolerance.isNaN()) {
+                            val adjusted = level + testPointOffset
+                            if (adjusted < target - tolerance || adjusted > target + tolerance) {
+                                issues.add("Nivel fuera de rango en canal $channel.")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    return issues
+}
+
+private fun isWithinRange(value: Double, min: Double?, max: Double?): Boolean {
+    if (min != null && value < min) return false
+    if (max != null && value > max) return false
+    return true
+}
+
+private fun formatDbmv(value: Double?): String =
+    if (value == null) "—" else String.format(Locale.getDefault(), "%.1f", value)
+
+private fun formatMHz(value: Double?): String =
+    if (value == null) "—" else String.format(Locale.getDefault(), "%.1f", value)
+
+private data class MeasurementVerificationResult(
+    val docsisExpert: Int,
+    val channelExpert: Int,
+    val docsisNames: List<String>,
+    val channelNames: List<String>,
+    val measurementEntries: List<MeasurementEntry>,
+    val invalidTypeCount: Int,
+    val invalidTypeNames: List<String>,
+    val parseErrorCount: Int,
+    val parseErrorNames: List<String>,
+    val duplicateFileCount: Int,
+    val duplicateFileNames: List<String>,
+    val duplicateEntryCount: Int,
+    val duplicateEntryNames: List<String>,
+    val validationIssueNames: List<String>
+)
+
+private data class MeasurementEntry(
+    val label: String,
+    val type: String,
+    val fromZip: Boolean,
+    val isDiscarded: Boolean,
+    val docsisMeta: Map<Double, ChannelMeta>,
+    val docsisLevels: Map<Double, Double>,
+    val docsisLevelOk: Map<Double, Boolean>,
+    val pilotMeta: Map<Int, ChannelMeta>,
+    val pilotLevels: Map<Int, Double>,
+    val pilotLevelOk: Map<Int, Boolean>,
+    val digitalRows: List<DigitalChannelRow>
+)
+
+private data class ChannelMeta(
+    val channel: Int?,
+    val frequencyMHz: Double?
+)
+
+private data class DigitalChannelRow(
+    val channel: Int,
+    val frequencyMHz: Double?,
+    val mer: Double?,
+    val berPre: Double?,
+    val berPost: Double?,
+    val icfr: Double?,
+    val merOk: Boolean?,
+    val berPreOk: Boolean?,
+    val berPostOk: Boolean?,
+    val icfrOk: Boolean?
+)
+
+private data class MeasurementVerificationSummary(
+    val expectedDocsis: Int,
+    val expectedChannel: Int,
+    val result: MeasurementVerificationResult,
+    val warnings: List<String>
+)
+
+private suspend fun verifyMeasurementFiles(
+    context: Context,
+    files: List<File>,
+    asset: Asset,
+    repository: com.example.fieldmaintenance.data.repository.MaintenanceRepository,
+    discardedLabels: Set<String>
+): MeasurementVerificationSummary {
+    val assetType = asset.type
+    val expectedDocsis = when (assetType) {
+        AssetType.NODE -> 4
+        AssetType.AMPLIFIER -> 4
+        else -> 0
+    }
+    val expectedChannel = when (assetType) {
+        AssetType.NODE -> 5
+        AssetType.AMPLIFIER -> 4
+        else -> 0
+    }
+
+    val seenIds = mutableSetOf<String>()
+    var docsisCount = 0
+    var channelCount = 0
+    val docsisNames = linkedSetOf<String>()
+    val channelNames = linkedSetOf<String>()
+    val measurementEntries = mutableListOf<MeasurementEntry>()
+    var invalidTypeCount = 0
+    val invalidTypeNames = linkedSetOf<String>()
+    var parseErrorCount = 0
+    val parseErrorNames = linkedSetOf<String>()
+    var duplicateFileCount = 0
+    val duplicateFileNames = linkedSetOf<String>()
+    var duplicateEntryCount = 0
+    val duplicateEntryNames = linkedSetOf<String>()
+    val validationIssueNames = linkedSetOf<String>()
+    val rules = loadMeasurementRules(context)
+    val equipmentKey = equipmentKeyFor(asset)
+    val amplifierTargets = if (assetType == AssetType.AMPLIFIER) {
+        val adjustment = repository.getAmplifierAdjustmentOne(asset.id)
+        val calculated = adjustment?.let { CiscoHfcAmpCalculator.nivelesSalidaCalculados(it) }
+        calculated?.let {
+            mapOf(
+                50 to it["CH50"],
+                70 to it["CH70"],
+                110 to it["CH110"],
+                116 to it["CH116"],
+                136 to it["CH136"]
+            ).filterValues { value -> value != null }.mapValues { it.value!! }
+        }
+    } else {
+        null
+    }
+
+    val dedupedFiles = buildList {
+        val seenNames = mutableSetOf<String>()
+        files.forEach { file ->
+            val key = file.name.lowercase(Locale.getDefault())
+            if (seenNames.add(key)) {
+                add(file)
+            } else {
+                if (file.exists() && file.delete()) {
+                    duplicateFileCount += 1
+                    duplicateFileNames.add(file.name)
+                } else {
+                    parseErrorCount += 1
+                    parseErrorNames.add(file.name)
+                }
+            }
+        }
+    }
+
+    fun hashId(type: String, testTime: String, testDurationMs: String, geoLocation: String): String {
+        val input = listOf(type, testTime, testDurationMs, geoLocation).joinToString("|")
+        val digest = MessageDigest.getInstance("SHA-256").digest(input.toByteArray())
+        return digest.joinToString("") { "%02x".format(it) }
+    }
+
+    fun handleJsonBytes(bytes: ByteArray, sourceFile: File?, sourceLabel: String) {
+        val isDiscarded = discardedLabels.contains(sourceLabel)
+        val jsonText = runCatching { String(bytes) }.getOrNull()
+        if (jsonText.isNullOrBlank()) {
+            if (!isDiscarded) {
+                parseErrorCount += 1
+                parseErrorNames.add(sourceLabel)
+            }
+            return
+        }
+        val json = runCatching { JSONObject(jsonText) }.getOrNull()
+        val tests = json?.optJSONArray("tests")
+        if (tests == null) {
+            if (!isDiscarded) {
+                parseErrorCount += 1
+                parseErrorNames.add(sourceLabel)
+            }
+            return
+        }
+        var fileHasDuplicate = false
+        for (i in 0 until tests.length()) {
+            val test = tests.optJSONObject(i) ?: continue
+            val type = test.optString("type").trim()
+            val results = test.optJSONObject("results")
+            val testTime = results?.optString("testTime").orEmpty()
+            val testDurationMs = results?.optString("testDurationMs").orEmpty()
+            val geoLocation = results?.optString("geoLocation").orEmpty()
+            val normalizedType = type.lowercase(Locale.getDefault())
+            val id = hashId(type, testTime, testDurationMs, geoLocation)
+            if (!seenIds.add(id)) {
+                if (!isDiscarded) {
+                    if (sourceFile != null) {
+                        fileHasDuplicate = true
+                    } else {
+                        duplicateEntryCount += 1
+                        duplicateEntryNames.add(sourceLabel)
+                    }
+                }
+                continue
+            }
+            when (normalizedType) {
+                "docsisexpert" -> {
+                    if (!isDiscarded) {
+                        docsisCount += 1
+                        docsisNames.add(sourceLabel)
+                    }
+                }
+                "channelexpert" -> {
+                    if (!isDiscarded) {
+                        channelCount += 1
+                        channelNames.add(sourceLabel)
+                    }
+                }
+                else -> {
+                    if (!isDiscarded) {
+                        invalidTypeCount += 1
+                        invalidTypeNames.add(sourceLabel)
+                    }
+                }
+            }
+            if (normalizedType == "docsisexpert" || normalizedType == "channelexpert") {
+                val testPointOffset = parseTestPointOffset(test)
+                val rows = collectChannelRows(results)
+                val docsisFrequencies = listOf(16.8, 20.0, 24.8, 35.0)
+                val pilotChannels = listOf(50, 70, 110, 116, 136)
+
+                val docsisMeta = docsisFrequencies.associateWith { freq ->
+                    val row = rows.firstOrNull { it.frequencyMHz != null && kotlin.math.abs(it.frequencyMHz - freq) <= 0.5 }
+                    ChannelMeta(channel = row?.channel, frequencyMHz = row?.frequencyMHz)
+                }
+
+                val pilotMeta = pilotChannels.associateWith { channel ->
+                    val row = rows.firstOrNull { it.channel == channel }
+                    ChannelMeta(channel = row?.channel, frequencyMHz = row?.frequencyMHz)
+                }
+
+                val docsisLevels = docsisFrequencies.associateWith { freq ->
+                    rows.firstOrNull { it.frequencyMHz != null && kotlin.math.abs(it.frequencyMHz - freq) <= 0.5 }
+                        ?.levelDbmv
+                }.filterValues { it != null }.mapValues { it.value!! }
+
+                val pilotLevels = pilotChannels.associateWith { channel ->
+                    rows.firstOrNull { it.channel == channel }?.levelDbmv
+                }.filterValues { it != null }.mapValues { it.value!! }
+
+                val docsisOk = mutableMapOf<Double, Boolean>()
+                val pilotOk = mutableMapOf<Int, Boolean>()
+
+                if (rules != null) {
+                    val assetKey = if (assetType == AssetType.NODE) "node" else "amplifier"
+                    val docsisRules = rules.optJSONObject("docsisexpert")
+                        ?.optJSONObject(assetKey)
+                        ?.optJSONObject(equipmentKey)
+                    docsisLevels.forEach { (freq, level) ->
+                        val rule = docsisRules?.optJSONObject(freq.toString())
+                        val min = rule?.optDouble("min", Double.NaN)?.takeIf { !it.isNaN() }
+                        val max = rule?.optDouble("max", Double.NaN)?.takeIf { !it.isNaN() }
+                        val adjusted = level + testPointOffset
+                        docsisOk[freq] = isWithinRange(adjusted, min, max)
+                    }
+
+                    val channelRules = rules.optJSONObject("channelexpert")
+                        ?.optJSONObject(assetKey)
+                        ?.optJSONObject(equipmentKey)
+                        ?.optJSONObject("channels")
+                    pilotLevels.forEach { (channel, level) ->
+                        val rule = channelRules?.optJSONObject(channel.toString())
+                        val adjusted = level + testPointOffset
+                        if (rule?.has("source") == true) {
+                            val target = amplifierTargets?.get(channel)
+                            val tolerance = rule.optDouble("tolerance", 1.5)
+                            pilotOk[channel] = target != null &&
+                                adjusted >= target - tolerance &&
+                                adjusted <= target + tolerance
+                        } else {
+                            val target = rule?.optDouble("target", Double.NaN)?.takeIf { !it.isNaN() }
+                            val tolerance = rule?.optDouble("tolerance", Double.NaN)?.takeIf { !it.isNaN() }
+                            pilotOk[channel] = if (target != null && tolerance != null) {
+                                adjusted >= target - tolerance && adjusted <= target + tolerance
+                            } else {
+                                true
+                            }
+                        }
+                    }
+                }
+
+                val common = rules?.optJSONObject("channelexpert")?.optJSONObject("common")
+                val merMin = common?.optJSONObject("mer")?.optDouble("min", Double.NaN)?.takeIf { !it.isNaN() }
+                val berPreMax = common?.optJSONObject("berPre")?.optDouble("max", Double.NaN)?.takeIf { !it.isNaN() }
+                val berPostMax = common?.optJSONObject("berPost")?.optDouble("max", Double.NaN)?.takeIf { !it.isNaN() }
+                val icfrMax = common?.optJSONObject("icfr")?.optDouble("max", Double.NaN)?.takeIf { !it.isNaN() }
+
+                val digitalRows = rows.filter { it.channel != null && it.channel in 14..115 }
+                    .mapNotNull { row ->
+                        val channel = row.channel ?: return@mapNotNull null
+                        DigitalChannelRow(
+                            channel = channel,
+                            frequencyMHz = row.frequencyMHz,
+                            mer = row.merDb,
+                            berPre = row.berPre,
+                            berPost = row.berPost,
+                            icfr = row.icfrDb,
+                            merOk = row.merDb?.let { merMin == null || it >= merMin },
+                            berPreOk = row.berPre?.let { berPreMax == null || it <= berPreMax },
+                            berPostOk = row.berPost?.let { berPostMax == null || it <= berPostMax },
+                            icfrOk = row.icfrDb?.let { icfrMax == null || it <= icfrMax }
+                        )
+                    }
+
+                measurementEntries.add(
+                    MeasurementEntry(
+                        label = sourceLabel,
+                        type = normalizedType,
+                        fromZip = sourceFile == null,
+                        isDiscarded = isDiscarded,
+                        docsisMeta = docsisMeta,
+                        docsisLevels = docsisLevels,
+                        docsisLevelOk = docsisOk,
+                        pilotMeta = pilotMeta,
+                        pilotLevels = pilotLevels,
+                        pilotLevelOk = pilotOk,
+                        digitalRows = digitalRows
+                    )
+                )
+
+                if (!isDiscarded) {
+                    val issues = validateMeasurementValues(
+                        rules = rules,
+                        test = test,
+                        type = normalizedType,
+                        equipmentKey = equipmentKey,
+                        assetType = assetType,
+                        amplifierTargets = amplifierTargets
+                    )
+                    issues.forEach { issue ->
+                        validationIssueNames.add("$sourceLabel: $issue")
+                    }
+                }
+            }
+        }
+
+        if (!isDiscarded && fileHasDuplicate && sourceFile != null) {
+            if (sourceFile.exists() && sourceFile.delete()) {
+                duplicateFileCount += 1
+                duplicateFileNames.add(sourceLabel)
+            } else {
+                parseErrorCount += 1
+                parseErrorNames.add(sourceLabel)
+            }
+        }
+    }
+
+    fun handleZipInputStream(inputStream: ZipInputStream, sourceFile: File?) {
+        var entry = inputStream.nextEntry
+        while (entry != null) {
+            if (!entry.isDirectory) {
+                val entryName = entry.name.lowercase(Locale.getDefault())
+                val bytes = runCatching { inputStream.readBytes() }.getOrNull()
+                if (bytes == null) {
+                    parseErrorCount += 1
+                    parseErrorNames.add(entry.name)
+                } else if (entryName.endsWith(".zip")) {
+                    runCatching {
+                        ZipInputStream(ByteArrayInputStream(bytes)).use { nested ->
+                            handleZipInputStream(nested, sourceFile = null)
+                        }
+                    }.onFailure {
+                        parseErrorCount += 1
+                        parseErrorNames.add(entry.name)
+                    }
+                } else if (entryName.endsWith(".json")) {
+                    handleJsonBytes(bytes, sourceFile = sourceFile, sourceLabel = entry.name)
+                }
+            }
+            entry = inputStream.nextEntry
+        }
+    }
+
+    dedupedFiles.forEach { file ->
+        val name = file.name.lowercase(Locale.getDefault())
+        when {
+            name.endsWith(".json") -> {
+                runCatching { handleJsonBytes(file.readBytes(), sourceFile = file, sourceLabel = file.name) }
+                    .onFailure {
+                        parseErrorCount += 1
+                        parseErrorNames.add(file.name)
+                    }
+            }
+            name.endsWith(".zip") -> {
+                runCatching {
+                    ZipInputStream(file.inputStream()).use { zip ->
+                        handleZipInputStream(zip, sourceFile = null)
+                    }
+                }.onFailure {
+                    parseErrorCount += 1
+                    parseErrorNames.add(file.name)
+                }
+            }
+        }
+    }
+
+    val warnings = buildList {
+        if (docsisCount < expectedDocsis) {
+            add("Faltan mediciones DocsisExpert (${docsisCount}/$expectedDocsis).")
+        } else if (docsisCount > expectedDocsis) {
+            add("Sobran mediciones DocsisExpert (${docsisCount}/$expectedDocsis). Elimine una.")
+        }
+        if (channelCount < expectedChannel) {
+            add("Faltan mediciones ChannelExpert (${channelCount}/$expectedChannel).")
+        } else if (channelCount > expectedChannel) {
+            add("Sobran mediciones ChannelExpert (${channelCount}/$expectedChannel). Elimine una.")
+        }
+        if (invalidTypeCount > 0) {
+            add("Se encontraron mediciones con tipo inválido ($invalidTypeCount). Elimine las que no correspondan.")
+        }
+        if (duplicateFileCount > 0) {
+            add("Se detectaron duplicados y se eliminaron $duplicateFileCount archivo(s).")
+        }
+        if (duplicateEntryCount > 0) {
+            add("Se detectaron duplicados en ZIP ($duplicateEntryCount).")
+        }
+        if (parseErrorCount > 0) {
+            add("No se pudieron leer $parseErrorCount archivo(s) o entradas.")
+        }
+        if (validationIssueNames.isNotEmpty()) {
+            add("Se encontraron mediciones fuera de rango (${validationIssueNames.size}).")
+        }
+    }
+
+    return MeasurementVerificationSummary(
+        expectedDocsis = expectedDocsis,
+        expectedChannel = expectedChannel,
+        result = MeasurementVerificationResult(
+            docsisExpert = docsisCount,
+            channelExpert = channelCount,
+            docsisNames = docsisNames.toList(),
+            channelNames = channelNames.toList(),
+            measurementEntries = measurementEntries.toList(),
+            invalidTypeCount = invalidTypeCount,
+            invalidTypeNames = invalidTypeNames.toList(),
+            parseErrorCount = parseErrorCount,
+            duplicateFileCount = duplicateFileCount,
+            parseErrorNames = parseErrorNames.toList(),
+            duplicateFileNames = duplicateFileNames.toList(),
+            duplicateEntryCount = duplicateEntryCount,
+            duplicateEntryNames = duplicateEntryNames.toList(),
+            validationIssueNames = validationIssueNames.toList()
+        ),
+        warnings = warnings
+    )
+}
+
 @Composable
 private fun AssetFileSection(
     context: Context,
+    navController: NavController,
+    repository: com.example.fieldmaintenance.data.repository.MaintenanceRepository,
     reportFolder: String,
+    onInteraction: () -> Unit,
     asset: Asset
 ) {
     val assetDir = remember(reportFolder, asset) {
@@ -1186,40 +2402,110 @@ private fun AssetFileSection(
     var files by remember(assetDir) { mutableStateOf(assetDir.listFiles()?.sortedBy { it.name } ?: emptyList()) }
     var fileToDelete by remember { mutableStateOf<File?>(null) }
     val scope = rememberCoroutineScope()
+    val discardedFile = remember(assetDir) { File(assetDir, ".discarded_measurements.txt") }
+    var discardedLabels by remember(assetDir) { mutableStateOf(loadDiscardedLabels(discardedFile)) }
+    var lastFileNames by remember(assetDir) { mutableStateOf(files.map { it.name }.toSet()) }
 
     val viaviIntent = remember {
         context.packageManager.getLaunchIntentForPackage("com.viavisolutions.mobiletech")
     }
 
     var isExpanded by remember { mutableStateOf(true) }
+    var verificationSummary by remember { mutableStateOf<MeasurementVerificationSummary?>(null) }
+
+    fun displayLabel(entry: MeasurementEntry): String {
+        return if (entry.isDiscarded && !entry.label.contains("DESCARTADA", ignoreCase = true)) {
+            "${entry.label} DESCARTADA"
+        } else {
+            entry.label
+        }
+    }
+
+    fun toggleDiscard(entry: MeasurementEntry) {
+        if (!entry.fromZip) return
+        val updated = discardedLabels.toMutableSet()
+        if (entry.isDiscarded) {
+            updated.remove(entry.label)
+        } else {
+            updated.add(entry.label)
+        }
+        discardedLabels = updated
+        saveDiscardedLabels(discardedFile, updated)
+        scope.launch {
+            val summary = verifyMeasurementFiles(context, files, asset, repository, updated)
+            verificationSummary = summary
+        }
+    }
+
+    LaunchedEffect(files, discardedLabels) {
+        val currentNames = files.map { it.name }.toSet()
+        val added = currentNames.size > lastFileNames.size
+        lastFileNames = currentNames
+        if (added && files.isNotEmpty()) {
+            val summary = verifyMeasurementFiles(context, files, asset, repository, discardedLabels)
+            verificationSummary = summary
+            if (summary.result.duplicateFileCount > 0) {
+                files = assetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
+            }
+        }
+    }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { isExpanded = !isExpanded },
-                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Archivos de Mediciones", style = MaterialTheme.typography.titleMedium)
-                Icon(
-                    if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                    contentDescription = null
+                Text(
+                    "Carga de Mediciones",
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f)
                 )
+                IconButton(
+                    onClick = {
+                        onInteraction()
+                        scope.launch {
+                            val summary = verifyMeasurementFiles(
+                                context,
+                                files,
+                                asset,
+                                repository,
+                                discardedLabels
+                            )
+                            verificationSummary = summary
+                        }
+                    },
+                    enabled = files.isNotEmpty() && asset.type in setOf(AssetType.NODE, AssetType.AMPLIFIER)
+                ) {
+                    Icon(Icons.Default.Refresh, contentDescription = "Refrescar verificación")
+                }
+                IconButton(onClick = {
+                    onInteraction()
+                    isExpanded = !isExpanded
+                }) {
+                    Icon(
+                        if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                        contentDescription = if (isExpanded) "Colapsar" else "Expandir"
+                    )
+                }
             }
             if (isExpanded) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(onClick = {
+                        onInteraction()
                         if (viaviIntent != null) {
+                            navController.currentBackStackEntry?.savedStateHandle?.apply {
+                                set(PendingMeasurementReportIdKey, asset.reportId)
+                                set(PendingMeasurementAssetIdKey, asset.id)
+                            }
                             runCatching { context.startActivity(viaviIntent) }
                                 .onFailure {
                                     Toast.makeText(
@@ -1241,6 +2527,307 @@ private fun AssetFileSection(
                         Text("Agregar Mediciones")
                     }
                 }
+                verificationSummary?.let { summary ->
+                    val smallTextStyle = MaterialTheme.typography.bodySmall
+                    val mutedColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    val warningColor = MaterialTheme.colorScheme.error
+                    val pendingColor = MaterialTheme.colorScheme.tertiary
+                    val docsisEntries = summary.result.measurementEntries.filter { it.type == "docsisexpert" }
+                    val channelEntries = summary.result.measurementEntries.filter { it.type == "channelexpert" }
+
+                    val docsisTableEntries = docsisEntries.filterNot { it.isDiscarded }.take(2)
+                    val channelTableEntries = channelEntries.filterNot { it.isDiscarded }.take(2)
+
+                    @Composable
+                    fun MeasurementHeaderCell(entry: MeasurementEntry, index: Int) {
+                        val modifier = if (entry.fromZip) {
+                            Modifier
+                                .weight(1f)
+                                .clickable { toggleDiscard(entry) }
+                        } else {
+                            Modifier.weight(1f)
+                        }
+                        Column(modifier = modifier) {
+                            Text(
+                                "M${index + 1}",
+                                style = smallTextStyle,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+
+                    @Composable
+                    fun MeasurementValueCell(value: String, ok: Boolean, discarded: Boolean) {
+                        val textColor = if (ok || discarded) mutedColor else warningColor
+                        val fontWeight = if (!ok && !discarded) FontWeight.SemiBold else FontWeight.Normal
+                        Text(
+                            value,
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(vertical = 2.dp),
+                            style = smallTextStyle,
+                            color = textColor,
+                            fontWeight = fontWeight
+                        )
+                    }
+
+                    fun docsisChannel(freq: Double): String {
+                        val channel = docsisTableEntries.mapNotNull { it.docsisMeta[freq]?.channel }.firstOrNull()
+                        return channel?.toString() ?: "—"
+                    }
+
+                    fun docsisFrequency(freq: Double): String {
+                        val frequency = docsisTableEntries.mapNotNull { it.docsisMeta[freq]?.frequencyMHz }.firstOrNull()
+                        return formatMHz(frequency ?: freq)
+                    }
+
+                    fun pilotFrequency(channel: Int): String {
+                        val frequency = channelTableEntries.mapNotNull { it.pilotMeta[channel]?.frequencyMHz }.firstOrNull()
+                        return formatMHz(frequency)
+                    }
+
+                    val docsisDiscardedEntries = docsisEntries.filter { it.isDiscarded }
+                    val channelDiscardedEntries = channelEntries.filter { it.isDiscarded }
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            "Mediciones docsisexpert ${summary.result.docsisExpert}/${summary.expectedDocsis}",
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        docsisTableEntries.forEachIndexed { index, entry ->
+                            val modifier = if (entry.fromZip) {
+                                Modifier.clickable { toggleDiscard(entry) }
+                            } else {
+                                Modifier
+                            }
+                            Text(
+                                "M${index + 1}: ${displayLabel(entry)}",
+                                style = smallTextStyle,
+                                color = mutedColor,
+                                modifier = modifier
+                            )
+                        }
+                        if (docsisDiscardedEntries.isNotEmpty()) {
+                            Text("Descartadas:", fontWeight = FontWeight.SemiBold)
+                            docsisDiscardedEntries.forEach { entry ->
+                                Text(
+                                    "• ${displayLabel(entry)}",
+                                    style = smallTextStyle,
+                                    color = mutedColor,
+                                    modifier = Modifier.clickable { toggleDiscard(entry) }
+                                )
+                            }
+                        }
+                        Text(
+                            "Mediciones channelexpert ${summary.result.channelExpert}/${summary.expectedChannel}",
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        channelTableEntries.forEachIndexed { index, entry ->
+                            val modifier = if (entry.fromZip) {
+                                Modifier.clickable { toggleDiscard(entry) }
+                            } else {
+                                Modifier
+                            }
+                            Text(
+                                "M${index + 1}: ${displayLabel(entry)}",
+                                style = smallTextStyle,
+                                color = mutedColor,
+                                modifier = modifier
+                            )
+                        }
+                        if (channelDiscardedEntries.isNotEmpty()) {
+                            Text("Descartadas:", fontWeight = FontWeight.SemiBold)
+                            channelDiscardedEntries.forEach { entry ->
+                                Text(
+                                    "• ${displayLabel(entry)}",
+                                    style = smallTextStyle,
+                                    color = mutedColor,
+                                    modifier = Modifier.clickable { toggleDiscard(entry) }
+                                )
+                            }
+                        }
+                        summary.warnings.forEach { warning ->
+                            Text(
+                                warning,
+                                color = MaterialTheme.colorScheme.error,
+                                style = smallTextStyle,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                        if (summary.result.duplicateFileNames.isNotEmpty()) {
+                            Text("Archivos eliminados:", fontWeight = FontWeight.SemiBold)
+                            summary.result.duplicateFileNames.forEach { name ->
+                                Text("• $name", style = smallTextStyle, color = mutedColor)
+                            }
+                        }
+                        if (summary.result.invalidTypeNames.isNotEmpty()) {
+                            Text("Mediciones inválidas:", fontWeight = FontWeight.SemiBold)
+                            summary.result.invalidTypeNames.forEach { name ->
+                                Text("• $name", style = smallTextStyle, color = mutedColor)
+                            }
+                        }
+                        if (summary.result.parseErrorNames.isNotEmpty()) {
+                            Text("No se pudieron leer:", fontWeight = FontWeight.SemiBold)
+                            summary.result.parseErrorNames.forEach { name ->
+                                Text("• $name", style = smallTextStyle, color = mutedColor)
+                            }
+                        }
+                        if (summary.result.duplicateEntryNames.isNotEmpty()) {
+                            Text("Duplicados en ZIP:", fontWeight = FontWeight.SemiBold)
+                            summary.result.duplicateEntryNames.forEach { name ->
+                                Text("• $name", style = smallTextStyle, color = mutedColor)
+                            }
+                        }
+                        if (summary.result.validationIssueNames.isNotEmpty()) {
+                            Text(
+                                "Validación de valores: ${summary.result.validationIssueNames.size} observaciones.",
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+
+                        if (docsisEntries.isNotEmpty()) {
+                            Text("DocsisExpert (niveles):", fontWeight = FontWeight.SemiBold)
+                            if (docsisEntries.size > 2) {
+                                Text(
+                                    "Solo se muestran 2 mediciones (M1 a M2).",
+                                    style = smallTextStyle,
+                                    color = mutedColor
+                                )
+                            }
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text("Canal", modifier = Modifier.weight(1f), style = smallTextStyle, fontWeight = FontWeight.SemiBold)
+                                Text("Freq", modifier = Modifier.weight(1f), style = smallTextStyle, fontWeight = FontWeight.SemiBold)
+                                docsisTableEntries.forEachIndexed { index, entry ->
+                                    MeasurementHeaderCell(entry, index)
+                                }
+                            }
+                            val docsisFrequencies = listOf(16.8, 20.0, 24.8, 35.0)
+                            docsisFrequencies.forEach { freq ->
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text(docsisChannel(freq), modifier = Modifier.weight(1f), style = smallTextStyle)
+                                    Text("${docsisFrequency(freq)} MHz", modifier = Modifier.weight(1f), style = smallTextStyle)
+                                    docsisTableEntries.forEach { entry ->
+                                        val value = entry.docsisLevels[freq]
+                                        val ok = entry.docsisLevelOk[freq] ?: true
+                                        MeasurementValueCell(
+                                            value = formatDbmv(value),
+                                            ok = ok,
+                                            discarded = entry.isDiscarded
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        if (channelEntries.isNotEmpty()) {
+                            Text("Canales piloto (ChannelExpert):", fontWeight = FontWeight.SemiBold)
+                            if (channelEntries.size > 2) {
+                                Text(
+                                    "Solo se muestran 2 mediciones (M1 a M2).",
+                                    style = smallTextStyle,
+                                    color = mutedColor
+                                )
+                            }
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text("Canal", modifier = Modifier.weight(1f), style = smallTextStyle, fontWeight = FontWeight.SemiBold)
+                                Text("Freq", modifier = Modifier.weight(1f), style = smallTextStyle, fontWeight = FontWeight.SemiBold)
+                                channelTableEntries.forEachIndexed { index, entry ->
+                                    MeasurementHeaderCell(entry, index)
+                                }
+                            }
+                            val pilotChannels = listOf(50, 70, 110, 116, 136)
+                            pilotChannels.forEach { channel ->
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text("$channel", modifier = Modifier.weight(1f), style = smallTextStyle)
+                                    Text("${pilotFrequency(channel)} MHz", modifier = Modifier.weight(1f), style = smallTextStyle)
+                                    channelTableEntries.forEach { entry ->
+                                        val value = entry.pilotLevels[channel]
+                                        val ok = entry.pilotLevelOk[channel] ?: true
+                                        MeasurementValueCell(
+                                            value = formatDbmv(value),
+                                            ok = ok,
+                                            discarded = entry.isDiscarded
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        if (channelEntries.isNotEmpty()) {
+                            Text("ChannelExpert (canales digitales):", fontWeight = FontWeight.SemiBold)
+                            channelTableEntries.forEachIndexed { index, entry ->
+                                val label = "M${index + 1}"
+                                val hasIssues = entry.digitalRows.any { row ->
+                                    (row.merOk == false) || (row.berPreOk == false) || (row.berPostOk == false) || (row.icfrOk == false)
+                                }
+                                var expanded by remember(entry.label) { mutableStateOf(false) }
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { expanded = !expanded }
+                                        .padding(vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    if (hasIssues) {
+                                        Icon(
+                                            Icons.Default.Warning,
+                                            contentDescription = null,
+                                            tint = pendingColor
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                    }
+                                    Text("$label - ${displayLabel(entry)}", style = smallTextStyle, modifier = Modifier.weight(1f))
+                                    Icon(
+                                        if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                        contentDescription = null
+                                    )
+                                }
+                                if (expanded) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Text("Canal", modifier = Modifier.weight(1f), style = smallTextStyle, fontWeight = FontWeight.SemiBold)
+                                        Text("Freq", modifier = Modifier.weight(1f), style = smallTextStyle, fontWeight = FontWeight.SemiBold)
+                                        Text("MER", modifier = Modifier.weight(1f), style = smallTextStyle, fontWeight = FontWeight.SemiBold)
+                                        Text("BER pre", modifier = Modifier.weight(1f), style = smallTextStyle, fontWeight = FontWeight.SemiBold)
+                                        Text("BER post", modifier = Modifier.weight(1f), style = smallTextStyle, fontWeight = FontWeight.SemiBold)
+                                        Text("ICFR", modifier = Modifier.weight(1f), style = smallTextStyle, fontWeight = FontWeight.SemiBold)
+                                    }
+                                    entry.digitalRows.forEach { row ->
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            Text("${row.channel}", modifier = Modifier.weight(1f), style = smallTextStyle)
+                                            Text(formatDbmv(row.frequencyMHz), modifier = Modifier.weight(1f), style = smallTextStyle)
+                                            MeasurementValueCell(
+                                                value = formatDbmv(row.mer),
+                                                ok = row.merOk != false,
+                                                discarded = entry.isDiscarded
+                                            )
+                                            MeasurementValueCell(
+                                                value = row.berPre?.toString() ?: "—",
+                                                ok = row.berPreOk != false,
+                                                discarded = entry.isDiscarded
+                                            )
+                                            MeasurementValueCell(
+                                                value = row.berPost?.toString() ?: "—",
+                                                ok = row.berPostOk != false,
+                                                discarded = entry.isDiscarded
+                                            )
+                                            MeasurementValueCell(
+                                                value = formatDbmv(row.icfr),
+                                                ok = row.icfrOk != false,
+                                                discarded = entry.isDiscarded
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
 
                 if (files.isEmpty()) {
                     Text("No hay archivos adjuntos.")
@@ -1252,6 +2839,11 @@ private fun AssetFileSection(
                                     .fillMaxWidth()
                                     .combinedClickable(
                                         onClick = {
+                                            onInteraction()
+                                            fileToDelete = file
+                                        },
+                                        onLongClick = {
+                                            onInteraction()
                                             val uri = FileProvider.getUriForFile(
                                                 context,
                                                 "${context.packageName}.fileprovider",
@@ -1269,8 +2861,7 @@ private fun AssetFileSection(
                                                         Toast.LENGTH_SHORT
                                                     ).show()
                                                 }
-                                        },
-                                        onLongClick = { fileToDelete = file }
+                                        }
                                     )
                                     .padding(vertical = 4.dp),
                                 verticalAlignment = Alignment.CenterVertically

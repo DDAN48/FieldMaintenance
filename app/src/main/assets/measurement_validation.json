@@ -1,0 +1,80 @@
+{
+  "docsisexpert": {
+    "node": {
+      "42_55": {
+        "16.8": {"min": 32, "max": 37},
+        "20.0": {"min": 32, "max": 37},
+        "24.8": {"min": 32, "max": 37},
+        "35.0": {"min": 32, "max": 37}
+      },
+      "85_105": {
+        "16.8": {"min": 30, "max": 35},
+        "20.0": {"min": 30, "max": 35},
+        "24.8": {"min": 30, "max": 35},
+        "35.0": {"min": 30, "max": 35}
+      }
+    },
+    "amplifier": {
+      "42_55": {
+        "16.8": {"min": 29, "max": 34},
+        "20.0": {"min": 29, "max": 34},
+        "24.8": {"min": 29, "max": 34},
+        "35.0": {"min": 29, "max": 34}
+      },
+      "85_105": {
+        "16.8": {"min": 30, "max": 35},
+        "20.0": {"min": 30, "max": 35},
+        "24.8": {"min": 30, "max": 35},
+        "35.0": {"min": 30, "max": 35}
+      }
+    }
+  },
+  "channelexpert": {
+    "common": {
+      "mer": {"min": 39},
+      "berPre": {"max": 1.0e-8},
+      "berPost": {"max": 1.0e-8},
+      "icfr": {"max": 2}
+    },
+    "node": {
+      "42_55": {
+        "channels": {
+          "50": {"target": 41, "tolerance": 1.5},
+          "70": {"target": 44, "tolerance": 1.5},
+          "110": {"target": 47, "tolerance": 1.5},
+          "116": {"target": 47, "tolerance": 1.5},
+          "136": {"target": 49, "tolerance": 1.5}
+        }
+      },
+      "85_105": {
+        "channels": {
+          "50": {"target": 41, "tolerance": 1.5},
+          "70": {"target": 44, "tolerance": 1.5},
+          "110": {"target": 47, "tolerance": 1.5},
+          "116": {"target": 47, "tolerance": 1.5},
+          "136": {"target": 49, "tolerance": 1.5}
+        }
+      }
+    },
+    "amplifier": {
+      "42_55": {
+        "channels": {
+          "50": {"source": "table", "tolerance": 1.5},
+          "70": {"source": "table", "tolerance": 1.5},
+          "110": {"source": "table", "tolerance": 1.5},
+          "116": {"source": "table", "tolerance": 1.5},
+          "136": {"source": "table", "tolerance": 1.5}
+        }
+      },
+      "85_105": {
+        "channels": {
+          "50": {"source": "table", "tolerance": 1.5},
+          "70": {"source": "table", "tolerance": 1.5},
+          "110": {"source": "table", "tolerance": 1.5},
+          "116": {"source": "table", "tolerance": 1.5},
+          "136": {"source": "table", "tolerance": 1.5}
+        }
+      }
+    }
+  }
+}
