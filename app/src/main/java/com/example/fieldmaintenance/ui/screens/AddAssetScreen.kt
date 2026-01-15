@@ -87,6 +87,7 @@ import java.util.Locale
 import java.io.ByteArrayInputStream
 import java.security.MessageDigest
 import java.util.zip.ZipInputStream
+import java.util.zip.GZIPInputStream
 import java.io.FileOutputStream
 import androidx.exifinterface.media.ExifInterface
 import java.text.SimpleDateFormat
@@ -105,6 +106,9 @@ import java.io.File
 import java.net.URLConnection
 import java.util.UUID
 import org.json.JSONObject
+import com.github.junrar.Archive
+import com.github.junrar.exception.RarException
+import java.io.ByteArrayOutputStream
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -2288,7 +2292,73 @@ private suspend fun verifyMeasurementFiles(
         }
     }
 
-    fun handleZipInputStream(inputStream: ZipInputStream, sourceFile: File?) {
+    fun isJsonLike(name: String): Boolean {
+        val lower = name.lowercase(Locale.getDefault())
+        return lower.endsWith(".json") ||
+            Regex("\\.joson\\d+$").containsMatchIn(lower) ||
+            lower.endsWith(".joson")
+    }
+
+    fun isZipBytes(bytes: ByteArray): Boolean {
+        return bytes.size >= 2 && bytes[0] == 'P'.code.toByte() && bytes[1] == 'K'.code.toByte()
+    }
+
+    fun handleGzipBytes(bytes: ByteArray, sourceLabel: String) {
+        val decompressed = runCatching {
+            GZIPInputStream(ByteArrayInputStream(bytes)).use { it.readBytes() }
+        }.getOrNull()
+        if (decompressed == null) {
+            parseErrorCount += 1
+            parseErrorNames.add(sourceLabel)
+            return
+        }
+        if (isZipBytes(decompressed)) {
+            ZipInputStream(ByteArrayInputStream(decompressed)).use { nested ->
+                handleZipInputStream(nested, sourceFile = null)
+            }
+            return
+        }
+        handleJsonBytes(decompressed, sourceFile = null, sourceLabel = sourceLabel)
+    }
+
+    fun handleRarFile(file: File, sourceLabel: String) {
+        try {
+            Archive(file).use { archive ->
+                val headers = archive.fileHeaders
+                headers.forEach { header ->
+                    if (header.isDirectory) return@forEach
+                    val name = header.fileNameString
+                    val output = ByteArrayOutputStream()
+                    archive.extractFile(header, output)
+                    val bytes = output.toByteArray()
+                    when {
+                        name.lowercase(Locale.getDefault()).endsWith(".zip") || isZipBytes(bytes) -> {
+                            ZipInputStream(ByteArrayInputStream(bytes)).use { nested ->
+                                handleZipInputStream(nested, sourceFile = null)
+                            }
+                        }
+                        name.lowercase(Locale.getDefault()).endsWith(".gz") -> {
+                            handleGzipBytes(bytes, name)
+                        }
+                        isJsonLike(name) -> {
+                            handleJsonBytes(bytes, sourceFile = null, sourceLabel = name)
+                        }
+                    }
+                }
+            }
+        } catch (_: RarException) {
+            parseErrorCount += 1
+            parseErrorNames.add(sourceLabel)
+        } catch (_: Exception) {
+            parseErrorCount += 1
+            parseErrorNames.add(sourceLabel)
+        }
+    }
+
+    fun handleZipInputStream(
+        inputStream: ZipInputStream,
+        sourceFile: File?
+    ) {
         var entry = inputStream.nextEntry
         while (entry != null) {
             if (!entry.isDirectory) {
@@ -2297,16 +2367,23 @@ private suspend fun verifyMeasurementFiles(
                 if (bytes == null) {
                     parseErrorCount += 1
                     parseErrorNames.add(entry.name)
-                } else if (entryName.endsWith(".zip")) {
+                } else if (entryName.endsWith(".zip") || isZipBytes(bytes)) {
                     runCatching {
-                        ZipInputStream(ByteArrayInputStream(bytes)).use { nested ->
-                            handleZipInputStream(nested, sourceFile = null)
-                        }
+                            ZipInputStream(ByteArrayInputStream(bytes)).use { nested ->
+                                handleZipInputStream(nested, sourceFile = null)
+                            }
                     }.onFailure {
                         parseErrorCount += 1
                         parseErrorNames.add(entry.name)
                     }
-                } else if (entryName.endsWith(".json")) {
+                } else if (entryName.endsWith(".gz")) {
+                    handleGzipBytes(bytes, entry.name)
+                } else if (entryName.endsWith(".rar")) {
+                    val temp = File.createTempFile("measurements", ".rar", context.cacheDir)
+                    temp.writeBytes(bytes)
+                    handleRarFile(temp, entry.name)
+                    temp.delete()
+                } else if (isJsonLike(entry.name)) {
                     handleJsonBytes(bytes, sourceFile = sourceFile, sourceLabel = entry.name)
                 }
             }
@@ -2317,7 +2394,7 @@ private suspend fun verifyMeasurementFiles(
     dedupedFiles.forEach { file ->
         val name = file.name.lowercase(Locale.getDefault())
         when {
-            name.endsWith(".json") -> {
+            isJsonLike(name) -> {
                 runCatching { handleJsonBytes(file.readBytes(), sourceFile = file, sourceLabel = file.name) }
                     .onFailure {
                         parseErrorCount += 1
@@ -2333,6 +2410,18 @@ private suspend fun verifyMeasurementFiles(
                     parseErrorCount += 1
                     parseErrorNames.add(file.name)
                 }
+            }
+            name.endsWith(".gz") -> {
+                runCatching {
+                    val bytes = file.readBytes()
+                    handleGzipBytes(bytes, file.name)
+                }.onFailure {
+                    parseErrorCount += 1
+                    parseErrorNames.add(file.name)
+                }
+            }
+            name.endsWith(".rar") -> {
+                handleRarFile(file, file.name)
             }
         }
     }
@@ -2359,9 +2448,6 @@ private suspend fun verifyMeasurementFiles(
         }
         if (parseErrorCount > 0) {
             add("No se pudieron leer $parseErrorCount archivo(s) o entradas.")
-        }
-        if (validationIssueNames.isNotEmpty()) {
-            add("Se encontraron mediciones fuera de rango (${validationIssueNames.size}).")
         }
     }
 
@@ -2407,9 +2493,25 @@ private fun AssetFileSection(
     var discardedLabels by remember(assetDir) { mutableStateOf(loadDiscardedLabels(discardedFile)) }
     var lastFileNames by remember(assetDir) { mutableStateOf(files.map { it.name }.toSet()) }
 
-    val viaviIntent = remember {
-        context.packageManager.getLaunchIntentForPackage("com.viavisolutions.mobiletech")
+    val headerLine = "$assetLabel - $eventName"
+    val locationLine = when {
+        !address.isNullOrBlank() && coords != null -> "$address ($coords)"
+        coords != null -> coords
+        else -> "Ubicación no disponible"
     }
+    val timeLine = formattedDateTime
+    val mapBitmap = if (latitude != null && longitude != null) {
+        loadStaticMap(latitude, longitude)
+    } else {
+        null
+    }
+    return PhotoLabelInfo(
+        lines = listOf(headerLine, locationLine, timeLine),
+        mapBitmap = mapBitmap,
+        latitude = latitude,
+        longitude = longitude
+    )
+}
 
     var isExpanded by remember { mutableStateOf(true) }
     var verificationSummary by remember { mutableStateOf<MeasurementVerificationSummary?>(null) }
@@ -2516,649 +2618,25 @@ private fun AssetFileSection(
                                     ).show()
                                 }
                         } else {
-                            Toast.makeText(
-                                context,
-                                "Viavi (mobiletech) no está instalada",
-                                Toast.LENGTH_SHORT
-                            ).show()
-                        }
-                    }) {
-                        Icon(Icons.Default.Description, contentDescription = null)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Agregar Mediciones")
-                    }
-                    Button(
-                        onClick = {
-                            onInteraction()
-                            scope.launch {
-                                val summary = verifyMeasurementFiles(
-                                    context,
-                                    files,
-                                    asset,
-                                    repository,
-                                    discardedLabels
-                                )
-                                verificationSummary = summary
-                                if (summary.result.duplicateFileCount > 0) {
-                                    files = assetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
-                                }
-                                if (summary.warnings.isEmpty()) {
-                                    Toast.makeText(
-                                        context,
-                                        "Verificación inicial completa: se encontraron todas las mediciones.",
-                                        Toast.LENGTH_LONG
-                                    ).show()
-                                } else {
-                                    Toast.makeText(
-                                        context,
-                                        summary.warnings.first(),
-                                        Toast.LENGTH_LONG
-                                    ).show()
-                                }
-                            }
-                        },
-                        enabled = files.isNotEmpty() && asset.type in setOf(AssetType.NODE, AssetType.AMPLIFIER)
-                    ) {
-                        Icon(Icons.Default.CheckCircle, contentDescription = null)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Verificar")
-                    }
-                }
-                verificationSummary?.let { summary ->
-                    val smallTextStyle = MaterialTheme.typography.bodySmall
-                    val mutedColor = MaterialTheme.colorScheme.onSurfaceVariant
-                    val warningColor = MaterialTheme.colorScheme.error
-                    val pendingColor = MaterialTheme.colorScheme.tertiary
-                    val discardedBackground = Color(0xFFD9A6A6)
-                    val docsisEntries = summary.result.measurementEntries.filter { it.type == "docsisexpert" }
-                    val channelEntries = summary.result.measurementEntries.filter { it.type == "channelexpert" }
-
-                    val docsisTableEntries = docsisEntries.take(5)
-                    val channelTableEntries = channelEntries.take(5)
-
-                    @Composable
-                    fun MeasurementHeaderCell(entry: MeasurementEntry, index: Int) {
-                        val modifier = if (entry.fromZip) {
-                            Modifier
-                                .weight(1f)
-                                .clickable { toggleDiscard(entry) }
-                        } else {
-                            Modifier.weight(1f)
-                        }
-                        Column(modifier = modifier) {
-                            Text(
-                                "M${index + 1}",
-                                style = smallTextStyle,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            Text(
-                                displayLabel(entry),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = mutedColor
-                            )
-                        }
-                    }
-
-                    @Composable
-                    fun MeasurementValueCell(value: String, ok: Boolean, discarded: Boolean) {
-                        val textColor = if (discarded) Color.Black else if (ok) mutedColor else warningColor
-                        val cellModifier = Modifier
-                            .weight(1f)
-                            .padding(vertical = 2.dp)
-                            .then(
-                                if (discarded) Modifier.background(discardedBackground).padding(4.dp)
-                                else Modifier
-                            )
-                        Text(
-                            value,
-                            modifier = cellModifier,
-                            style = smallTextStyle,
-                            color = textColor
-                        )
-                    }
-
-                    fun docsisChannel(freq: Double): String {
-                        val channel = docsisTableEntries.mapNotNull { it.docsisMeta[freq]?.channel }.firstOrNull()
-                        return channel?.toString() ?: "—"
-                    }
-
-                    fun docsisFrequency(freq: Double): String {
-                        val frequency = docsisTableEntries.mapNotNull { it.docsisMeta[freq]?.frequencyMHz }.firstOrNull()
-                        return formatMHz(frequency ?: freq)
-                    }
-
-                    fun pilotFrequency(channel: Int): String {
-                        val frequency = channelTableEntries.mapNotNull { it.pilotMeta[channel]?.frequencyMHz }.firstOrNull()
-                        return formatMHz(frequency)
-                    }
-
-                    val docsisActiveEntries = docsisEntries.filterNot { it.isDiscarded }
-                    val docsisDiscardedEntries = docsisEntries.filter { it.isDiscarded }
-                    val channelActiveEntries = channelEntries.filterNot { it.isDiscarded }
-                    val channelDiscardedEntries = channelEntries.filter { it.isDiscarded }
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(
-                            "Mediciones docsisexpert ${summary.result.docsisExpert}/${summary.expectedDocsis}",
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        docsisActiveEntries.forEach { entry ->
-                            val modifier = if (entry.fromZip) {
-                                Modifier.clickable { toggleDiscard(entry) }
-                            } else {
-                                Modifier
-                            }
-                            Text("• ${displayLabel(entry)}", style = smallTextStyle, color = mutedColor, modifier = modifier)
-                        }
-                        if (docsisDiscardedEntries.isNotEmpty()) {
-                            Text("Descartadas:", fontWeight = FontWeight.SemiBold)
-                            docsisDiscardedEntries.forEach { entry ->
-                                Text(
-                                    "• ${displayLabel(entry)}",
-                                    style = smallTextStyle,
-                                    color = mutedColor,
-                                    modifier = Modifier.clickable { toggleDiscard(entry) }
-                                )
-                            }
-                        }
-                        Text(
-                            "Mediciones channelexpert ${summary.result.channelExpert}/${summary.expectedChannel}",
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        channelActiveEntries.forEach { entry ->
-                            val modifier = if (entry.fromZip) {
-                                Modifier.clickable { toggleDiscard(entry) }
-                            } else {
-                                Modifier
-                            }
-                            Text("• ${displayLabel(entry)}", style = smallTextStyle, color = mutedColor, modifier = modifier)
-                        }
-                        if (channelDiscardedEntries.isNotEmpty()) {
-                            Text("Descartadas:", fontWeight = FontWeight.SemiBold)
-                            channelDiscardedEntries.forEach { entry ->
-                                Text(
-                                    "• ${displayLabel(entry)}",
-                                    style = smallTextStyle,
-                                    color = mutedColor,
-                                    modifier = Modifier.clickable { toggleDiscard(entry) }
-                                )
-                            }
-                        }
-                        summary.warnings.forEach { warning ->
-                            Text(
-                                warning,
-                                color = MaterialTheme.colorScheme.error,
-                                style = smallTextStyle
-                            )
-                        }
-                        if (summary.result.duplicateFileNames.isNotEmpty()) {
-                            Text("Archivos eliminados:", fontWeight = FontWeight.SemiBold)
-                            summary.result.duplicateFileNames.forEach { name ->
-                                Text("• $name", style = smallTextStyle, color = mutedColor)
-                            }
-                        }
-                        if (summary.result.invalidTypeNames.isNotEmpty()) {
-                            Text("Mediciones inválidas:", fontWeight = FontWeight.SemiBold)
-                            summary.result.invalidTypeNames.forEach { name ->
-                                Text("• $name", style = smallTextStyle, color = mutedColor)
-                            }
-                        }
-                        if (summary.result.parseErrorNames.isNotEmpty()) {
-                            Text("No se pudieron leer:", fontWeight = FontWeight.SemiBold)
-                            summary.result.parseErrorNames.forEach { name ->
-                                Text("• $name", style = smallTextStyle, color = mutedColor)
-                            }
-                        }
-                        if (summary.result.duplicateEntryNames.isNotEmpty()) {
-                            Text("Duplicados en ZIP:", fontWeight = FontWeight.SemiBold)
-                            summary.result.duplicateEntryNames.forEach { name ->
-                                Text("• $name", style = smallTextStyle, color = mutedColor)
-                            }
-                        }
-                        if (summary.result.validationIssueNames.isNotEmpty()) {
-                            Text(
-                                "Validación de valores: ${summary.result.validationIssueNames.size} observaciones.",
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
-
-                        if (docsisEntries.isNotEmpty()) {
-                            Text("DocsisExpert (niveles):", fontWeight = FontWeight.SemiBold)
-                            if (docsisEntries.size > 5) {
-                                Text(
-                                    "Solo se muestran 5 mediciones (M1 a M5).",
-                                    style = smallTextStyle,
-                                    color = mutedColor
-                                )
-                            }
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Text("Canal", modifier = Modifier.weight(1f), style = smallTextStyle, fontWeight = FontWeight.SemiBold)
-                                Text("Freq", modifier = Modifier.weight(1f), style = smallTextStyle, fontWeight = FontWeight.SemiBold)
-                                docsisTableEntries.forEachIndexed { index, entry ->
-                                    MeasurementHeaderCell(entry, index)
-                                }
-                            }
-                            val docsisFrequencies = listOf(16.8, 20.0, 24.8, 35.0)
-                            docsisFrequencies.forEach { freq ->
-                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Text(docsisChannel(freq), modifier = Modifier.weight(1f), style = smallTextStyle)
-                                    Text("${docsisFrequency(freq)} MHz", modifier = Modifier.weight(1f), style = smallTextStyle)
-                                    docsisTableEntries.forEach { entry ->
-                                        val value = entry.docsisLevels[freq]
-                                        val ok = entry.docsisLevelOk[freq] ?: true
-                                        MeasurementValueCell(
-                                            value = formatDbmv(value),
-                                            ok = ok,
-                                            discarded = entry.isDiscarded
-                                        )
-                                    }
-                                }
-                            }
-                        }
-
-                        if (channelEntries.isNotEmpty()) {
-                            Text("Canales piloto (ChannelExpert):", fontWeight = FontWeight.SemiBold)
-                            if (channelEntries.size > 5) {
-                                Text(
-                                    "Solo se muestran 5 mediciones (M1 a M5).",
-                                    style = smallTextStyle,
-                                    color = mutedColor
-                                )
-                            }
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Text("Canal", modifier = Modifier.weight(1f), style = smallTextStyle, fontWeight = FontWeight.SemiBold)
-                                Text("Freq", modifier = Modifier.weight(1f), style = smallTextStyle, fontWeight = FontWeight.SemiBold)
-                                channelTableEntries.forEachIndexed { index, entry ->
-                                    MeasurementHeaderCell(entry, index)
-                                }
-                            }
-                            val pilotChannels = listOf(50, 70, 110, 116, 136)
-                            pilotChannels.forEach { channel ->
-                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Text("$channel", modifier = Modifier.weight(1f), style = smallTextStyle)
-                                    Text("${pilotFrequency(channel)} MHz", modifier = Modifier.weight(1f), style = smallTextStyle)
-                                    channelTableEntries.forEach { entry ->
-                                        val value = entry.pilotLevels[channel]
-                                        val ok = entry.pilotLevelOk[channel] ?: true
-                                        MeasurementValueCell(
-                                            value = formatDbmv(value),
-                                            ok = ok,
-                                            discarded = entry.isDiscarded
-                                        )
-                                    }
-                                }
-                            }
-                        }
-
-                        if (channelEntries.isNotEmpty()) {
-                            Text("ChannelExpert (canales digitales):", fontWeight = FontWeight.SemiBold)
-                            channelTableEntries.forEachIndexed { index, entry ->
-                                val label = "M${index + 1}"
-                                val hasIssues = entry.digitalRows.any { row ->
-                                    (row.merOk == false) || (row.berPreOk == false) || (row.berPostOk == false) || (row.icfrOk == false)
-                                }
-                                var expanded by remember(entry.label) { mutableStateOf(false) }
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable { expanded = !expanded }
-                                        .padding(vertical = 4.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    if (hasIssues) {
-                                        Icon(
-                                            Icons.Default.Warning,
-                                            contentDescription = null,
-                                            tint = pendingColor
-                                        )
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                    }
-                                    Text("$label - ${displayLabel(entry)}", style = smallTextStyle, modifier = Modifier.weight(1f))
-                                    Icon(
-                                        if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                                        contentDescription = null
-                                    )
-                                }
-                                if (expanded) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        Text("Canal", modifier = Modifier.weight(1f), style = smallTextStyle, fontWeight = FontWeight.SemiBold)
-                                        Text("Freq", modifier = Modifier.weight(1f), style = smallTextStyle, fontWeight = FontWeight.SemiBold)
-                                        Text("MER", modifier = Modifier.weight(1f), style = smallTextStyle, fontWeight = FontWeight.SemiBold)
-                                        Text("BER pre", modifier = Modifier.weight(1f), style = smallTextStyle, fontWeight = FontWeight.SemiBold)
-                                        Text("BER post", modifier = Modifier.weight(1f), style = smallTextStyle, fontWeight = FontWeight.SemiBold)
-                                        Text("ICFR", modifier = Modifier.weight(1f), style = smallTextStyle, fontWeight = FontWeight.SemiBold)
-                                    }
-                                    entry.digitalRows.forEach { row ->
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                        ) {
-                                            Text("${row.channel}", modifier = Modifier.weight(1f), style = smallTextStyle)
-                                            Text(formatDbmv(row.frequencyMHz), modifier = Modifier.weight(1f), style = smallTextStyle)
-                                            MeasurementValueCell(
-                                                value = formatDbmv(row.mer),
-                                                ok = row.merOk != false,
-                                                discarded = entry.isDiscarded
-                                            )
-                                            MeasurementValueCell(
-                                                value = row.berPre?.toString() ?: "—",
-                                                ok = row.berPreOk != false,
-                                                discarded = entry.isDiscarded
-                                            )
-                                            MeasurementValueCell(
-                                                value = row.berPost?.toString() ?: "—",
-                                                ok = row.berPostOk != false,
-                                                discarded = entry.isDiscarded
-                                            )
-                                            MeasurementValueCell(
-                                                value = formatDbmv(row.icfr),
-                                                ok = row.icfrOk != false,
-                                                discarded = entry.isDiscarded
-                                            )
-                                        }
-                                    }
-                                }
+                            val tolerance = rule.optDouble("tolerance", 1.5)
+                            val adjusted = level + testPointOffset
+                            if (adjusted < target - tolerance || adjusted > target + tolerance) {
+                                issues.add("Nivel fuera de rango en canal $channel.")
                             }
                         }
                     }
-                }
-                verificationSummary?.let { summary ->
-                    val smallTextStyle = MaterialTheme.typography.bodySmall
-                    val mutedColor = MaterialTheme.colorScheme.onSurfaceVariant
-                    val warningColor = MaterialTheme.colorScheme.error
-                    val pendingColor = MaterialTheme.colorScheme.tertiary
-                    val docsisEntries = summary.result.measurementEntries.filter { it.type == "docsisexpert" }
-                    val channelEntries = summary.result.measurementEntries.filter { it.type == "channelexpert" }
-
-                    val docsisTableEntries = docsisEntries.filterNot { it.isDiscarded }.take(2)
-                    val channelTableEntries = channelEntries.filterNot { it.isDiscarded }.take(2)
-
-                    @Composable
-                    fun MeasurementHeaderCell(entry: MeasurementEntry, index: Int) {
-                        val modifier = if (entry.fromZip) {
-                            Modifier
-                                .weight(1f)
-                                .clickable { toggleDiscard(entry) }
-                        } else {
-                            Modifier.weight(1f)
-                        }
-                        Column(modifier = modifier) {
-                            Text(
-                                "M${index + 1}",
-                                style = smallTextStyle,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
-                    }
-
-                    @Composable
-                    fun MeasurementValueCell(value: String, ok: Boolean, discarded: Boolean) {
-                        val textColor = if (ok || discarded) mutedColor else warningColor
-                        val fontWeight = if (!ok && !discarded) FontWeight.SemiBold else FontWeight.Normal
-                        Text(
-                            value,
-                            modifier = Modifier
-                                .weight(1f)
-                                .padding(vertical = 2.dp),
-                            style = smallTextStyle,
-                            color = textColor,
-                            fontWeight = fontWeight
-                        )
-                    }
-
-                    fun docsisChannel(freq: Double): String {
-                        val channel = docsisTableEntries.mapNotNull { it.docsisMeta[freq]?.channel }.firstOrNull()
-                        return channel?.toString() ?: "—"
-                    }
-
-                    fun docsisFrequency(freq: Double): String {
-                        val frequency = docsisTableEntries.mapNotNull { it.docsisMeta[freq]?.frequencyMHz }.firstOrNull()
-                        return formatMHz(frequency ?: freq)
-                    }
-
-                    fun pilotFrequency(channel: Int): String {
-                        val frequency = channelTableEntries.mapNotNull { it.pilotMeta[channel]?.frequencyMHz }.firstOrNull()
-                        return formatMHz(frequency)
-                    }
-
-                    val docsisDiscardedEntries = docsisEntries.filter { it.isDiscarded }
-                    val channelDiscardedEntries = channelEntries.filter { it.isDiscarded }
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(
-                            "Mediciones docsisexpert ${summary.result.docsisExpert}/${summary.expectedDocsis}",
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        docsisTableEntries.forEachIndexed { index, entry ->
-                            val modifier = if (entry.fromZip) {
-                                Modifier.clickable { toggleDiscard(entry) }
-                            } else {
-                                Modifier
-                            }
-                            Text(
-                                "M${index + 1}: ${displayLabel(entry)}",
-                                style = smallTextStyle,
-                                color = mutedColor,
-                                modifier = modifier
-                            )
-                        }
-                        if (docsisDiscardedEntries.isNotEmpty()) {
-                            Text("Descartadas:", fontWeight = FontWeight.SemiBold)
-                            docsisDiscardedEntries.forEach { entry ->
-                                Text(
-                                    "• ${displayLabel(entry)}",
-                                    style = smallTextStyle,
-                                    color = mutedColor,
-                                    modifier = Modifier.clickable { toggleDiscard(entry) }
-                                )
-                            }
-                        }
-                        Text(
-                            "Mediciones channelexpert ${summary.result.channelExpert}/${summary.expectedChannel}",
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        channelTableEntries.forEachIndexed { index, entry ->
-                            val modifier = if (entry.fromZip) {
-                                Modifier.clickable { toggleDiscard(entry) }
-                            } else {
-                                Modifier
-                            }
-                            Text(
-                                "M${index + 1}: ${displayLabel(entry)}",
-                                style = smallTextStyle,
-                                color = mutedColor,
-                                modifier = modifier
-                            )
-                        }
-                        if (channelDiscardedEntries.isNotEmpty()) {
-                            Text("Descartadas:", fontWeight = FontWeight.SemiBold)
-                            channelDiscardedEntries.forEach { entry ->
-                                Text(
-                                    "• ${displayLabel(entry)}",
-                                    style = smallTextStyle,
-                                    color = mutedColor,
-                                    modifier = Modifier.clickable { toggleDiscard(entry) }
-                                )
-                            }
-                        }
-                        summary.warnings.forEach { warning ->
-                            Text(
-                                warning,
-                                color = MaterialTheme.colorScheme.error,
-                                style = smallTextStyle
-                            )
-                        }
-                        if (summary.result.duplicateFileNames.isNotEmpty()) {
-                            Text("Archivos eliminados:", fontWeight = FontWeight.SemiBold)
-                            summary.result.duplicateFileNames.forEach { name ->
-                                Text("• $name", style = smallTextStyle, color = mutedColor)
-                            }
-                        }
-                        if (summary.result.invalidTypeNames.isNotEmpty()) {
-                            Text("Mediciones inválidas:", fontWeight = FontWeight.SemiBold)
-                            summary.result.invalidTypeNames.forEach { name ->
-                                Text("• $name", style = smallTextStyle, color = mutedColor)
-                            }
-                        }
-                        if (summary.result.parseErrorNames.isNotEmpty()) {
-                            Text("No se pudieron leer:", fontWeight = FontWeight.SemiBold)
-                            summary.result.parseErrorNames.forEach { name ->
-                                Text("• $name", style = smallTextStyle, color = mutedColor)
-                            }
-                        }
-                        if (summary.result.duplicateEntryNames.isNotEmpty()) {
-                            Text("Duplicados en ZIP:", fontWeight = FontWeight.SemiBold)
-                            summary.result.duplicateEntryNames.forEach { name ->
-                                Text("• $name", style = smallTextStyle, color = mutedColor)
-                            }
-                        }
-                        if (summary.result.validationIssueNames.isNotEmpty()) {
-                            Text(
-                                "Validación de valores: ${summary.result.validationIssueNames.size} observaciones.",
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
-
-                        if (docsisEntries.isNotEmpty()) {
-                            Text("DocsisExpert (niveles):", fontWeight = FontWeight.SemiBold)
-                            if (docsisEntries.size > 2) {
-                                Text(
-                                    "Solo se muestran 2 mediciones (M1 a M2).",
-                                    style = smallTextStyle,
-                                    color = mutedColor
-                                )
-                            }
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Text("Canal", modifier = Modifier.weight(1f), style = smallTextStyle, fontWeight = FontWeight.SemiBold)
-                                Text("Freq", modifier = Modifier.weight(1f), style = smallTextStyle, fontWeight = FontWeight.SemiBold)
-                                docsisTableEntries.forEachIndexed { index, entry ->
-                                    MeasurementHeaderCell(entry, index)
-                                }
-                            }
-                            val docsisFrequencies = listOf(16.8, 20.0, 24.8, 35.0)
-                            docsisFrequencies.forEach { freq ->
-                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Text(docsisChannel(freq), modifier = Modifier.weight(1f), style = smallTextStyle)
-                                    Text("${docsisFrequency(freq)} MHz", modifier = Modifier.weight(1f), style = smallTextStyle)
-                                    docsisTableEntries.forEach { entry ->
-                                        val value = entry.docsisLevels[freq]
-                                        val ok = entry.docsisLevelOk[freq] ?: true
-                                        MeasurementValueCell(
-                                            value = formatDbmv(value),
-                                            ok = ok,
-                                            discarded = entry.isDiscarded
-                                        )
-                                    }
-                                }
-                            }
-                        }
-
-                        if (channelEntries.isNotEmpty()) {
-                            Text("Canales piloto (ChannelExpert):", fontWeight = FontWeight.SemiBold)
-                            if (channelEntries.size > 2) {
-                                Text(
-                                    "Solo se muestran 2 mediciones (M1 a M2).",
-                                    style = smallTextStyle,
-                                    color = mutedColor
-                                )
-                            }
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Text("Canal", modifier = Modifier.weight(1f), style = smallTextStyle, fontWeight = FontWeight.SemiBold)
-                                Text("Freq", modifier = Modifier.weight(1f), style = smallTextStyle, fontWeight = FontWeight.SemiBold)
-                                channelTableEntries.forEachIndexed { index, entry ->
-                                    MeasurementHeaderCell(entry, index)
-                                }
-                            }
-                            val pilotChannels = listOf(50, 70, 110, 116, 136)
-                            pilotChannels.forEach { channel ->
-                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Text("$channel", modifier = Modifier.weight(1f), style = smallTextStyle)
-                                    Text("${pilotFrequency(channel)} MHz", modifier = Modifier.weight(1f), style = smallTextStyle)
-                                    channelTableEntries.forEach { entry ->
-                                        val value = entry.pilotLevels[channel]
-                                        val ok = entry.pilotLevelOk[channel] ?: true
-                                        MeasurementValueCell(
-                                            value = formatDbmv(value),
-                                            ok = ok,
-                                            discarded = entry.isDiscarded
-                                        )
-                                    }
-                                }
-                            }
-                        }
-
-                        if (channelEntries.isNotEmpty()) {
-                            Text("ChannelExpert (canales digitales):", fontWeight = FontWeight.SemiBold)
-                            channelTableEntries.forEachIndexed { index, entry ->
-                                val label = "M${index + 1}"
-                                val hasIssues = entry.digitalRows.any { row ->
-                                    (row.merOk == false) || (row.berPreOk == false) || (row.berPostOk == false) || (row.icfrOk == false)
-                                }
-                                var expanded by remember(entry.label) { mutableStateOf(false) }
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable { expanded = !expanded }
-                                        .padding(vertical = 4.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    if (hasIssues) {
-                                        Icon(
-                                            Icons.Default.Warning,
-                                            contentDescription = null,
-                                            tint = pendingColor
-                                        )
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                    }
-                                    Text("$label - ${displayLabel(entry)}", style = smallTextStyle, modifier = Modifier.weight(1f))
-                                    Icon(
-                                        if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                                        contentDescription = null
-                                    )
-                                }
-                                if (expanded) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        Text("Canal", modifier = Modifier.weight(1f), style = smallTextStyle, fontWeight = FontWeight.SemiBold)
-                                        Text("Freq", modifier = Modifier.weight(1f), style = smallTextStyle, fontWeight = FontWeight.SemiBold)
-                                        Text("MER", modifier = Modifier.weight(1f), style = smallTextStyle, fontWeight = FontWeight.SemiBold)
-                                        Text("BER pre", modifier = Modifier.weight(1f), style = smallTextStyle, fontWeight = FontWeight.SemiBold)
-                                        Text("BER post", modifier = Modifier.weight(1f), style = smallTextStyle, fontWeight = FontWeight.SemiBold)
-                                        Text("ICFR", modifier = Modifier.weight(1f), style = smallTextStyle, fontWeight = FontWeight.SemiBold)
-                                    }
-                                    entry.digitalRows.forEach { row ->
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                        ) {
-                                            Text("${row.channel}", modifier = Modifier.weight(1f), style = smallTextStyle)
-                                            Text(formatDbmv(row.frequencyMHz), modifier = Modifier.weight(1f), style = smallTextStyle)
-                                            MeasurementValueCell(
-                                                value = formatDbmv(row.mer),
-                                                ok = row.merOk != false,
-                                                discarded = entry.isDiscarded
-                                            )
-                                            MeasurementValueCell(
-                                                value = row.berPre?.toString() ?: "—",
-                                                ok = row.berPreOk != false,
-                                                discarded = entry.isDiscarded
-                                            )
-                                            MeasurementValueCell(
-                                                value = row.berPost?.toString() ?: "—",
-                                                ok = row.berPostOk != false,
-                                                discarded = entry.isDiscarded
-                                            )
-                                            MeasurementValueCell(
-                                                value = formatDbmv(row.icfr),
-                                                ok = row.icfrOk != false,
-                                                discarded = entry.isDiscarded
-                                            )
-                                        }
-                                    }
-                                }
+                } else {
+                    val row = rows.firstOrNull { it.channel == channel }
+                    val level = row?.levelDbmv
+                    if (level == null) {
+                        issues.add("No se encontró nivel para canal $channel.")
+                    } else {
+                        val target = rule.optDouble("target", Double.NaN)
+                        val tolerance = rule.optDouble("tolerance", Double.NaN)
+                        if (!target.isNaN() && !tolerance.isNaN()) {
+                            val adjusted = level + testPointOffset
+                            if (adjusted < target - tolerance || adjusted > target + tolerance) {
+                                issues.add("Nivel fuera de rango en canal $channel.")
                             }
                         }
                     }
