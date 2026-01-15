@@ -2372,7 +2372,7 @@ private suspend fun verifyMeasurementFiles(
             return
         }
         if (isZipBytes(decompressed)) {
-            ZipInputStream(ByteArrayInputStream(decompressed)).use { nested ->
+            ZipInputStream(ByteArrayInputStream(decompressed)).use { nested: ZipInputStream ->
                 handleZipInputStream(nested, sourceFile = null)
             }
             return
@@ -2381,27 +2381,27 @@ private suspend fun verifyMeasurementFiles(
     }
 
     fun handleRarFile(file: File, sourceLabel: String) {
+        var archive: Archive? = null
         try {
-            Archive(file).use { archive ->
-                val headers = archive.fileHeaders
-                headers.forEach { header ->
-                    if (header.isDirectory) return@forEach
-                    val name = header.fileNameString
-                    val output = ByteArrayOutputStream()
-                    archive.extractFile(header, output)
-                    val bytes = output.toByteArray()
-                    when {
-                        name.lowercase(Locale.getDefault()).endsWith(".zip") || isZipBytes(bytes) -> {
-                            ZipInputStream(ByteArrayInputStream(bytes)).use { nested ->
-                                handleZipInputStream(nested, sourceFile = null)
-                            }
+            archive = Archive(file)
+            val headers = archive.fileHeaders
+            headers.forEach { header ->
+                if (header.isDirectory) return@forEach
+                val name = header.fileNameString
+                val output = ByteArrayOutputStream()
+                archive.extractFile(header, output)
+                val bytes = output.toByteArray()
+                when {
+                    name.lowercase(Locale.getDefault()).endsWith(".zip") || isZipBytes(bytes) -> {
+                        ZipInputStream(ByteArrayInputStream(bytes)).use { nested: ZipInputStream ->
+                            handleZipInputStream(nested, sourceFile = null)
                         }
-                        name.lowercase(Locale.getDefault()).endsWith(".gz") -> {
-                            handleGzipBytes(bytes, name)
-                        }
-                        isJsonLike(name) -> {
-                            handleJsonBytes(bytes, sourceFile = null, sourceLabel = name)
-                        }
+                    }
+                    name.lowercase(Locale.getDefault()).endsWith(".gz") -> {
+                        handleGzipBytes(bytes, name)
+                    }
+                    isJsonLike(name) -> {
+                        handleJsonBytes(bytes, sourceFile = null, sourceLabel = name)
                     }
                 }
             }
@@ -2411,6 +2411,8 @@ private suspend fun verifyMeasurementFiles(
         } catch (_: Exception) {
             parseErrorCount += 1
             parseErrorNames.add(sourceLabel)
+        } finally {
+            runCatching { archive?.close() }
         }
     }
 
@@ -2428,9 +2430,9 @@ private suspend fun verifyMeasurementFiles(
                     parseErrorNames.add(entry.name)
                 } else if (entryName.endsWith(".zip") || isZipBytes(bytes)) {
                     runCatching {
-                            ZipInputStream(ByteArrayInputStream(bytes)).use { nested ->
-                                handleZipInputStream(nested, sourceFile = null)
-                            }
+                        ZipInputStream(ByteArrayInputStream(bytes)).use { nested: ZipInputStream ->
+                            handleZipInputStream(nested, sourceFile = null)
+                        }
                     }.onFailure {
                         parseErrorCount += 1
                         parseErrorNames.add(entry.name)
