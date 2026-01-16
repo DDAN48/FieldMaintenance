@@ -86,6 +86,7 @@ import com.example.fieldmaintenance.util.hasIncompleteAssets
 import java.util.Locale
 import java.io.ByteArrayInputStream
 import java.security.MessageDigest
+import java.util.zip.GZIPInputStream
 import java.util.zip.ZipInputStream
 import java.io.FileOutputStream
 import androidx.exifinterface.media.ExifInterface
@@ -2288,6 +2289,41 @@ private suspend fun verifyMeasurementFiles(
         }
     }
 
+    fun isJsonLike(name: String): Boolean {
+        val lower = name.lowercase(Locale.getDefault())
+        val jsonNumbered = Regex(".*\\.json\\d+$")
+        val jsonDotNumbered = Regex(".*\\.json\\.\\d+$")
+        return lower.endsWith(".json") || jsonNumbered.matches(lower) || jsonDotNumbered.matches(lower)
+    }
+
+    fun isZipBytes(bytes: ByteArray): Boolean {
+        return bytes.size >= 4 && bytes[0] == 0x50.toByte() && bytes[1] == 0x4b.toByte()
+    }
+
+    fun handleGzipBytes(bytes: ByteArray, sourceFile: File?, sourceLabel: String) {
+        val decompressed = runCatching {
+            GZIPInputStream(ByteArrayInputStream(bytes)).use { it.readBytes() }
+        }.getOrNull()
+        if (decompressed == null) {
+            parseErrorCount += 1
+            parseErrorNames.add(sourceLabel)
+            return
+        }
+        if (isZipBytes(decompressed)) {
+            runCatching {
+                ZipInputStream(ByteArrayInputStream(decompressed)).use { nested ->
+                    handleZipInputStream(nested, sourceFile = null)
+                }
+            }.onFailure {
+                parseErrorCount += 1
+                parseErrorNames.add(sourceLabel)
+            }
+            return
+        }
+        val jsonLabel = sourceLabel.removeSuffix(".gz")
+        handleJsonBytes(decompressed, sourceFile = sourceFile, sourceLabel = jsonLabel)
+    }
+
     fun handleZipInputStream(inputStream: ZipInputStream, sourceFile: File?) {
         var entry = inputStream.nextEntry
         while (entry != null) {
@@ -2306,7 +2342,9 @@ private suspend fun verifyMeasurementFiles(
                         parseErrorCount += 1
                         parseErrorNames.add(entry.name)
                     }
-                } else if (entryName.endsWith(".json")) {
+                } else if (entryName.endsWith(".gz")) {
+                    handleGzipBytes(bytes, sourceFile = sourceFile, sourceLabel = entry.name)
+                } else if (isJsonLike(entryName)) {
                     handleJsonBytes(bytes, sourceFile = sourceFile, sourceLabel = entry.name)
                 }
             }
@@ -2317,7 +2355,7 @@ private suspend fun verifyMeasurementFiles(
     dedupedFiles.forEach { file ->
         val name = file.name.lowercase(Locale.getDefault())
         when {
-            name.endsWith(".json") -> {
+            isJsonLike(name) -> {
                 runCatching { handleJsonBytes(file.readBytes(), sourceFile = file, sourceLabel = file.name) }
                     .onFailure {
                         parseErrorCount += 1
@@ -2329,6 +2367,14 @@ private suspend fun verifyMeasurementFiles(
                     ZipInputStream(file.inputStream()).use { zip ->
                         handleZipInputStream(zip, sourceFile = null)
                     }
+                }.onFailure {
+                    parseErrorCount += 1
+                    parseErrorNames.add(file.name)
+                }
+            }
+            name.endsWith(".gz") -> {
+                runCatching {
+                    handleGzipBytes(file.readBytes(), sourceFile = file, sourceLabel = file.name)
                 }.onFailure {
                     parseErrorCount += 1
                     parseErrorNames.add(file.name)
