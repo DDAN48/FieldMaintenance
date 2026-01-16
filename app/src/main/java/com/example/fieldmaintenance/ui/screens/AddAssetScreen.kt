@@ -1844,7 +1844,8 @@ private fun validateMeasurementValues(
     type: String,
     equipmentKey: String,
     assetType: AssetType,
-    amplifierTargets: Map<Int, Double>?
+    amplifierTargets: Map<Int, Double>?,
+    nodeTxType: String?
 ): List<String> {
     if (rules == null) return listOf("No se pudo cargar la tabla de validación.")
     val issues = mutableListOf<String>()
@@ -1926,44 +1927,80 @@ private fun validateMeasurementValues(
         val channelRules = rules.optJSONObject("channelexpert")
             ?.optJSONObject(assetKey)
             ?.optJSONObject(equipmentKey)
-            ?.optJSONObject("channels")
-        if (channelRules == null) {
+        val txTargets = channelRules?.optJSONObject("txTargets")
+        val txConfig = if (assetType == AssetType.NODE && nodeTxType != null) {
+            txTargets?.optJSONObject(nodeTxType)
+        } else {
+            null
+        }
+        val channelTable = channelRules?.optJSONObject("channels")
+        if (channelTable == null) {
             issues.add("No hay reglas de niveles para canales en $assetKey/$equipmentKey.")
         } else {
             val channels = listOf(50, 70, 110, 116, 136)
-            channels.forEach { channel ->
-                val rule = channelRules.optJSONObject(channel.toString())
-                if (rule == null) {
-                    issues.add("Sin regla para canal $channel.")
-                } else if (rule.has("source")) {
-                    val target = amplifierTargets?.get(channel)
-                    if (target == null) {
-                        issues.add("Falta tabla interna para canal $channel.")
+            if (txConfig != null) {
+                val pilotTarget = txConfig.optDouble("pilotTarget", Double.NaN)
+                val pilotTolerance = txConfig.optDouble("tolerance", 1.0)
+                val digitalOffset = txTargets?.optDouble("digitalOffset", Double.NaN)
+                val digitalTolerance = txTargets?.optDouble("digitalTolerance", Double.NaN)
+                channels.forEach { channel ->
+                    val row = rows.firstOrNull { it.channel == channel }
+                    val level = row?.levelDbmv
+                    if (level == null) {
+                        issues.add("No se encontró nivel para canal $channel.")
+                    } else if (!pilotTarget.isNaN()) {
+                        val adjusted = level + testPointOffset
+                        if (adjusted < pilotTarget - pilotTolerance || adjusted > pilotTarget + pilotTolerance) {
+                            issues.add("Nivel fuera de rango en canal $channel.")
+                        }
+                    }
+                }
+                if (digitalOffset != null && !digitalOffset.isNaN() && digitalTolerance != null && !digitalTolerance.isNaN()) {
+                    rows.filter { row -> row.channel != null && row.channel in 14..115 }
+                        .forEach { row ->
+                            val level = row.levelDbmv ?: return@forEach
+                            val adjusted = level + testPointOffset
+                            val target = pilotTarget + digitalOffset
+                            if (adjusted < target - digitalTolerance || adjusted > target + digitalTolerance) {
+                                issues.add("Nivel digital fuera de rango en canal ${row.channel}.")
+                            }
+                        }
+                }
+            } else {
+                channels.forEach { channel ->
+                    val rule = channelTable.optJSONObject(channel.toString())
+                    if (rule == null) {
+                        issues.add("Sin regla para canal $channel.")
+                    } else if (rule.has("source")) {
+                        val target = amplifierTargets?.get(channel)
+                        if (target == null) {
+                            issues.add("Falta tabla interna para canal $channel.")
+                        } else {
+                            val row = rows.firstOrNull { it.channel == channel }
+                            val level = row?.levelDbmv
+                            if (level == null) {
+                                issues.add("No se encontró nivel para canal $channel.")
+                            } else {
+                                val tolerance = rule.optDouble("tolerance", 1.5)
+                                val adjusted = level + testPointOffset
+                                if (adjusted < target - tolerance || adjusted > target + tolerance) {
+                                    issues.add("Nivel fuera de rango en canal $channel.")
+                                }
+                            }
+                        }
                     } else {
                         val row = rows.firstOrNull { it.channel == channel }
                         val level = row?.levelDbmv
                         if (level == null) {
                             issues.add("No se encontró nivel para canal $channel.")
                         } else {
-                            val tolerance = rule.optDouble("tolerance", 1.5)
-                            val adjusted = level + testPointOffset
-                            if (adjusted < target - tolerance || adjusted > target + tolerance) {
-                                issues.add("Nivel fuera de rango en canal $channel.")
-                            }
-                        }
-                    }
-                } else {
-                    val row = rows.firstOrNull { it.channel == channel }
-                    val level = row?.levelDbmv
-                    if (level == null) {
-                        issues.add("No se encontró nivel para canal $channel.")
-                    } else {
-                        val target = rule.optDouble("target", Double.NaN)
-                        val tolerance = rule.optDouble("tolerance", Double.NaN)
-                        if (!target.isNaN() && !tolerance.isNaN()) {
-                            val adjusted = level + testPointOffset
-                            if (adjusted < target - tolerance || adjusted > target + tolerance) {
-                                issues.add("Nivel fuera de rango en canal $channel.")
+                            val target = rule.optDouble("target", Double.NaN)
+                            val tolerance = rule.optDouble("tolerance", Double.NaN)
+                            if (!target.isNaN() && !tolerance.isNaN()) {
+                                val adjusted = level + testPointOffset
+                                if (adjusted < target - tolerance || adjusted > target + tolerance) {
+                                    issues.add("Nivel fuera de rango en canal $channel.")
+                                }
                             }
                         }
                     }
@@ -2052,7 +2089,7 @@ private suspend fun verifyMeasurementFiles(
 ): MeasurementVerificationSummary {
     val assetType = asset.type
     val expectedDocsis = when (assetType) {
-        AssetType.NODE -> 4
+        AssetType.NODE -> 0
         AssetType.AMPLIFIER -> 4
         else -> 0
     }
@@ -2090,6 +2127,17 @@ private suspend fun verifyMeasurementFiles(
                 116 to it["CH116"],
                 136 to it["CH136"]
             ).filterValues { value -> value != null }.mapValues { it.value!! }
+        }
+    } else {
+        null
+    }
+    val nodeTxType = if (assetType == AssetType.NODE) {
+        repository.getNodeAdjustmentOne(asset.id)?.let { adjustment ->
+            when {
+                adjustment.tx1310Confirmed -> "1310"
+                adjustment.tx1550Confirmed -> "1550"
+                else -> null
+            }
         }
     } else {
         null
@@ -2291,7 +2339,8 @@ private suspend fun verifyMeasurementFiles(
                         type = normalizedType,
                         equipmentKey = equipmentKey,
                         assetType = assetType,
-                        amplifierTargets = amplifierTargets
+                        amplifierTargets = amplifierTargets,
+                        nodeTxType = nodeTxType
                     )
                     issues.forEach { issue ->
                         validationIssueNames.add("$sourceLabel: $issue")
@@ -2414,10 +2463,12 @@ private suspend fun verifyMeasurementFiles(
     }
 
     val warnings = buildList {
-        if (docsisCount < expectedDocsis) {
-            add("Faltan mediciones DocsisExpert (${docsisCount}/$expectedDocsis).")
-        } else if (docsisCount > expectedDocsis) {
-            add("Sobran mediciones DocsisExpert (${docsisCount}/$expectedDocsis). Elimine una.")
+        if (expectedDocsis > 0) {
+            if (docsisCount < expectedDocsis) {
+                add("Faltan mediciones DocsisExpert (${docsisCount}/$expectedDocsis).")
+            } else if (docsisCount > expectedDocsis) {
+                add("Sobran mediciones DocsisExpert (${docsisCount}/$expectedDocsis). Elimine una.")
+            }
         }
         if (channelCount < expectedChannel) {
             add("Faltan mediciones ChannelExpert (${channelCount}/$expectedChannel).")
@@ -2609,10 +2660,15 @@ private fun AssetFileSection(
                     val pendingColor = MaterialTheme.colorScheme.tertiary
                     val docsisEntries = summary.result.measurementEntries.filter { it.type == "docsisexpert" }
                     val channelEntries = summary.result.measurementEntries.filter { it.type == "channelexpert" }
-                    val maxDisplayedMeasurements = 5
+                    val maxDisplayedMeasurements = if (asset.type == AssetType.NODE) 1 else 5
 
                     val docsisListEntries = docsisEntries.filterNot { it.isDiscarded }
                     val channelListEntries = channelEntries.filterNot { it.isDiscarded }
+                    val channelDisplayEntries = if (asset.type == AssetType.NODE) {
+                        channelListEntries.take(maxDisplayedMeasurements)
+                    } else {
+                        channelListEntries
+                    }
                     val docsisTableEntries = docsisListEntries.take(maxDisplayedMeasurements)
                     val channelTableEntries = channelListEntries.take(maxDisplayedMeasurements)
 
@@ -2667,39 +2723,41 @@ private fun AssetFileSection(
                     val docsisDiscardedEntries = docsisEntries.filter { it.isDiscarded }
                     val channelDiscardedEntries = channelEntries.filter { it.isDiscarded }
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(
-                            "Mediciones docsisexpert ${summary.result.docsisExpert}/${summary.expectedDocsis}",
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        docsisListEntries.forEachIndexed { index, entry ->
-                            val modifier = if (entry.fromZip) {
-                                Modifier.clickable { toggleDiscard(entry) }
-                            } else {
-                                Modifier
-                            }
+                        if (asset.type != AssetType.NODE) {
                             Text(
-                                "M${index + 1}: ${displayLabel(entry)}",
-                                style = smallTextStyle,
-                                color = mutedColor,
-                                modifier = modifier
+                                "Mediciones docsisexpert ${summary.result.docsisExpert}/${summary.expectedDocsis}",
+                                fontWeight = FontWeight.SemiBold
                             )
-                        }
-                        if (docsisDiscardedEntries.isNotEmpty()) {
-                            Text("Descartadas:", fontWeight = FontWeight.SemiBold)
-                            docsisDiscardedEntries.forEach { entry ->
+                            docsisListEntries.forEachIndexed { index, entry ->
+                                val modifier = if (entry.fromZip) {
+                                    Modifier.clickable { toggleDiscard(entry) }
+                                } else {
+                                    Modifier
+                                }
                                 Text(
-                                    "• ${displayLabel(entry)}",
+                                    "M${index + 1}: ${displayLabel(entry)}",
                                     style = smallTextStyle,
                                     color = mutedColor,
-                                    modifier = Modifier.clickable { toggleDiscard(entry) }
+                                    modifier = modifier
                                 )
+                            }
+                            if (docsisDiscardedEntries.isNotEmpty()) {
+                                Text("Descartadas:", fontWeight = FontWeight.SemiBold)
+                                docsisDiscardedEntries.forEach { entry ->
+                                    Text(
+                                        "• ${displayLabel(entry)}",
+                                        style = smallTextStyle,
+                                        color = mutedColor,
+                                        modifier = Modifier.clickable { toggleDiscard(entry) }
+                                    )
+                                }
                             }
                         }
                         Text(
                             "Mediciones channelexpert ${summary.result.channelExpert}/${summary.expectedChannel}",
                             fontWeight = FontWeight.SemiBold
                         )
-                        channelListEntries.forEachIndexed { index, entry ->
+                        channelDisplayEntries.forEachIndexed { index, entry ->
                             val modifier = if (entry.fromZip) {
                                 Modifier.clickable { toggleDiscard(entry) }
                             } else {
@@ -2763,7 +2821,7 @@ private fun AssetFileSection(
                             )
                         }
 
-                        if (docsisEntries.isNotEmpty()) {
+                        if (docsisEntries.isNotEmpty() && asset.type != AssetType.NODE) {
                             Text("DocsisExpert (niveles):", fontWeight = FontWeight.SemiBold)
                             if (docsisListEntries.size > maxDisplayedMeasurements) {
                                 Text(
