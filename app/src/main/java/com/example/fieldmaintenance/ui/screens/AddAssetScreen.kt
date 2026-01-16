@@ -2481,7 +2481,6 @@ private fun AssetFileSection(
     val scope = rememberCoroutineScope()
     val discardedFile = remember(assetDir) { File(assetDir, ".discarded_measurements.txt") }
     var discardedLabels by remember(assetDir) { mutableStateOf(loadDiscardedLabels(discardedFile)) }
-    var lastFileNames by remember(assetDir) { mutableStateOf(files.map { it.name }.toSet()) }
 
     val viaviIntent = remember {
         context.packageManager.getLaunchIntentForPackage("com.viavisolutions.mobiletech")
@@ -2515,15 +2514,14 @@ private fun AssetFileSection(
     }
 
     LaunchedEffect(files, discardedLabels) {
-        val currentNames = files.map { it.name }.toSet()
-        val added = currentNames.size > lastFileNames.size
-        lastFileNames = currentNames
-        if (added && files.isNotEmpty()) {
+        if (files.isNotEmpty()) {
             val summary = verifyMeasurementFiles(context, files, asset, repository, discardedLabels)
             verificationSummary = summary
             if (summary.result.duplicateFileCount > 0) {
                 files = assetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
             }
+        } else {
+            verificationSummary = null
         }
     }
 
