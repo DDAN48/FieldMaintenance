@@ -63,6 +63,7 @@ import com.example.fieldmaintenance.data.model.AssetType
 import com.example.fieldmaintenance.data.model.MaintenanceReport
 import com.example.fieldmaintenance.ui.navigation.PendingMeasurementAssetIdKey
 import com.example.fieldmaintenance.ui.navigation.PendingMeasurementReportIdKey
+import com.example.fieldmaintenance.ui.navigation.PendingMeasurementAssetTypeKey
 import com.example.fieldmaintenance.ui.navigation.Screen
 import com.example.fieldmaintenance.util.DatabaseProvider
 import com.example.fieldmaintenance.util.MaintenanceStorage
@@ -86,6 +87,7 @@ fun ShareImportScreen(
     val previousEntry = navController.previousBackStackEntry
     val pendingReportId = previousEntry?.savedStateHandle?.get<String>(PendingMeasurementReportIdKey)
     val pendingAssetId = previousEntry?.savedStateHandle?.get<String>(PendingMeasurementAssetIdKey)
+    val pendingAssetType = previousEntry?.savedStateHandle?.get<String>(PendingMeasurementAssetTypeKey)
     val hasPendingAsset = !pendingReportId.isNullOrBlank() && !pendingAssetId.isNullOrBlank()
 
     LaunchedEffect(sharedUris, hasPendingAsset) {
@@ -99,9 +101,15 @@ fun ShareImportScreen(
             if (report == null || asset == null) {
                 previousEntry?.savedStateHandle?.remove<String>(PendingMeasurementReportIdKey)
                 previousEntry?.savedStateHandle?.remove<String>(PendingMeasurementAssetIdKey)
+                previousEntry?.savedStateHandle?.remove<String>(PendingMeasurementAssetTypeKey)
                 return@LaunchedEffect
             }
-            val assetLabel = when (asset.type) {
+            val resolvedAsset = if (pendingAssetType == AssetType.AMPLIFIER.name) {
+                asset.copy(type = AssetType.AMPLIFIER)
+            } else {
+                asset
+            }
+            val assetLabel = when (resolvedAsset.type) {
                 AssetType.NODE -> "Nodo"
                 AssetType.AMPLIFIER -> {
                     val portName = asset.port?.name ?: ""
@@ -111,13 +119,14 @@ fun ShareImportScreen(
             }
             withContext(Dispatchers.IO) {
                 val reportFolder = MaintenanceStorage.reportFolderName(report.eventName, report.id)
-                val assetDir = MaintenanceStorage.ensureAssetDir(context, reportFolder, asset)
+                val assetDir = MaintenanceStorage.ensureAssetDir(context, reportFolder, resolvedAsset)
                 sharedUris.forEach { uri ->
                     MaintenanceStorage.copySharedFileToDir(context, uri, assetDir)
                 }
             }
             previousEntry?.savedStateHandle?.remove<String>(PendingMeasurementReportIdKey)
             previousEntry?.savedStateHandle?.remove<String>(PendingMeasurementAssetIdKey)
+            previousEntry?.savedStateHandle?.remove<String>(PendingMeasurementAssetTypeKey)
             snackbarHostState.showSnackbar("Archivos guardados en $assetLabel")
             onShareHandled()
             navController.popBackStack()
