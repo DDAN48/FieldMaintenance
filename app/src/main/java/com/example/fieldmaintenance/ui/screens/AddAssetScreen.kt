@@ -2568,7 +2568,13 @@ private fun AssetFileSection(
     }
 
     var isExpanded by remember { mutableStateOf(true) }
-    var verificationSummary by remember { mutableStateOf<MeasurementVerificationSummary?>(null) }
+    var verificationSummaryRx by remember { mutableStateOf<MeasurementVerificationSummary?>(null) }
+    var verificationSummaryModule by remember { mutableStateOf<MeasurementVerificationSummary?>(null) }
+    val moduleAsset = if (asset.type == AssetType.NODE) {
+        asset.copy(type = AssetType.AMPLIFIER)
+    } else {
+        asset
+    }
 
     fun displayLabel(entry: MeasurementEntry): String {
         return if (entry.isDiscarded && !entry.label.contains("DESCARTADA", ignoreCase = true)) {
@@ -2589,20 +2595,31 @@ private fun AssetFileSection(
         discardedLabels = updated
         saveDiscardedLabels(discardedFile, updated)
         scope.launch {
-            val summary = verifyMeasurementFiles(context, files, asset, repository, updated)
-            verificationSummary = summary
+            if (asset.type == AssetType.NODE) {
+                verificationSummaryRx = verifyMeasurementFiles(context, files, asset, repository, updated)
+                verificationSummaryModule = verifyMeasurementFiles(context, files, moduleAsset, repository, updated)
+            } else {
+                verificationSummaryRx = verifyMeasurementFiles(context, files, asset, repository, updated)
+            }
         }
     }
 
     LaunchedEffect(files, discardedLabels) {
         if (files.isNotEmpty()) {
             val summary = verifyMeasurementFiles(context, files, asset, repository, discardedLabels)
-            verificationSummary = summary
-            if (summary.result.duplicateFileCount > 0) {
+            verificationSummaryRx = summary
+            val moduleSummary = if (asset.type == AssetType.NODE) {
+                verifyMeasurementFiles(context, files, moduleAsset, repository, discardedLabels)
+            } else {
+                null
+            }
+            verificationSummaryModule = moduleSummary
+            if (summary.result.duplicateFileCount > 0 || (moduleSummary?.result?.duplicateFileCount ?: 0) > 0) {
                 files = assetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
             }
         } else {
-            verificationSummary = null
+            verificationSummaryRx = null
+            verificationSummaryModule = null
         }
     }
 
@@ -2636,7 +2653,16 @@ private fun AssetFileSection(
                                 repository,
                                 discardedLabels
                             )
-                            verificationSummary = summary
+                            verificationSummaryRx = summary
+                            if (asset.type == AssetType.NODE) {
+                                verificationSummaryModule = verifyMeasurementFiles(
+                                    context,
+                                    files,
+                                    moduleAsset,
+                                    repository,
+                                    discardedLabels
+                                )
+                            }
                         }
                     },
                     enabled = files.isNotEmpty() && asset.type in setOf(AssetType.NODE, AssetType.AMPLIFIER)
@@ -2654,10 +2680,79 @@ private fun AssetFileSection(
                 }
             }
             if (isExpanded) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = {
-                        onInteraction()
-                        if (viaviIntent != null) {
+                if (asset.type == AssetType.NODE) {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Mediciones RX", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                        Text("Mediciones Modulo", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            onClick = {
+                                onInteraction()
+                                if (viaviIntent != null) {
+                                    navController.currentBackStackEntry?.savedStateHandle?.apply {
+                                        set(PendingMeasurementReportIdKey, asset.reportId)
+                                        set(PendingMeasurementAssetIdKey, asset.id)
+                                    }
+                                    runCatching { context.startActivity(viaviIntent) }
+                                        .onFailure {
+                                            Toast.makeText(
+                                                context,
+                                                "No se pudo abrir Viavi",
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        }
+                                } else {
+                                    Toast.makeText(
+                                        context,
+                                        "Viavi (mobiletech) no está instalada",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                            },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Default.Description, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Agregar Medición RX")
+                        }
+                        Button(
+                            onClick = {
+                                onInteraction()
+                                if (viaviIntent != null) {
+                                    navController.currentBackStackEntry?.savedStateHandle?.apply {
+                                        set(PendingMeasurementReportIdKey, asset.reportId)
+                                        set(PendingMeasurementAssetIdKey, asset.id)
+                                    }
+                                    runCatching { context.startActivity(viaviIntent) }
+                                        .onFailure {
+                                            Toast.makeText(
+                                                context,
+                                                "No se pudo abrir Viavi",
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        }
+                                } else {
+                                    Toast.makeText(
+                                        context,
+                                        "Viavi (mobiletech) no está instalada",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                            },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Default.Description, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Agregar Medición Modulo")
+                        }
+                    }
+                }
+                if (asset.type != AssetType.NODE) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = {
+                            onInteraction()
+                            if (viaviIntent != null) {
                             navController.currentBackStackEntry?.savedStateHandle?.apply {
                                 set(PendingMeasurementReportIdKey, asset.reportId)
                                 set(PendingMeasurementAssetIdKey, asset.id)
@@ -2682,8 +2777,9 @@ private fun AssetFileSection(
                         Spacer(modifier = Modifier.width(8.dp))
                         Text("Agregar Mediciones")
                     }
+                    }
                 }
-                verificationSummary?.let { summary ->
+                verificationSummaryRx?.let { summary ->
                     val smallTextStyle = MaterialTheme.typography.bodySmall
                     val mutedColor = MaterialTheme.colorScheme.onSurfaceVariant
                     val warningColor = MaterialTheme.colorScheme.error
