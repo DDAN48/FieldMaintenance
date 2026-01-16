@@ -1635,7 +1635,11 @@ private fun collectChannelRows(json: Any?): List<ChannelRow> {
 
     fun parseNumber(value: Any?): Double? = when (value) {
         is Number -> value.toDouble()
-        is String -> value.toDoubleOrNull()
+        is String -> {
+            val normalized = value.replace(",", ".")
+            val match = Regex("-?\\d+(?:\\.\\d+)?").find(normalized)?.value
+            match?.toDoubleOrNull()
+        }
         else -> null
     }
 
@@ -2595,9 +2599,12 @@ private fun AssetFileSection(
                     val pendingColor = MaterialTheme.colorScheme.tertiary
                     val docsisEntries = summary.result.measurementEntries.filter { it.type == "docsisexpert" }
                     val channelEntries = summary.result.measurementEntries.filter { it.type == "channelexpert" }
+                    val maxDisplayedMeasurements = 5
 
-                    val docsisTableEntries = docsisEntries.filterNot { it.isDiscarded }.take(2)
-                    val channelTableEntries = channelEntries.filterNot { it.isDiscarded }.take(2)
+                    val docsisListEntries = docsisEntries.filterNot { it.isDiscarded }
+                    val channelListEntries = channelEntries.filterNot { it.isDiscarded }
+                    val docsisTableEntries = docsisListEntries.take(maxDisplayedMeasurements)
+                    val channelTableEntries = channelListEntries.take(maxDisplayedMeasurements)
 
                     @Composable
                     fun MeasurementHeaderCell(entry: MeasurementEntry, index: Int) {
@@ -2654,7 +2661,7 @@ private fun AssetFileSection(
                             "Mediciones docsisexpert ${summary.result.docsisExpert}/${summary.expectedDocsis}",
                             fontWeight = FontWeight.SemiBold
                         )
-                        docsisTableEntries.forEachIndexed { index, entry ->
+                        docsisListEntries.forEachIndexed { index, entry ->
                             val modifier = if (entry.fromZip) {
                                 Modifier.clickable { toggleDiscard(entry) }
                             } else {
@@ -2682,7 +2689,7 @@ private fun AssetFileSection(
                             "Mediciones channelexpert ${summary.result.channelExpert}/${summary.expectedChannel}",
                             fontWeight = FontWeight.SemiBold
                         )
-                        channelTableEntries.forEachIndexed { index, entry ->
+                        channelListEntries.forEachIndexed { index, entry ->
                             val modifier = if (entry.fromZip) {
                                 Modifier.clickable { toggleDiscard(entry) }
                             } else {
@@ -2748,9 +2755,9 @@ private fun AssetFileSection(
 
                         if (docsisEntries.isNotEmpty()) {
                             Text("DocsisExpert (niveles):", fontWeight = FontWeight.SemiBold)
-                            if (docsisEntries.size > 2) {
+                            if (docsisListEntries.size > maxDisplayedMeasurements) {
                                 Text(
-                                    "Solo se muestran 2 mediciones (M1 a M2).",
+                                    "Solo se muestran $maxDisplayedMeasurements mediciones (M1 a M$maxDisplayedMeasurements).",
                                     style = smallTextStyle,
                                     color = mutedColor
                                 )
@@ -2782,9 +2789,9 @@ private fun AssetFileSection(
 
                         if (channelEntries.isNotEmpty()) {
                             Text("Canales piloto (ChannelExpert):", fontWeight = FontWeight.SemiBold)
-                            if (channelEntries.size > 2) {
+                            if (channelListEntries.size > maxDisplayedMeasurements) {
                                 Text(
-                                    "Solo se muestran 2 mediciones (M1 a M2).",
+                                    "Solo se muestran $maxDisplayedMeasurements mediciones (M1 a M$maxDisplayedMeasurements).",
                                     style = smallTextStyle,
                                     color = mutedColor
                                 )
