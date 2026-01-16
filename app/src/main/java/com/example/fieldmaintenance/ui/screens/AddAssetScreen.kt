@@ -36,6 +36,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.font.FontWeight
@@ -2592,6 +2593,8 @@ private fun AssetFileSection(
     var verificationSummaryRx by remember { mutableStateOf<MeasurementVerificationSummary?>(null) }
     var verificationSummaryModule by remember { mutableStateOf<MeasurementVerificationSummary?>(null) }
     var duplicateNotice by remember { mutableStateOf<List<String>>(emptyList()) }
+    var surplusNotice by remember { mutableStateOf<List<String>>(emptyList()) }
+    var surplusSelection by remember { mutableStateOf<Set<String>>(emptySet()) }
 
     data class RequiredCounts(
         val expectedDocsis: Int,
@@ -2694,6 +2697,21 @@ private fun AssetFileSection(
             if (duplicates.isNotEmpty() && duplicateNotice.isEmpty()) {
                 duplicateNotice = duplicates
             }
+            val surplusNames = buildList {
+                val docsisExtras = summary.result.docsisNames.drop(rxRequired.expectedDocsis)
+                val channelExtras = summary.result.channelNames.drop(rxRequired.expectedChannel)
+                addAll(docsisExtras)
+                addAll(channelExtras)
+            }.ifEmpty {
+                summary.result.measurementEntries.map { it.label }
+            }
+            if (surplusNames.isNotEmpty() && surplusNotice.isEmpty() &&
+                (summary.result.docsisExpert > rxRequired.expectedDocsis ||
+                    summary.result.channelExpert > rxRequired.expectedChannel)
+            ) {
+                surplusNotice = surplusNames
+                surplusSelection = emptySet()
+            }
             if (summary.result.duplicateFileCount > 0) {
                 rxFiles = rxAssetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
             }
@@ -2719,6 +2737,21 @@ private fun AssetFileSection(
             val duplicates = summary.result.duplicateFileNames + summary.result.duplicateEntryNames
             if (duplicates.isNotEmpty() && duplicateNotice.isEmpty()) {
                 duplicateNotice = duplicates
+            }
+            val surplusNames = buildList {
+                val docsisExtras = summary.result.docsisNames.drop(moduleRequired.expectedDocsis)
+                val channelExtras = summary.result.channelNames.drop(moduleRequired.expectedChannel)
+                addAll(docsisExtras)
+                addAll(channelExtras)
+            }.ifEmpty {
+                summary.result.measurementEntries.map { it.label }
+            }
+            if (surplusNames.isNotEmpty() && surplusNotice.isEmpty() &&
+                (summary.result.docsisExpert > moduleRequired.expectedDocsis ||
+                    summary.result.channelExpert > moduleRequired.expectedChannel)
+            ) {
+                surplusNotice = surplusNames
+                surplusSelection = emptySet()
             }
             if (summary.result.duplicateFileCount > 0) {
                 moduleFiles = moduleAssetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
@@ -3435,6 +3468,58 @@ private fun AssetFileSection(
                 }
             },
             confirmButton = {}
+        )
+    }
+
+    if (surplusNotice.isNotEmpty()) {
+        AlertDialog(
+            onDismissRequest = { },
+            properties = DialogProperties(
+                dismissOnBackPress = false,
+                dismissOnClickOutside = false
+            ),
+            title = { Text("Mediciones sobrantes") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        "Se detectaron mediciones de más. Seleccione cuáles desea eliminar.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    surplusNotice.forEach { name ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Checkbox(
+                                checked = surplusSelection.contains(name),
+                                onCheckedChange = { checked ->
+                                    surplusSelection = if (checked) {
+                                        surplusSelection + name
+                                    } else {
+                                        surplusSelection - name
+                                    }
+                                }
+                            )
+                            Text(
+                                name,
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        surplusNotice = emptyList()
+                        surplusSelection = emptySet()
+                    },
+                    enabled = surplusSelection.isNotEmpty()
+                ) {
+                    Text("Cerrar")
+                }
+            }
         )
     }
 }
