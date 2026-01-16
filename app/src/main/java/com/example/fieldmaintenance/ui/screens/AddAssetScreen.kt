@@ -2955,6 +2955,14 @@ private fun AssetFileSection(
                             summary.result.duplicateFileNames.forEach { name ->
                                 Text("• $name", style = smallTextStyle, color = mutedColor)
                             }
+                            summary.result.duplicateFileNames.forEach { name ->
+                                Text(
+                                    "No se agregó la medición $name por estar duplicada.",
+                                    style = smallTextStyle,
+                                    color = warningColor,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
                         }
                         if (summary.result.invalidTypeNames.isNotEmpty()) {
                             Text("Mediciones inválidas:", fontWeight = FontWeight.SemiBold)
@@ -2972,6 +2980,14 @@ private fun AssetFileSection(
                             Text("Duplicados en ZIP:", fontWeight = FontWeight.SemiBold)
                             summary.result.duplicateEntryNames.forEach { name ->
                                 Text("• $name", style = smallTextStyle, color = mutedColor)
+                            }
+                            summary.result.duplicateEntryNames.forEach { name ->
+                                Text(
+                                    "No se agregó la medición $name por estar duplicada.",
+                                    style = smallTextStyle,
+                                    color = warningColor,
+                                    fontWeight = FontWeight.SemiBold
+                                )
                             }
                         }
                         if (summary.result.validationIssueNames.isNotEmpty()) {
