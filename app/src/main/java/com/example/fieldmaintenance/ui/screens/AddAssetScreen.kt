@@ -18,6 +18,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Home
@@ -2648,26 +2649,33 @@ private fun AssetFileSection(
                     onClick = {
                         onInteraction()
                         scope.launch {
-                            val summary = verifyMeasurementFiles(
-                                context,
-                                files,
-                                asset,
-                                repository,
-                                discardedLabels
-                            )
-                            verificationSummaryRx = summary
-                            if (asset.type == AssetType.NODE) {
-                                verificationSummaryModule = verifyMeasurementFiles(
+                            val updatedFiles = assetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
+                            files = updatedFiles
+                            if (updatedFiles.isNotEmpty()) {
+                                val summary = verifyMeasurementFiles(
                                     context,
-                                    files,
-                                    moduleAsset,
+                                    updatedFiles,
+                                    asset,
                                     repository,
                                     discardedLabels
                                 )
+                                verificationSummaryRx = summary
+                                if (asset.type == AssetType.NODE) {
+                                    verificationSummaryModule = verifyMeasurementFiles(
+                                        context,
+                                        updatedFiles,
+                                        moduleAsset,
+                                        repository,
+                                        discardedLabels
+                                    )
+                                }
+                            } else {
+                                verificationSummaryRx = null
+                                verificationSummaryModule = null
                             }
                         }
                     },
-                    enabled = files.isNotEmpty() && asset.type in setOf(AssetType.NODE, AssetType.AMPLIFIER)
+                    enabled = asset.type in setOf(AssetType.NODE, AssetType.AMPLIFIER)
                 ) {
                     Icon(Icons.Default.Refresh, contentDescription = "Refrescar verificación")
                 }
@@ -3137,6 +3145,51 @@ private fun AssetFileSection(
                     }
                     verificationSummaryRx?.let { summary ->
                         VerificationSummaryView(summary, asset)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "Archivos agregados",
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.weight(1f)
+                        )
+                        IconButton(
+                            onClick = {
+                                onInteraction()
+                                navController.navigate(Screen.MeasurementsTrash.route)
+                            }
+                        ) {
+                            Icon(Icons.Default.Delete, contentDescription = "Abrir papelera de mediciones")
+                        }
+                    }
+                    if (files.isEmpty()) {
+                        Text(
+                            "No hay mediciones agregadas.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        files.forEach { file ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    file.name,
+                                    modifier = Modifier.weight(1f),
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                                IconButton(onClick = { fileToDelete = file }) {
+                                    Icon(Icons.Default.Delete, contentDescription = "Mover a papelera")
+                                }
+                            }
+                        }
                     }
                 }
             }
