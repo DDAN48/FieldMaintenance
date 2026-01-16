@@ -2568,6 +2568,8 @@ private fun AssetFileSection(
     }
 
     var isExpanded by remember { mutableStateOf(true) }
+    var rxExpanded by remember { mutableStateOf(true) }
+    var moduleExpanded by remember { mutableStateOf(true) }
     var verificationSummaryRx by remember { mutableStateOf<MeasurementVerificationSummary?>(null) }
     var verificationSummaryModule by remember { mutableStateOf<MeasurementVerificationSummary?>(null) }
     val moduleAsset = if (asset.type == AssetType.NODE) {
@@ -2680,117 +2682,19 @@ private fun AssetFileSection(
                 }
             }
             if (isExpanded) {
-                if (asset.type == AssetType.NODE) {
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("Mediciones RX", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                        Text("Mediciones Modulo", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(
-                            onClick = {
-                                onInteraction()
-                                if (viaviIntent != null) {
-                                    navController.currentBackStackEntry?.savedStateHandle?.apply {
-                                        set(PendingMeasurementReportIdKey, asset.reportId)
-                                        set(PendingMeasurementAssetIdKey, asset.id)
-                                    }
-                                    runCatching { context.startActivity(viaviIntent) }
-                                        .onFailure {
-                                            Toast.makeText(
-                                                context,
-                                                "No se pudo abrir Viavi",
-                                                Toast.LENGTH_SHORT
-                                            ).show()
-                                        }
-                                } else {
-                                    Toast.makeText(
-                                        context,
-                                        "Viavi (mobiletech) no está instalada",
-                                        Toast.LENGTH_SHORT
-                                    ).show()
-                                }
-                            },
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Icon(Icons.Default.Description, contentDescription = null)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Agregar Medición RX")
-                        }
-                        Button(
-                            onClick = {
-                                onInteraction()
-                                if (viaviIntent != null) {
-                                    navController.currentBackStackEntry?.savedStateHandle?.apply {
-                                        set(PendingMeasurementReportIdKey, asset.reportId)
-                                        set(PendingMeasurementAssetIdKey, asset.id)
-                                    }
-                                    runCatching { context.startActivity(viaviIntent) }
-                                        .onFailure {
-                                            Toast.makeText(
-                                                context,
-                                                "No se pudo abrir Viavi",
-                                                Toast.LENGTH_SHORT
-                                            ).show()
-                                        }
-                                } else {
-                                    Toast.makeText(
-                                        context,
-                                        "Viavi (mobiletech) no está instalada",
-                                        Toast.LENGTH_SHORT
-                                    ).show()
-                                }
-                            },
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Icon(Icons.Default.Description, contentDescription = null)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Agregar Medición Modulo")
-                        }
-                    }
-                }
-                if (asset.type != AssetType.NODE) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = {
-                            onInteraction()
-                            if (viaviIntent != null) {
-                            navController.currentBackStackEntry?.savedStateHandle?.apply {
-                                set(PendingMeasurementReportIdKey, asset.reportId)
-                                set(PendingMeasurementAssetIdKey, asset.id)
-                            }
-                            runCatching { context.startActivity(viaviIntent) }
-                                .onFailure {
-                                    Toast.makeText(
-                                        context,
-                                        "No se pudo abrir Viavi",
-                                        Toast.LENGTH_SHORT
-                                    ).show()
-                                }
-                        } else {
-                            Toast.makeText(
-                                context,
-                                "Viavi (mobiletech) no está instalada",
-                                Toast.LENGTH_SHORT
-                            ).show()
-                        }
-                    }) {
-                        Icon(Icons.Default.Description, contentDescription = null)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Agregar Mediciones")
-                    }
-                    }
-                }
-                verificationSummaryRx?.let { summary ->
+                @Composable
+                fun VerificationSummaryView(summary: MeasurementVerificationSummary, assetForDisplay: Asset) {
                     val smallTextStyle = MaterialTheme.typography.bodySmall
                     val mutedColor = MaterialTheme.colorScheme.onSurfaceVariant
                     val warningColor = MaterialTheme.colorScheme.error
                     val pendingColor = MaterialTheme.colorScheme.tertiary
                     val docsisEntries = summary.result.measurementEntries.filter { it.type == "docsisexpert" }
                     val channelEntries = summary.result.measurementEntries.filter { it.type == "channelexpert" }
-                    val maxDisplayedMeasurements = if (asset.type == AssetType.NODE) 1 else 5
+                    val maxDisplayedMeasurements = if (assetForDisplay.type == AssetType.NODE) 1 else 5
 
                     val docsisListEntries = docsisEntries.filterNot { it.isDiscarded }
                     val channelListEntries = channelEntries.filterNot { it.isDiscarded }
-                    val channelDisplayEntries = if (asset.type == AssetType.NODE) {
+                    val channelDisplayEntries = if (assetForDisplay.type == AssetType.NODE) {
                         channelListEntries.take(maxDisplayedMeasurements)
                     } else {
                         channelListEntries
@@ -2849,7 +2753,7 @@ private fun AssetFileSection(
                     val docsisDiscardedEntries = docsisEntries.filter { it.isDiscarded }
                     val channelDiscardedEntries = channelEntries.filter { it.isDiscarded }
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        if (asset.type != AssetType.NODE) {
+                        if (assetForDisplay.type != AssetType.NODE) {
                             Text(
                                 "Mediciones docsisexpert ${summary.result.docsisExpert}/${summary.expectedDocsis}",
                                 fontWeight = FontWeight.SemiBold
@@ -2947,7 +2851,7 @@ private fun AssetFileSection(
                             )
                         }
 
-                        if (docsisEntries.isNotEmpty() && asset.type != AssetType.NODE) {
+                        if (docsisEntries.isNotEmpty() && assetForDisplay.type != AssetType.NODE) {
                             Text("DocsisExpert (niveles):", fontWeight = FontWeight.SemiBold)
                             if (docsisListEntries.size > maxDisplayedMeasurements) {
                                 Text(
@@ -3023,7 +2927,11 @@ private fun AssetFileSection(
                             channelTableEntries.forEachIndexed { index, entry ->
                                 val label = "M${index + 1}"
                                 val hasIssues = entry.digitalRows.any { row ->
-                                    (row.merOk == false) || (row.berPreOk == false) || (row.berPostOk == false) || (row.icfrOk == false)
+                                    (row.levelOk == false) ||
+                                        (row.merOk == false) ||
+                                        (row.berPreOk == false) ||
+                                        (row.berPostOk == false) ||
+                                        (row.icfrOk == false)
                                 }
                                 var expanded by remember(entry.label) { mutableStateOf(false) }
                                 Row(
@@ -3100,49 +3008,135 @@ private fun AssetFileSection(
                     }
                 }
 
-                if (files.isEmpty()) {
-                    Text("No hay archivos adjuntos.")
-                } else {
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        files.forEach { file ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .combinedClickable(
-                                        onClick = {
-                                            onInteraction()
-                                            fileToDelete = file
-                                        },
-                                        onLongClick = {
-                                            onInteraction()
-                                            val uri = FileProvider.getUriForFile(
-                                                context,
-                                                "${context.packageName}.fileprovider",
-                                                file
-                                            )
-                                            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
-                                                setDataAndType(uri, URLConnection.guessContentTypeFromName(file.name) ?: "*/*")
-                                                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                            }
-                                            runCatching { context.startActivity(intent) }
-                                                .onFailure {
-                                                    Toast.makeText(
-                                                        context,
-                                                        "No se pudo abrir el archivo",
-                                                        Toast.LENGTH_SHORT
-                                                    ).show()
-                                                }
+                if (asset.type == AssetType.NODE) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { rxExpanded = !rxExpanded },
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Mediciones RX", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                            Icon(
+                                if (rxExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                contentDescription = null
+                            )
+                        }
+                        if (rxExpanded) {
+                            Button(
+                                onClick = {
+                                    onInteraction()
+                                    if (viaviIntent != null) {
+                                        navController.currentBackStackEntry?.savedStateHandle?.apply {
+                                            set(PendingMeasurementReportIdKey, asset.reportId)
+                                            set(PendingMeasurementAssetIdKey, asset.id)
                                         }
-                                    )
-                                    .padding(vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                                        runCatching { context.startActivity(viaviIntent) }
+                                            .onFailure {
+                                                Toast.makeText(
+                                                    context,
+                                                    "No se pudo abrir Viavi",
+                                                    Toast.LENGTH_SHORT
+                                                ).show()
+                                            }
+                                    } else {
+                                        Toast.makeText(
+                                            context,
+                                            "Viavi (mobiletech) no está instalada",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth()
                             ) {
-                                Text(
-                                    text = file.name,
-                                    modifier = Modifier.weight(1f)
-                                )
+                                Icon(Icons.Default.Description, contentDescription = null)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Agregar Medición RX")
+                            }
+                            verificationSummaryRx?.let { summary ->
+                                VerificationSummaryView(summary, asset)
                             }
                         }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { moduleExpanded = !moduleExpanded },
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Mediciones Modulo", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                            Icon(
+                                if (moduleExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                contentDescription = null
+                            )
+                        }
+                        if (moduleExpanded) {
+                            Button(
+                                onClick = {
+                                    onInteraction()
+                                    if (viaviIntent != null) {
+                                        navController.currentBackStackEntry?.savedStateHandle?.apply {
+                                            set(PendingMeasurementReportIdKey, asset.reportId)
+                                            set(PendingMeasurementAssetIdKey, asset.id)
+                                        }
+                                        runCatching { context.startActivity(viaviIntent) }
+                                            .onFailure {
+                                                Toast.makeText(
+                                                    context,
+                                                    "No se pudo abrir Viavi",
+                                                    Toast.LENGTH_SHORT
+                                                ).show()
+                                            }
+                                    } else {
+                                        Toast.makeText(
+                                            context,
+                                            "Viavi (mobiletech) no está instalada",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(Icons.Default.Description, contentDescription = null)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Agregar Medición Modulo")
+                            }
+                            verificationSummaryModule?.let { summary ->
+                                VerificationSummaryView(summary, moduleAsset)
+                            }
+                        }
+                    }
+                } else {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = {
+                            onInteraction()
+                            if (viaviIntent != null) {
+                                navController.currentBackStackEntry?.savedStateHandle?.apply {
+                                    set(PendingMeasurementReportIdKey, asset.reportId)
+                                    set(PendingMeasurementAssetIdKey, asset.id)
+                                }
+                                runCatching { context.startActivity(viaviIntent) }
+                                    .onFailure {
+                                        Toast.makeText(
+                                            context,
+                                            "No se pudo abrir Viavi",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
+                            } else {
+                                Toast.makeText(
+                                    context,
+                                    "Viavi (mobiletech) no está instalada",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        }) {
+                            Icon(Icons.Default.Description, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Agregar Mediciones")
+                        }
+                    }
+                    verificationSummaryRx?.let { summary ->
+                        VerificationSummaryView(summary, asset)
                     }
                 }
             }
