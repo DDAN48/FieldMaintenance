@@ -2595,6 +2595,8 @@ private fun AssetFileSection(
     var duplicateNotice by remember { mutableStateOf<List<String>>(emptyList()) }
     var surplusNotice by remember { mutableStateOf<List<String>>(emptyList()) }
     var surplusSelection by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var surplusTargetCount by remember { mutableStateOf(0) }
+    var surplusIsModule by remember { mutableStateOf(false) }
 
     data class RequiredCounts(
         val expectedDocsis: Int,
@@ -2697,20 +2699,14 @@ private fun AssetFileSection(
             if (duplicates.isNotEmpty() && duplicateNotice.isEmpty()) {
                 duplicateNotice = duplicates
             }
-            val surplusNames = buildList {
-                val docsisExtras = summary.result.docsisNames.drop(rxRequired.expectedDocsis)
-                val channelExtras = summary.result.channelNames.drop(rxRequired.expectedChannel)
-                addAll(docsisExtras)
-                addAll(channelExtras)
-            }.ifEmpty {
-                summary.result.measurementEntries.map { it.label }
-            }
-            if (surplusNames.isNotEmpty() && surplusNotice.isEmpty() &&
-                (summary.result.docsisExpert > rxRequired.expectedDocsis ||
-                    summary.result.channelExpert > rxRequired.expectedChannel)
-            ) {
-                surplusNotice = surplusNames
+            val totalExpected = rxRequired.expectedDocsis + rxRequired.expectedChannel
+            val totalActual = summary.result.docsisExpert + summary.result.channelExpert
+            val surplusCount = (totalActual - totalExpected).coerceAtLeast(0)
+            if (surplusCount > 0 && surplusNotice.isEmpty()) {
+                surplusNotice = (summary.result.docsisNames + summary.result.channelNames).distinct()
                 surplusSelection = emptySet()
+                surplusTargetCount = surplusCount
+                surplusIsModule = false
             }
             if (summary.result.duplicateFileCount > 0) {
                 rxFiles = rxAssetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
@@ -2738,20 +2734,14 @@ private fun AssetFileSection(
             if (duplicates.isNotEmpty() && duplicateNotice.isEmpty()) {
                 duplicateNotice = duplicates
             }
-            val surplusNames = buildList {
-                val docsisExtras = summary.result.docsisNames.drop(moduleRequired.expectedDocsis)
-                val channelExtras = summary.result.channelNames.drop(moduleRequired.expectedChannel)
-                addAll(docsisExtras)
-                addAll(channelExtras)
-            }.ifEmpty {
-                summary.result.measurementEntries.map { it.label }
-            }
-            if (surplusNames.isNotEmpty() && surplusNotice.isEmpty() &&
-                (summary.result.docsisExpert > moduleRequired.expectedDocsis ||
-                    summary.result.channelExpert > moduleRequired.expectedChannel)
-            ) {
-                surplusNotice = surplusNames
+            val totalExpected = moduleRequired.expectedDocsis + moduleRequired.expectedChannel
+            val totalActual = summary.result.docsisExpert + summary.result.channelExpert
+            val surplusCount = (totalActual - totalExpected).coerceAtLeast(0)
+            if (surplusCount > 0 && surplusNotice.isEmpty()) {
+                surplusNotice = (summary.result.docsisNames + summary.result.channelNames).distinct()
                 surplusSelection = emptySet()
+                surplusTargetCount = surplusCount
+                surplusIsModule = true
             }
             if (summary.result.duplicateFileCount > 0) {
                 moduleFiles = moduleAssetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
@@ -3472,6 +3462,7 @@ private fun AssetFileSection(
     }
 
     if (surplusNotice.isNotEmpty()) {
+        val selectedCount = surplusSelection.size
         AlertDialog(
             onDismissRequest = { },
             properties = DialogProperties(
@@ -3482,7 +3473,7 @@ private fun AssetFileSection(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(
-                        "Se detectaron mediciones de más. Seleccione cuáles desea eliminar.",
+                        "Se detectaron $surplusTargetCount mediciones de más. Seleccione cuáles desea eliminar.",
                         style = MaterialTheme.typography.bodySmall
                     )
                     surplusNotice.forEach { name ->
@@ -3494,7 +3485,11 @@ private fun AssetFileSection(
                                 checked = surplusSelection.contains(name),
                                 onCheckedChange = { checked ->
                                     surplusSelection = if (checked) {
-                                        surplusSelection + name
+                                        if (surplusSelection.size < surplusTargetCount) {
+                                            surplusSelection + name
+                                        } else {
+                                            surplusSelection
+                                        }
                                     } else {
                                         surplusSelection - name
                                     }
@@ -3512,10 +3507,49 @@ private fun AssetFileSection(
             confirmButton = {
                 TextButton(
                     onClick = {
+                        val selected = surplusSelection
+                        val updated = if (surplusIsModule) {
+                            moduleDiscardedLabels + selected
+                        } else {
+                            rxDiscardedLabels + selected
+                        }
+                        if (surplusIsModule) {
+                            moduleDiscardedLabels = updated
+                            saveDiscardedLabels(moduleDiscardedFile, updated)
+                        } else {
+                            rxDiscardedLabels = updated
+                            saveDiscardedLabels(rxDiscardedFile, updated)
+                        }
                         surplusNotice = emptyList()
                         surplusSelection = emptySet()
+                        surplusTargetCount = 0
+                        scope.launch {
+                            if (surplusIsModule) {
+                                val moduleRequired = requiredCounts(moduleAsset.type, isModule = true)
+                                verificationSummaryModule = verifyMeasurementFiles(
+                                    context,
+                                    moduleFiles,
+                                    moduleAsset,
+                                    repository,
+                                    moduleDiscardedLabels,
+                                    expectedDocsisOverride = moduleRequired.expectedDocsis,
+                                    expectedChannelOverride = moduleRequired.expectedChannel
+                                )
+                            } else {
+                                val rxRequired = requiredCounts(asset.type, isModule = false)
+                                verificationSummaryRx = verifyMeasurementFiles(
+                                    context,
+                                    rxFiles,
+                                    asset,
+                                    repository,
+                                    rxDiscardedLabels,
+                                    expectedDocsisOverride = rxRequired.expectedDocsis,
+                                    expectedChannelOverride = rxRequired.expectedChannel
+                                )
+                            }
+                        }
                     },
-                    enabled = surplusSelection.isNotEmpty()
+                    enabled = selectedCount == surplusTargetCount
                 ) {
                     Text("Cerrar")
                 }
