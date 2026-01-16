@@ -2089,15 +2089,17 @@ private suspend fun verifyMeasurementFiles(
     files: List<File>,
     asset: Asset,
     repository: com.example.fieldmaintenance.data.repository.MaintenanceRepository,
-    discardedLabels: Set<String>
+    discardedLabels: Set<String>,
+    expectedDocsisOverride: Int? = null,
+    expectedChannelOverride: Int? = null
 ): MeasurementVerificationSummary {
     val assetType = asset.type
-    val expectedDocsis = when (assetType) {
+    val expectedDocsis = expectedDocsisOverride ?: when (assetType) {
         AssetType.NODE -> 0
         AssetType.AMPLIFIER -> 4
         else -> 0
     }
-    val expectedChannel = when (assetType) {
+    val expectedChannel = expectedChannelOverride ?: when (assetType) {
         AssetType.NODE -> 5
         AssetType.AMPLIFIER -> 4
         else -> 0
@@ -2589,15 +2591,32 @@ private fun AssetFileSection(
     var verificationSummaryRx by remember { mutableStateOf<MeasurementVerificationSummary?>(null) }
     var verificationSummaryModule by remember { mutableStateOf<MeasurementVerificationSummary?>(null) }
 
-    fun expectedMeasurementFiles(assetType: AssetType, isModule: Boolean): Int {
+    data class RequiredCounts(
+        val expectedDocsis: Int,
+        val expectedChannel: Int,
+        val maxDocsisTable: Int,
+        val maxChannelTable: Int
+    )
+
+    fun requiredCounts(assetType: AssetType, isModule: Boolean): RequiredCounts {
         return when (assetType) {
-            AssetType.NODE -> if (isModule) 8 else 1
-            AssetType.AMPLIFIER -> 7
+            AssetType.NODE -> {
+                if (isModule) {
+                    RequiredCounts(expectedDocsis = 4, expectedChannel = 4, maxDocsisTable = 4, maxChannelTable = 4)
+                } else {
+                    RequiredCounts(expectedDocsis = 0, expectedChannel = 1, maxDocsisTable = 0, maxChannelTable = 1)
+                }
+            }
+            AssetType.AMPLIFIER -> {
+                RequiredCounts(expectedDocsis = 3, expectedChannel = 4, maxDocsisTable = 3, maxChannelTable = 4)
+            }
         }
     }
 
-    fun shouldGenerateTables(fileCount: Int, assetType: AssetType, isModule: Boolean): Boolean {
-        return fileCount >= expectedMeasurementFiles(assetType, isModule)
+    fun meetsRequired(summary: MeasurementVerificationSummary?, required: RequiredCounts): Boolean {
+        if (summary == null) return false
+        return summary.result.docsisExpert >= required.expectedDocsis &&
+            summary.result.channelExpert >= required.expectedChannel
     }
 
     fun displayLabel(entry: MeasurementEntry): String {
@@ -2618,8 +2637,17 @@ private fun AssetFileSection(
         }
         rxDiscardedLabels = updated
         saveDiscardedLabels(rxDiscardedFile, updated)
+        val rxRequired = requiredCounts(asset.type, isModule = false)
         scope.launch {
-            verificationSummaryRx = verifyMeasurementFiles(context, rxFiles, asset, repository, updated)
+            verificationSummaryRx = verifyMeasurementFiles(
+                context,
+                rxFiles,
+                asset,
+                repository,
+                updated,
+                expectedDocsisOverride = rxRequired.expectedDocsis,
+                expectedChannelOverride = rxRequired.expectedChannel
+            )
         }
     }
 
@@ -2633,14 +2661,32 @@ private fun AssetFileSection(
         }
         moduleDiscardedLabels = updated
         saveDiscardedLabels(moduleDiscardedFile, updated)
+        val moduleRequired = requiredCounts(moduleAsset.type, isModule = true)
         scope.launch {
-            verificationSummaryModule = verifyMeasurementFiles(context, moduleFiles, moduleAsset, repository, updated)
+            verificationSummaryModule = verifyMeasurementFiles(
+                context,
+                moduleFiles,
+                moduleAsset,
+                repository,
+                updated,
+                expectedDocsisOverride = moduleRequired.expectedDocsis,
+                expectedChannelOverride = moduleRequired.expectedChannel
+            )
         }
     }
 
     LaunchedEffect(rxFiles, rxDiscardedLabels) {
-        if (shouldGenerateTables(rxFiles.size, asset.type, isModule = false)) {
-            val summary = verifyMeasurementFiles(context, rxFiles, asset, repository, rxDiscardedLabels)
+        val rxRequired = requiredCounts(asset.type, isModule = false)
+        if (rxFiles.isNotEmpty()) {
+            val summary = verifyMeasurementFiles(
+                context,
+                rxFiles,
+                asset,
+                repository,
+                rxDiscardedLabels,
+                expectedDocsisOverride = rxRequired.expectedDocsis,
+                expectedChannelOverride = rxRequired.expectedChannel
+            )
             verificationSummaryRx = summary
             if (summary.result.duplicateFileCount > 0) {
                 rxFiles = rxAssetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
@@ -2652,8 +2698,17 @@ private fun AssetFileSection(
 
     LaunchedEffect(moduleFiles, moduleDiscardedLabels) {
         if (!isNodeAsset) return@LaunchedEffect
-        if (shouldGenerateTables(moduleFiles.size, moduleAsset.type, isModule = true)) {
-            val summary = verifyMeasurementFiles(context, moduleFiles, moduleAsset, repository, moduleDiscardedLabels)
+        val moduleRequired = requiredCounts(moduleAsset.type, isModule = true)
+        if (moduleFiles.isNotEmpty()) {
+            val summary = verifyMeasurementFiles(
+                context,
+                moduleFiles,
+                moduleAsset,
+                repository,
+                moduleDiscardedLabels,
+                expectedDocsisOverride = moduleRequired.expectedDocsis,
+                expectedChannelOverride = moduleRequired.expectedChannel
+            )
             verificationSummaryModule = summary
             if (summary.result.duplicateFileCount > 0) {
                 moduleFiles = moduleAssetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
@@ -2677,11 +2732,13 @@ private fun AssetFileSection(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                val rxRequired = requiredCounts(asset.type, isModule = false)
+                val moduleRequired = requiredCounts(moduleAsset.type, isModule = true)
                 val canRefresh = if (isNodeAsset) {
-                    shouldGenerateTables(rxFiles.size, asset.type, isModule = false) &&
-                        shouldGenerateTables(moduleFiles.size, moduleAsset.type, isModule = true)
+                    meetsRequired(verificationSummaryRx, rxRequired) &&
+                        meetsRequired(verificationSummaryModule, moduleRequired)
                 } else {
-                    shouldGenerateTables(rxFiles.size, asset.type, isModule = false)
+                    meetsRequired(verificationSummaryRx, rxRequired)
                 }
                 Text(
                     "Carga de Mediciones",
@@ -2694,13 +2751,15 @@ private fun AssetFileSection(
                         scope.launch {
                             val updatedRxFiles = rxAssetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
                             rxFiles = updatedRxFiles
-                            if (shouldGenerateTables(updatedRxFiles.size, asset.type, isModule = false)) {
+                            if (updatedRxFiles.isNotEmpty()) {
                                 verificationSummaryRx = verifyMeasurementFiles(
                                     context,
                                     updatedRxFiles,
                                     asset,
                                     repository,
-                                    rxDiscardedLabels
+                                    rxDiscardedLabels,
+                                    expectedDocsisOverride = rxRequired.expectedDocsis,
+                                    expectedChannelOverride = rxRequired.expectedChannel
                                 )
                             } else {
                                 verificationSummaryRx = null
@@ -2709,13 +2768,15 @@ private fun AssetFileSection(
                             if (isNodeAsset) {
                                 val updatedModuleFiles = moduleAssetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
                                 moduleFiles = updatedModuleFiles
-                                if (shouldGenerateTables(updatedModuleFiles.size, moduleAsset.type, isModule = true)) {
+                                if (updatedModuleFiles.isNotEmpty()) {
                                     verificationSummaryModule = verifyMeasurementFiles(
                                         context,
                                         updatedModuleFiles,
                                         moduleAsset,
                                         repository,
-                                        moduleDiscardedLabels
+                                        moduleDiscardedLabels,
+                                        expectedDocsisOverride = moduleRequired.expectedDocsis,
+                                        expectedChannelOverride = moduleRequired.expectedChannel
                                     )
                                 } else {
                                     verificationSummaryModule = null
@@ -2742,7 +2803,8 @@ private fun AssetFileSection(
                 fun VerificationSummaryView(
                     summary: MeasurementVerificationSummary,
                     assetForDisplay: Asset,
-                    onToggleDiscard: (MeasurementEntry) -> Unit
+                    onToggleDiscard: (MeasurementEntry) -> Unit,
+                    isModule: Boolean
                 ) {
                     val smallTextStyle = MaterialTheme.typography.bodySmall
                     val mutedColor = MaterialTheme.colorScheme.onSurfaceVariant
@@ -2750,17 +2812,18 @@ private fun AssetFileSection(
                     val pendingColor = MaterialTheme.colorScheme.tertiary
                     val docsisEntries = summary.result.measurementEntries.filter { it.type == "docsisexpert" }
                     val channelEntries = summary.result.measurementEntries.filter { it.type == "channelexpert" }
-                    val maxDisplayedMeasurements = if (assetForDisplay.type == AssetType.NODE) 1 else 5
+                    val required = requiredCounts(assetForDisplay.type, isModule)
+                    val canRenderTables = meetsRequired(summary, required)
 
                     val docsisListEntries = docsisEntries.filterNot { it.isDiscarded }
                     val channelListEntries = channelEntries.filterNot { it.isDiscarded }
-                    val channelDisplayEntries = if (assetForDisplay.type == AssetType.NODE) {
-                        channelListEntries.take(maxDisplayedMeasurements)
+                    val channelDisplayEntries = if (assetForDisplay.type == AssetType.NODE && !isModule) {
+                        channelListEntries.take(required.maxChannelTable)
                     } else {
                         channelListEntries
                     }
-                    val docsisTableEntries = docsisListEntries.take(maxDisplayedMeasurements)
-                    val channelTableEntries = channelListEntries.take(maxDisplayedMeasurements)
+                    val docsisTableEntries = docsisListEntries.take(required.maxDocsisTable)
+                    val channelTableEntries = channelListEntries.take(required.maxChannelTable)
 
                     @Composable
                     fun MeasurementHeaderCell(entry: MeasurementEntry, index: Int) {
@@ -2871,6 +2934,14 @@ private fun AssetFileSection(
                                 )
                             }
                         }
+                        if (!canRenderTables) {
+                            Text(
+                                "Agregue las mediciones faltantes.",
+                                style = smallTextStyle,
+                                fontWeight = FontWeight.SemiBold,
+                                color = warningColor
+                            )
+                        }
                         summary.warnings.forEach { warning ->
                             Text(
                                 warning,
@@ -2911,11 +2982,11 @@ private fun AssetFileSection(
                             )
                         }
 
-                        if (docsisEntries.isNotEmpty() && assetForDisplay.type != AssetType.NODE) {
+                        if (canRenderTables && docsisEntries.isNotEmpty() && assetForDisplay.type != AssetType.NODE) {
                             Text("DocsisExpert (niveles):", fontWeight = FontWeight.SemiBold)
-                            if (docsisListEntries.size > maxDisplayedMeasurements) {
+                            if (docsisListEntries.size > required.maxDocsisTable) {
                                 Text(
-                                    "Solo se muestran $maxDisplayedMeasurements mediciones (M1 a M$maxDisplayedMeasurements).",
+                                    "Solo se muestran ${required.maxDocsisTable} mediciones (M1 a M${required.maxDocsisTable}).",
                                     style = smallTextStyle,
                                     color = mutedColor
                                 )
@@ -2948,11 +3019,11 @@ private fun AssetFileSection(
                             }
                         }
 
-                        if (channelEntries.isNotEmpty()) {
+                        if (canRenderTables && channelEntries.isNotEmpty()) {
                             Text("Canales piloto (ChannelExpert):", fontWeight = FontWeight.SemiBold)
-                            if (channelListEntries.size > maxDisplayedMeasurements) {
+                            if (channelListEntries.size > required.maxChannelTable) {
                                 Text(
-                                    "Solo se muestran $maxDisplayedMeasurements mediciones (M1 a M$maxDisplayedMeasurements).",
+                                    "Solo se muestran ${required.maxChannelTable} mediciones (M1 a M${required.maxChannelTable}).",
                                     style = smallTextStyle,
                                     color = mutedColor
                                 )
@@ -2982,7 +3053,7 @@ private fun AssetFileSection(
                             }
                         }
 
-                        if (channelEntries.isNotEmpty()) {
+                        if (canRenderTables && channelEntries.isNotEmpty()) {
                             Text("ChannelExpert (canales digitales):", fontWeight = FontWeight.SemiBold)
                             channelTableEntries.forEachIndexed { index, entry ->
                                 val label = "M${index + 1}"
@@ -3115,7 +3186,7 @@ private fun AssetFileSection(
                                 Text("Agregar Medición RX")
                             }
                             verificationSummaryRx?.let { summary ->
-                                VerificationSummaryView(summary, asset, ::toggleDiscardRx)
+                                VerificationSummaryView(summary, asset, ::toggleDiscardRx, isModule = false)
                             }
                         }
                         Row(
@@ -3163,7 +3234,7 @@ private fun AssetFileSection(
                                 Text("Agregar Medición Modulo")
                             }
                             verificationSummaryModule?.let { summary ->
-                                VerificationSummaryView(summary, moduleAsset, ::toggleDiscardModule)
+                                VerificationSummaryView(summary, moduleAsset, ::toggleDiscardModule, isModule = true)
                             }
                         }
                     }
@@ -3199,7 +3270,7 @@ private fun AssetFileSection(
                         }
                     }
                     verificationSummaryRx?.let { summary ->
-                        VerificationSummaryView(summary, asset, ::toggleDiscardRx)
+                        VerificationSummaryView(summary, asset, ::toggleDiscardRx, isModule = false)
                     }
                 }
 
