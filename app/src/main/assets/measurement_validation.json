@@ -38,6 +38,12 @@
     },
     "node": {
       "42_55": {
+        "txTargets": {
+          "1310": {"pilotTarget": 27.3, "tolerance": 1},
+          "1550": {"pilotTarget": 28.3, "tolerance": 1},
+          "digitalOffset": -6,
+          "digitalTolerance": 1
+        },
         "channels": {
           "50": {"target": 41, "tolerance": 1.5},
           "70": {"target": 44, "tolerance": 1.5},
@@ -47,6 +53,12 @@
         }
       },
       "85_105": {
+        "txTargets": {
+          "1310": {"pilotTarget": 27.3, "tolerance": 1},
+          "1550": {"pilotTarget": 28.3, "tolerance": 1},
+          "digitalOffset": -6,
+          "digitalTolerance": 1
+        },
         "channels": {
           "50": {"target": 41, "tolerance": 1.5},
           "70": {"target": 44, "tolerance": 1.5},
