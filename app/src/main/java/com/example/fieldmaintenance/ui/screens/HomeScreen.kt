@@ -133,7 +133,15 @@ fun HomeScreen(navController: NavController) {
                             type = "*/*"
                             putExtra(
                                 Intent.EXTRA_MIME_TYPES,
-                                arrayOf("application/zip", "application/json", "text/json", "application/octet-stream", "*/*")
+                                arrayOf(
+                                    "application/zip",
+                                    "application/json",
+                                    "text/json",
+                                    "application/gzip",
+                                    "application/x-gzip",
+                                    "application/octet-stream",
+                                    "*/*"
+                                )
                             )
                             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                                 // Best-effort: open Downloads provider root
