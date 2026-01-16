@@ -2978,8 +2978,12 @@ private fun AssetFileSection(
                         // Discarded entries are hidden from summary.
                         if (summary.result.validationIssueNames.isNotEmpty()) {
                             Text(
-                                "Validación de valores: ${summary.result.validationIssueNames.size} observaciones.",
-                                fontWeight = FontWeight.SemiBold,
+                                "Observaciones detectadas",
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                "${summary.result.validationIssueNames.size} observaciones.",
+                                style = smallTextStyle,
                                 color = MaterialTheme.colorScheme.error
                             )
                         }
