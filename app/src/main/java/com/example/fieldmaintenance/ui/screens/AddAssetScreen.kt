@@ -2182,7 +2182,7 @@ private suspend fun verifyMeasurementFiles(
             if (normalizedType == "docsisexpert" || normalizedType == "channelexpert") {
                 val testPointOffset = parseTestPointOffset(test)
                 val rows = collectChannelRows(results)
-                val docsisFrequencies = listOf(16.8, 20.0, 24.8, 35.0)
+                val docsisFrequencies = rows.mapNotNull { it.frequencyMHz }.distinct().sorted()
                 val pilotChannels = listOf(50, 70, 110, 116, 136)
 
                 val docsisMeta = docsisFrequencies.associateWith { freq ->
@@ -2781,7 +2781,10 @@ private fun AssetFileSection(
                                     MeasurementHeaderCell(entry, index)
                                 }
                             }
-                            val docsisFrequencies = listOf(16.8, 20.0, 24.8, 35.0)
+                            val docsisFrequencies = docsisTableEntries
+                                .flatMap { it.docsisLevels.keys }
+                                .distinct()
+                                .sorted()
                             docsisFrequencies.forEach { freq ->
                                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     Text(docsisChannel(freq), modifier = Modifier.weight(1f), style = smallTextStyle)
