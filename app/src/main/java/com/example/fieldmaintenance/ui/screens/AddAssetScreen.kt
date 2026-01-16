@@ -2047,6 +2047,7 @@ private data class MeasurementVerificationResult(
 
 private data class MeasurementEntry(
     val label: String,
+    val sourceFileName: String?,
     val type: String,
     val fromZip: Boolean,
     val isDiscarded: Boolean,
@@ -2355,6 +2356,7 @@ private suspend fun verifyMeasurementFiles(
                 measurementEntries.add(
                     MeasurementEntry(
                         label = sourceLabel,
+                        sourceFileName = sourceFile?.name,
                         type = normalizedType,
                         fromZip = sourceFile == null,
                         isDiscarded = isDiscarded,
@@ -3245,7 +3247,8 @@ private fun AssetFileSection(
                             }
                         } else {
                             val list = if (isModule) moduleFiles else rxFiles
-                            val file = list.firstOrNull { it.name == entry.label }
+                            val lookupName = entry.sourceFileName ?: entry.label
+                            val file = list.firstOrNull { it.name == lookupName }
                             if (file != null) {
                                 scope.launch(Dispatchers.IO) {
                                     MaintenanceStorage.moveMeasurementFileToTrash(context, file)
