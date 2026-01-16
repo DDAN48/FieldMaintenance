@@ -2295,6 +2295,7 @@ private suspend fun verifyMeasurementFiles(
                     }
                 }
 
+                val assetKey = if (assetType == AssetType.NODE) "node" else "amplifier"
                 val common = rules?.optJSONObject("channelexpert")?.optJSONObject("common")
                 val merMin = common?.optJSONObject("mer")?.optDouble("min", Double.NaN)?.takeIf { !it.isNaN() }
                 val berPreMax = common?.optJSONObject("berPre")?.optDouble("max", Double.NaN)?.takeIf { !it.isNaN() }
