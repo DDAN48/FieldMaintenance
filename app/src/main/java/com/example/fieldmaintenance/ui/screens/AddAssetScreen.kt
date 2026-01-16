@@ -1637,7 +1637,7 @@ private fun collectChannelRows(json: Any?): List<ChannelRow> {
         is Number -> value.toDouble()
         is String -> {
             val normalized = value.replace(",", ".")
-            val match = Regex("-?\\d+(?:\\.\\d+)?").find(normalized)?.value
+            val match = Regex("-?\\d+(?:\\.\\d+)?(?:[eE][+-]?\\d+)?").find(normalized)?.value
             match?.toDoubleOrNull()
         }
         else -> null
@@ -1708,28 +1708,38 @@ private fun collectChannelRows(json: Any?): List<ChannelRow> {
     }
 
     fun collectFromUpstreamTable(results: JSONObject) {
-        val tableData = results.optJSONObject("0D_upstreamTable")?.optJSONArray("tableData") ?: return
-        for (i in 0 until tableData.length()) {
-            val row = tableData.optJSONArray(i) ?: continue
-            if (row.length() < 3) continue
-            val channelValue = row.optJSONObject(0)?.optString("value")
-            val frequencyValue = row.optJSONObject(1)?.optString("value")
-            val levelValue = row.optJSONObject(2)?.optString("value")
-            val channel = parseInt(channelValue)
-            val frequency = parseNumber(frequencyValue)
-            val level = parseNumber(levelValue)
-            if (channel != null || frequency != null || level != null) {
-                rows.add(
-                    ChannelRow(
-                        channel = channel,
-                        frequencyMHz = frequency,
-                        levelDbmv = level,
-                        merDb = null,
-                        berPre = null,
-                        berPost = null,
-                        icfrDb = null
+        fun collectTable(table: JSONObject) {
+            val tableData = table.optJSONArray("tableData") ?: return
+            for (i in 0 until tableData.length()) {
+                val row = tableData.optJSONArray(i) ?: continue
+                if (row.length() < 3) continue
+                val channelValue = row.optJSONObject(0)?.optString("value")
+                val frequencyValue = row.optJSONObject(1)?.optString("value")
+                val levelValue = row.optJSONObject(2)?.optString("value")
+                val channel = parseInt(channelValue)
+                val frequency = parseNumber(frequencyValue)
+                val level = parseNumber(levelValue)
+                if (channel != null || frequency != null || level != null) {
+                    rows.add(
+                        ChannelRow(
+                            channel = channel,
+                            frequencyMHz = frequency,
+                            levelDbmv = level,
+                            merDb = null,
+                            berPre = null,
+                            berPost = null,
+                            icfrDb = null
+                        )
                     )
-                )
+                }
+            }
+        }
+
+        val keys = results.keys()
+        while (keys.hasNext()) {
+            val key = keys.next()
+            if (key.lowercase(Locale.getDefault()).endsWith("upstreamtable")) {
+                results.optJSONObject(key)?.let { collectTable(it) }
             }
         }
     }
@@ -1767,9 +1777,7 @@ private fun collectChannelRows(json: Any?): List<ChannelRow> {
                 if (value.has("08_digitalFullScanResults")) {
                     collectFromDigitalFullScan(value)
                 }
-                if (value.has("0D_upstreamTable")) {
-                    collectFromUpstreamTable(value)
-                }
+                collectFromUpstreamTable(value)
                 if (value.has("0A_singleFullScanResults")) {
                     collectFromSingleFullScan(value)
                 }
