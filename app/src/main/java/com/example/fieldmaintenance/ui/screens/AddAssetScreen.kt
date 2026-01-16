@@ -71,6 +71,7 @@ import com.example.fieldmaintenance.ui.components.AmplifierAdjustmentCard
 import com.example.fieldmaintenance.ui.components.NodeAdjustmentCard
 import com.example.fieldmaintenance.ui.navigation.PendingMeasurementAssetIdKey
 import com.example.fieldmaintenance.ui.navigation.PendingMeasurementReportIdKey
+import com.example.fieldmaintenance.ui.navigation.PendingMeasurementAssetTypeKey
 import com.example.fieldmaintenance.ui.navigation.Screen
 import com.example.fieldmaintenance.ui.viewmodel.ReportViewModel
 import com.example.fieldmaintenance.ui.viewmodel.ReportViewModelFactory
@@ -2555,14 +2556,28 @@ private fun AssetFileSection(
     onInteraction: () -> Unit,
     asset: Asset
 ) {
-    val assetDir = remember(reportFolder, asset) {
+    data class DeleteTarget(val file: File, val isModule: Boolean)
+
+    val isNodeAsset = asset.type == AssetType.NODE
+    val rxAssetDir = remember(reportFolder, asset) {
         MaintenanceStorage.ensureAssetDir(context, reportFolder, asset)
     }
-    var files by remember(assetDir) { mutableStateOf(assetDir.listFiles()?.sortedBy { it.name } ?: emptyList()) }
-    var fileToDelete by remember { mutableStateOf<File?>(null) }
+    val moduleAsset = if (isNodeAsset) {
+        asset.copy(type = AssetType.AMPLIFIER)
+    } else {
+        asset
+    }
+    val moduleAssetDir = remember(reportFolder, moduleAsset) {
+        MaintenanceStorage.ensureAssetDir(context, reportFolder, moduleAsset)
+    }
+    var rxFiles by remember(rxAssetDir) { mutableStateOf(rxAssetDir.listFiles()?.sortedBy { it.name } ?: emptyList()) }
+    var moduleFiles by remember(moduleAssetDir) { mutableStateOf(moduleAssetDir.listFiles()?.sortedBy { it.name } ?: emptyList()) }
+    var fileToDelete by remember { mutableStateOf<DeleteTarget?>(null) }
     val scope = rememberCoroutineScope()
-    val discardedFile = remember(assetDir) { File(assetDir, ".discarded_measurements.txt") }
-    var discardedLabels by remember(assetDir) { mutableStateOf(loadDiscardedLabels(discardedFile)) }
+    val rxDiscardedFile = remember(rxAssetDir) { File(rxAssetDir, ".discarded_measurements.txt") }
+    var rxDiscardedLabels by remember(rxAssetDir) { mutableStateOf(loadDiscardedLabels(rxDiscardedFile)) }
+    val moduleDiscardedFile = remember(moduleAssetDir) { File(moduleAssetDir, ".discarded_measurements.txt") }
+    var moduleDiscardedLabels by remember(moduleAssetDir) { mutableStateOf(loadDiscardedLabels(moduleDiscardedFile)) }
 
     val viaviIntent = remember {
         context.packageManager.getLaunchIntentForPackage("com.viavisolutions.mobiletech")
@@ -2573,11 +2588,6 @@ private fun AssetFileSection(
     var moduleExpanded by remember { mutableStateOf(true) }
     var verificationSummaryRx by remember { mutableStateOf<MeasurementVerificationSummary?>(null) }
     var verificationSummaryModule by remember { mutableStateOf<MeasurementVerificationSummary?>(null) }
-    val moduleAsset = if (asset.type == AssetType.NODE) {
-        asset.copy(type = AssetType.AMPLIFIER)
-    } else {
-        asset
-    }
 
     fun displayLabel(entry: MeasurementEntry): String {
         return if (entry.isDiscarded && !entry.label.contains("DESCARTADA", ignoreCase = true)) {
@@ -2587,41 +2597,57 @@ private fun AssetFileSection(
         }
     }
 
-    fun toggleDiscard(entry: MeasurementEntry) {
+    fun toggleDiscardRx(entry: MeasurementEntry) {
         if (!entry.fromZip) return
-        val updated = discardedLabels.toMutableSet()
+        val updated = rxDiscardedLabels.toMutableSet()
         if (entry.isDiscarded) {
             updated.remove(entry.label)
         } else {
             updated.add(entry.label)
         }
-        discardedLabels = updated
-        saveDiscardedLabels(discardedFile, updated)
+        rxDiscardedLabels = updated
+        saveDiscardedLabels(rxDiscardedFile, updated)
         scope.launch {
-            if (asset.type == AssetType.NODE) {
-                verificationSummaryRx = verifyMeasurementFiles(context, files, asset, repository, updated)
-                verificationSummaryModule = verifyMeasurementFiles(context, files, moduleAsset, repository, updated)
-            } else {
-                verificationSummaryRx = verifyMeasurementFiles(context, files, asset, repository, updated)
-            }
+            verificationSummaryRx = verifyMeasurementFiles(context, rxFiles, asset, repository, updated)
         }
     }
 
-    LaunchedEffect(files, discardedLabels) {
-        if (files.isNotEmpty()) {
-            val summary = verifyMeasurementFiles(context, files, asset, repository, discardedLabels)
+    fun toggleDiscardModule(entry: MeasurementEntry) {
+        if (!entry.fromZip) return
+        val updated = moduleDiscardedLabels.toMutableSet()
+        if (entry.isDiscarded) {
+            updated.remove(entry.label)
+        } else {
+            updated.add(entry.label)
+        }
+        moduleDiscardedLabels = updated
+        saveDiscardedLabels(moduleDiscardedFile, updated)
+        scope.launch {
+            verificationSummaryModule = verifyMeasurementFiles(context, moduleFiles, moduleAsset, repository, updated)
+        }
+    }
+
+    LaunchedEffect(rxFiles, rxDiscardedLabels) {
+        if (rxFiles.isNotEmpty()) {
+            val summary = verifyMeasurementFiles(context, rxFiles, asset, repository, rxDiscardedLabels)
             verificationSummaryRx = summary
-            val moduleSummary = if (asset.type == AssetType.NODE) {
-                verifyMeasurementFiles(context, files, moduleAsset, repository, discardedLabels)
-            } else {
-                null
-            }
-            verificationSummaryModule = moduleSummary
-            if (summary.result.duplicateFileCount > 0 || (moduleSummary?.result?.duplicateFileCount ?: 0) > 0) {
-                files = assetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
+            if (summary.result.duplicateFileCount > 0) {
+                rxFiles = rxAssetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
             }
         } else {
             verificationSummaryRx = null
+        }
+    }
+
+    LaunchedEffect(moduleFiles, moduleDiscardedLabels) {
+        if (!isNodeAsset) return@LaunchedEffect
+        if (moduleFiles.isNotEmpty()) {
+            val summary = verifyMeasurementFiles(context, moduleFiles, moduleAsset, repository, moduleDiscardedLabels)
+            verificationSummaryModule = summary
+            if (summary.result.duplicateFileCount > 0) {
+                moduleFiles = moduleAssetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
+            }
+        } else {
             verificationSummaryModule = null
         }
     }
@@ -2649,29 +2675,34 @@ private fun AssetFileSection(
                     onClick = {
                         onInteraction()
                         scope.launch {
-                            val updatedFiles = assetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
-                            files = updatedFiles
-                            if (updatedFiles.isNotEmpty()) {
-                                val summary = verifyMeasurementFiles(
+                            val updatedRxFiles = rxAssetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
+                            rxFiles = updatedRxFiles
+                            if (updatedRxFiles.isNotEmpty()) {
+                                verificationSummaryRx = verifyMeasurementFiles(
                                     context,
-                                    updatedFiles,
+                                    updatedRxFiles,
                                     asset,
                                     repository,
-                                    discardedLabels
+                                    rxDiscardedLabels
                                 )
-                                verificationSummaryRx = summary
-                                if (asset.type == AssetType.NODE) {
-                                    verificationSummaryModule = verifyMeasurementFiles(
-                                        context,
-                                        updatedFiles,
-                                        moduleAsset,
-                                        repository,
-                                        discardedLabels
-                                    )
-                                }
                             } else {
                                 verificationSummaryRx = null
-                                verificationSummaryModule = null
+                            }
+
+                            if (isNodeAsset) {
+                                val updatedModuleFiles = moduleAssetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
+                                moduleFiles = updatedModuleFiles
+                                if (updatedModuleFiles.isNotEmpty()) {
+                                    verificationSummaryModule = verifyMeasurementFiles(
+                                        context,
+                                        updatedModuleFiles,
+                                        moduleAsset,
+                                        repository,
+                                        moduleDiscardedLabels
+                                    )
+                                } else {
+                                    verificationSummaryModule = null
+                                }
                             }
                         }
                     },
@@ -2691,7 +2722,11 @@ private fun AssetFileSection(
             }
             if (isExpanded) {
                 @Composable
-                fun VerificationSummaryView(summary: MeasurementVerificationSummary, assetForDisplay: Asset) {
+                fun VerificationSummaryView(
+                    summary: MeasurementVerificationSummary,
+                    assetForDisplay: Asset,
+                    onToggleDiscard: (MeasurementEntry) -> Unit
+                ) {
                     val smallTextStyle = MaterialTheme.typography.bodySmall
                     val mutedColor = MaterialTheme.colorScheme.onSurfaceVariant
                     val warningColor = MaterialTheme.colorScheme.error
@@ -2715,7 +2750,7 @@ private fun AssetFileSection(
                         val modifier = if (entry.fromZip) {
                             Modifier
                                 .weight(1f)
-                                .clickable { toggleDiscard(entry) }
+                                .clickable { onToggleDiscard(entry) }
                         } else {
                             Modifier.weight(1f)
                         }
@@ -2768,7 +2803,7 @@ private fun AssetFileSection(
                             )
                             docsisListEntries.forEachIndexed { index, entry ->
                                 val modifier = if (entry.fromZip) {
-                                    Modifier.clickable { toggleDiscard(entry) }
+                                    Modifier.clickable { onToggleDiscard(entry) }
                                 } else {
                                     Modifier
                                 }
@@ -2786,7 +2821,7 @@ private fun AssetFileSection(
                                         "• ${displayLabel(entry)}",
                                         style = smallTextStyle,
                                         color = mutedColor,
-                                        modifier = Modifier.clickable { toggleDiscard(entry) }
+                                        modifier = Modifier.clickable { onToggleDiscard(entry) }
                                     )
                                 }
                             }
@@ -2797,7 +2832,7 @@ private fun AssetFileSection(
                         )
                         channelDisplayEntries.forEachIndexed { index, entry ->
                             val modifier = if (entry.fromZip) {
-                                Modifier.clickable { toggleDiscard(entry) }
+                                Modifier.clickable { onToggleDiscard(entry) }
                             } else {
                                 Modifier
                             }
@@ -2815,7 +2850,7 @@ private fun AssetFileSection(
                                     "• ${displayLabel(entry)}",
                                     style = smallTextStyle,
                                     color = mutedColor,
-                                    modifier = Modifier.clickable { toggleDiscard(entry) }
+                                    modifier = Modifier.clickable { onToggleDiscard(entry) }
                                 )
                             }
                         }
@@ -3038,6 +3073,7 @@ private fun AssetFileSection(
                                         navController.currentBackStackEntry?.savedStateHandle?.apply {
                                             set(PendingMeasurementReportIdKey, asset.reportId)
                                             set(PendingMeasurementAssetIdKey, asset.id)
+                                            set(PendingMeasurementAssetTypeKey, AssetType.NODE.name)
                                         }
                                         runCatching { context.startActivity(viaviIntent) }
                                             .onFailure {
@@ -3062,7 +3098,7 @@ private fun AssetFileSection(
                                 Text("Agregar Medición RX")
                             }
                             verificationSummaryRx?.let { summary ->
-                                VerificationSummaryView(summary, asset)
+                                VerificationSummaryView(summary, asset, ::toggleDiscardRx)
                             }
                         }
                         Row(
@@ -3085,6 +3121,7 @@ private fun AssetFileSection(
                                         navController.currentBackStackEntry?.savedStateHandle?.apply {
                                             set(PendingMeasurementReportIdKey, asset.reportId)
                                             set(PendingMeasurementAssetIdKey, asset.id)
+                                            set(PendingMeasurementAssetTypeKey, AssetType.AMPLIFIER.name)
                                         }
                                         runCatching { context.startActivity(viaviIntent) }
                                             .onFailure {
@@ -3109,7 +3146,7 @@ private fun AssetFileSection(
                                 Text("Agregar Medición Modulo")
                             }
                             verificationSummaryModule?.let { summary ->
-                                VerificationSummaryView(summary, moduleAsset)
+                                VerificationSummaryView(summary, moduleAsset, ::toggleDiscardModule)
                             }
                         }
                     }
@@ -3121,6 +3158,7 @@ private fun AssetFileSection(
                                 navController.currentBackStackEntry?.savedStateHandle?.apply {
                                     set(PendingMeasurementReportIdKey, asset.reportId)
                                     set(PendingMeasurementAssetIdKey, asset.id)
+                                    set(PendingMeasurementAssetTypeKey, asset.type.name)
                                 }
                                 runCatching { context.startActivity(viaviIntent) }
                                     .onFailure {
@@ -3144,7 +3182,7 @@ private fun AssetFileSection(
                         }
                     }
                     verificationSummaryRx?.let { summary ->
-                        VerificationSummaryView(summary, asset)
+                        VerificationSummaryView(summary, asset, ::toggleDiscardRx)
                     }
                 }
 
@@ -3168,28 +3206,48 @@ private fun AssetFileSection(
                             Icon(Icons.Default.Delete, contentDescription = "Abrir papelera de mediciones")
                         }
                     }
-                    if (files.isEmpty()) {
+                    @Composable
+                    fun FileList(title: String?, entries: List<File>, isModule: Boolean) {
+                        if (!title.isNullOrBlank()) {
+                            Text(title, fontWeight = FontWeight.SemiBold)
+                        }
+                        if (entries.isEmpty()) {
+                            Text(
+                                "No hay mediciones agregadas.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        } else {
+                            entries.forEach { file ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        file.name,
+                                        modifier = Modifier.weight(1f),
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                    IconButton(onClick = { fileToDelete = DeleteTarget(file, isModule) }) {
+                                        Icon(Icons.Default.Delete, contentDescription = "Mover a papelera")
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if (isNodeAsset) {
+                        FileList(title = "RX", entries = rxFiles, isModule = false)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        FileList(title = "Modulo", entries = moduleFiles, isModule = true)
+                    } else if (rxFiles.isEmpty()) {
                         Text(
                             "No hay mediciones agregadas.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     } else {
-                        files.forEach { file ->
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    file.name,
-                                    modifier = Modifier.weight(1f),
-                                    style = MaterialTheme.typography.bodySmall
-                                )
-                                IconButton(onClick = { fileToDelete = file }) {
-                                    Icon(Icons.Default.Delete, contentDescription = "Mover a papelera")
-                                }
-                            }
-                        }
+                        FileList(title = null, entries = rxFiles, isModule = false)
                     }
                 }
             }
@@ -3207,10 +3265,18 @@ private fun AssetFileSection(
                     fileToDelete = null
                     if (target != null) {
                         scope.launch(Dispatchers.IO) {
-                            MaintenanceStorage.moveMeasurementFileToTrash(context, target)
-                            val updated = assetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
+                            MaintenanceStorage.moveMeasurementFileToTrash(context, target.file)
+                            val updated = if (target.isModule) {
+                                moduleAssetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
+                            } else {
+                                rxAssetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
+                            }
                             withContext(Dispatchers.Main) {
-                                files = updated
+                                if (target.isModule) {
+                                    moduleFiles = updated
+                                } else {
+                                    rxFiles = updated
+                                }
                             }
                         }
                     }
