@@ -2589,6 +2589,17 @@ private fun AssetFileSection(
     var verificationSummaryRx by remember { mutableStateOf<MeasurementVerificationSummary?>(null) }
     var verificationSummaryModule by remember { mutableStateOf<MeasurementVerificationSummary?>(null) }
 
+    fun expectedMeasurementFiles(assetType: AssetType, isModule: Boolean): Int {
+        return when (assetType) {
+            AssetType.NODE -> if (isModule) 8 else 1
+            AssetType.AMPLIFIER -> 7
+        }
+    }
+
+    fun shouldGenerateTables(fileCount: Int, assetType: AssetType, isModule: Boolean): Boolean {
+        return fileCount >= expectedMeasurementFiles(assetType, isModule)
+    }
+
     fun displayLabel(entry: MeasurementEntry): String {
         return if (entry.isDiscarded && !entry.label.contains("DESCARTADA", ignoreCase = true)) {
             "${entry.label} DESCARTADA"
@@ -2628,7 +2639,7 @@ private fun AssetFileSection(
     }
 
     LaunchedEffect(rxFiles, rxDiscardedLabels) {
-        if (rxFiles.isNotEmpty()) {
+        if (shouldGenerateTables(rxFiles.size, asset.type, isModule = false)) {
             val summary = verifyMeasurementFiles(context, rxFiles, asset, repository, rxDiscardedLabels)
             verificationSummaryRx = summary
             if (summary.result.duplicateFileCount > 0) {
@@ -2641,7 +2652,7 @@ private fun AssetFileSection(
 
     LaunchedEffect(moduleFiles, moduleDiscardedLabels) {
         if (!isNodeAsset) return@LaunchedEffect
-        if (moduleFiles.isNotEmpty()) {
+        if (shouldGenerateTables(moduleFiles.size, moduleAsset.type, isModule = true)) {
             val summary = verifyMeasurementFiles(context, moduleFiles, moduleAsset, repository, moduleDiscardedLabels)
             verificationSummaryModule = summary
             if (summary.result.duplicateFileCount > 0) {
@@ -2666,6 +2677,12 @@ private fun AssetFileSection(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                val canRefresh = if (isNodeAsset) {
+                    shouldGenerateTables(rxFiles.size, asset.type, isModule = false) &&
+                        shouldGenerateTables(moduleFiles.size, moduleAsset.type, isModule = true)
+                } else {
+                    shouldGenerateTables(rxFiles.size, asset.type, isModule = false)
+                }
                 Text(
                     "Carga de Mediciones",
                     fontWeight = FontWeight.SemiBold,
@@ -2677,7 +2694,7 @@ private fun AssetFileSection(
                         scope.launch {
                             val updatedRxFiles = rxAssetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
                             rxFiles = updatedRxFiles
-                            if (updatedRxFiles.isNotEmpty()) {
+                            if (shouldGenerateTables(updatedRxFiles.size, asset.type, isModule = false)) {
                                 verificationSummaryRx = verifyMeasurementFiles(
                                     context,
                                     updatedRxFiles,
@@ -2692,7 +2709,7 @@ private fun AssetFileSection(
                             if (isNodeAsset) {
                                 val updatedModuleFiles = moduleAssetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
                                 moduleFiles = updatedModuleFiles
-                                if (updatedModuleFiles.isNotEmpty()) {
+                                if (shouldGenerateTables(updatedModuleFiles.size, moduleAsset.type, isModule = true)) {
                                     verificationSummaryModule = verifyMeasurementFiles(
                                         context,
                                         updatedModuleFiles,
@@ -2706,7 +2723,7 @@ private fun AssetFileSection(
                             }
                         }
                     },
-                    enabled = asset.type in setOf(AssetType.NODE, AssetType.AMPLIFIER)
+                    enabled = asset.type in setOf(AssetType.NODE, AssetType.AMPLIFIER) && canRefresh
                 ) {
                     Icon(Icons.Default.Refresh, contentDescription = "Refrescar verificación")
                 }
