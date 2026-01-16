@@ -2063,6 +2063,7 @@ private data class ChannelMeta(
 private data class DigitalChannelRow(
     val channel: Int,
     val frequencyMHz: Double?,
+    val levelDbmv: Double?,
     val mer: Double?,
     val berPre: Double?,
     val berPost: Double?,
@@ -2305,6 +2306,7 @@ private suspend fun verifyMeasurementFiles(
                         DigitalChannelRow(
                             channel = channel,
                             frequencyMHz = row.frequencyMHz,
+                            levelDbmv = row.levelDbmv,
                             mer = row.merDb,
                             berPre = row.berPre,
                             berPost = row.berPost,
@@ -2928,6 +2930,7 @@ private fun AssetFileSection(
                                     ) {
                                         Text("Canal", modifier = Modifier.weight(1f), style = smallTextStyle, fontWeight = FontWeight.SemiBold)
                                         Text("Freq", modifier = Modifier.weight(1f), style = smallTextStyle, fontWeight = FontWeight.SemiBold)
+                                        Text("Nivel", modifier = Modifier.weight(1f), style = smallTextStyle, fontWeight = FontWeight.SemiBold)
                                         Text("MER", modifier = Modifier.weight(1f), style = smallTextStyle, fontWeight = FontWeight.SemiBold)
                                         Text("BER pre", modifier = Modifier.weight(1f), style = smallTextStyle, fontWeight = FontWeight.SemiBold)
                                         Text("BER post", modifier = Modifier.weight(1f), style = smallTextStyle, fontWeight = FontWeight.SemiBold)
@@ -2940,6 +2943,11 @@ private fun AssetFileSection(
                                         ) {
                                             Text("${row.channel}", modifier = Modifier.weight(1f), style = smallTextStyle)
                                             Text(formatDbmv(row.frequencyMHz), modifier = Modifier.weight(1f), style = smallTextStyle)
+                                            MeasurementValueCell(
+                                                value = formatDbmv(row.levelDbmv),
+                                                ok = true,
+                                                discarded = entry.isDiscarded
+                                            )
                                             MeasurementValueCell(
                                                 value = formatDbmv(row.mer),
                                                 ok = row.merOk != false,
