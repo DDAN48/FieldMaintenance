@@ -2906,13 +2906,24 @@ private fun AssetFileSection(
                         return formatMHz(frequency)
                     }
 
-                    val docsisDiscardedEntries = docsisEntries.filter { it.isDiscarded }
-                    val channelDiscardedEntries = channelEntries.filter { it.isDiscarded }
+                    @Composable
+                    fun MeasurementStatusTitle(label: String, isComplete: Boolean) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(label, fontWeight = FontWeight.SemiBold)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Icon(
+                                imageVector = if (isComplete) Icons.Filled.CheckCircle else Icons.Filled.Close,
+                                contentDescription = null,
+                                tint = if (isComplete) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         if (assetForDisplay.type != AssetType.NODE) {
-                            Text(
-                                "Mediciones docsisexpert ${summary.result.docsisExpert}/${summary.expectedDocsis}",
-                                fontWeight = FontWeight.SemiBold
+                            MeasurementStatusTitle(
+                                label = "Mediciones docsisexpert ${summary.result.docsisExpert}/${summary.expectedDocsis}",
+                                isComplete = summary.result.docsisExpert >= summary.expectedDocsis
                             )
                             docsisListEntries.forEachIndexed { index, entry ->
                                 val modifier = if (entry.fromZip) {
@@ -2929,9 +2940,9 @@ private fun AssetFileSection(
                             }
                             // Discarded entries are hidden from summary.
                         }
-                        Text(
-                            "Mediciones channelexpert ${summary.result.channelExpert}/${summary.expectedChannel}",
-                            fontWeight = FontWeight.SemiBold
+                        MeasurementStatusTitle(
+                            label = "Mediciones channelexpert ${summary.result.channelExpert}/${summary.expectedChannel}",
+                            isComplete = summary.result.channelExpert >= summary.expectedChannel
                         )
                         channelDisplayEntries.forEachIndexed { index, entry ->
                             val modifier = if (entry.fromZip) {
@@ -2947,70 +2958,6 @@ private fun AssetFileSection(
                             )
                         }
                         // Discarded entries are hidden from summary.
-                        if (!canRenderTables) {
-                            Text(
-                                "Agregue las mediciones faltantes.",
-                                style = smallTextStyle,
-                                fontWeight = FontWeight.SemiBold,
-                                color = warningColor
-                            )
-                        }
-                        if (!canRenderTables) {
-                            Text(
-                                "Agregue las mediciones faltantes.",
-                                style = smallTextStyle,
-                                fontWeight = FontWeight.SemiBold,
-                                color = warningColor
-                            )
-                        }
-                        summary.warnings.forEach { warning ->
-                            Text(
-                                warning,
-                                color = MaterialTheme.colorScheme.error,
-                                style = smallTextStyle,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
-                        if (summary.result.duplicateFileNames.isNotEmpty()) {
-                            Text("Archivos eliminados:", fontWeight = FontWeight.SemiBold)
-                            summary.result.duplicateFileNames.forEach { name ->
-                                Text("• $name", style = smallTextStyle, color = mutedColor)
-                            }
-                            summary.result.duplicateFileNames.forEach { name ->
-                                Text(
-                                    "No se agregó la medición $name por estar duplicada.",
-                                    style = smallTextStyle,
-                                    color = warningColor,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                            }
-                        }
-                        if (summary.result.invalidTypeNames.isNotEmpty()) {
-                            Text("Mediciones inválidas:", fontWeight = FontWeight.SemiBold)
-                            summary.result.invalidTypeNames.forEach { name ->
-                                Text("• $name", style = smallTextStyle, color = mutedColor)
-                            }
-                        }
-                        if (summary.result.parseErrorNames.isNotEmpty()) {
-                            Text("No se pudieron leer:", fontWeight = FontWeight.SemiBold)
-                            summary.result.parseErrorNames.forEach { name ->
-                                Text("• $name", style = smallTextStyle, color = mutedColor)
-                            }
-                        }
-                        if (summary.result.duplicateEntryNames.isNotEmpty()) {
-                            Text("Duplicados en ZIP:", fontWeight = FontWeight.SemiBold)
-                            summary.result.duplicateEntryNames.forEach { name ->
-                                Text("• $name", style = smallTextStyle, color = mutedColor)
-                            }
-                            summary.result.duplicateEntryNames.forEach { name ->
-                                Text(
-                                    "No se agregó la medición $name por estar duplicada.",
-                                    style = smallTextStyle,
-                                    color = warningColor,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                            }
-                        }
                         if (summary.result.validationIssueNames.isNotEmpty()) {
                             Text(
                                 "Validación de valores: ${summary.result.validationIssueNames.size} observaciones.",
