@@ -2955,6 +2955,14 @@ private fun AssetFileSection(
                                 color = warningColor
                             )
                         }
+                        if (!canRenderTables) {
+                            Text(
+                                "Agregue las mediciones faltantes.",
+                                style = smallTextStyle,
+                                fontWeight = FontWeight.SemiBold,
+                                color = warningColor
+                            )
+                        }
                         summary.warnings.forEach { warning ->
                             Text(
                                 warning,
