@@ -2606,16 +2606,16 @@ private fun AssetFileSection(
     )
 
     fun requiredCounts(assetType: AssetType, isModule: Boolean): RequiredCounts {
-        return when (assetType) {
-            AssetType.NODE -> {
-                if (isModule) {
-                    RequiredCounts(expectedDocsis = 4, expectedChannel = 4, maxDocsisTable = 4, maxChannelTable = 4)
-                } else {
+        return if (isModule) {
+            RequiredCounts(expectedDocsis = 4, expectedChannel = 4, maxDocsisTable = 4, maxChannelTable = 4)
+        } else {
+            when (assetType) {
+                AssetType.NODE -> {
                     RequiredCounts(expectedDocsis = 0, expectedChannel = 1, maxDocsisTable = 0, maxChannelTable = 1)
                 }
-            }
-            AssetType.AMPLIFIER -> {
-                RequiredCounts(expectedDocsis = 3, expectedChannel = 4, maxDocsisTable = 3, maxChannelTable = 4)
+                AssetType.AMPLIFIER -> {
+                    RequiredCounts(expectedDocsis = 3, expectedChannel = 4, maxDocsisTable = 3, maxChannelTable = 4)
+                }
             }
         }
     }
@@ -2927,17 +2927,7 @@ private fun AssetFileSection(
                                     modifier = modifier
                                 )
                             }
-                            if (docsisDiscardedEntries.isNotEmpty()) {
-                                Text("Descartadas:", fontWeight = FontWeight.SemiBold)
-                                docsisDiscardedEntries.forEach { entry ->
-                                    Text(
-                                        "• ${displayLabel(entry)}",
-                                        style = smallTextStyle,
-                                        color = mutedColor,
-                                        modifier = Modifier.clickable { onToggleDiscard(entry) }
-                                    )
-                                }
-                            }
+                            // Discarded entries are hidden from summary.
                         }
                         Text(
                             "Mediciones channelexpert ${summary.result.channelExpert}/${summary.expectedChannel}",
@@ -2956,16 +2946,14 @@ private fun AssetFileSection(
                                 modifier = modifier
                             )
                         }
-                        if (channelDiscardedEntries.isNotEmpty()) {
-                            Text("Descartadas:", fontWeight = FontWeight.SemiBold)
-                            channelDiscardedEntries.forEach { entry ->
-                                Text(
-                                    "• ${displayLabel(entry)}",
-                                    style = smallTextStyle,
-                                    color = mutedColor,
-                                    modifier = Modifier.clickable { onToggleDiscard(entry) }
-                                )
-                            }
+                        // Discarded entries are hidden from summary.
+                        if (!canRenderTables) {
+                            Text(
+                                "Agregue las mediciones faltantes.",
+                                style = smallTextStyle,
+                                fontWeight = FontWeight.SemiBold,
+                                color = warningColor
+                            )
                         }
                         if (!canRenderTables) {
                             Text(
