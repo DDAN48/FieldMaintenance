@@ -2300,57 +2300,61 @@ private suspend fun verifyMeasurementFiles(
         return bytes.size >= 4 && bytes[0] == 0x50.toByte() && bytes[1] == 0x4b.toByte()
     }
 
-    fun handleGzipBytes(bytes: ByteArray, sourceFile: File?, sourceLabel: String) {
-        val decompressed = runCatching {
-            GZIPInputStream(ByteArrayInputStream(bytes)).use { it.readBytes() }
-        }.getOrNull()
-        if (decompressed == null) {
-            parseErrorCount += 1
-            parseErrorNames.add(sourceLabel)
-            return
-        }
-        if (isZipBytes(decompressed)) {
-            runCatching {
-                ZipInputStream(ByteArrayInputStream(decompressed)).use { nested ->
-                    handleZipInputStream(nested, sourceFile = null)
-                }
-            }.onFailure {
+    class MeasurementFileHandlers {
+        fun handleGzipBytes(bytes: ByteArray, sourceFile: File?, sourceLabel: String) {
+            val decompressed = runCatching {
+                GZIPInputStream(ByteArrayInputStream(bytes)).use { it.readBytes() }
+            }.getOrNull()
+            if (decompressed == null) {
                 parseErrorCount += 1
                 parseErrorNames.add(sourceLabel)
+                return
             }
-            return
-        }
-        val jsonLabel = sourceLabel.removeSuffix(".gz")
-        handleJsonBytes(decompressed, sourceFile = sourceFile, sourceLabel = jsonLabel)
-    }
-
-    fun handleZipInputStream(inputStream: ZipInputStream, sourceFile: File?) {
-        var entry = inputStream.nextEntry
-        while (entry != null) {
-            if (!entry.isDirectory) {
-                val entryName = entry.name.lowercase(Locale.getDefault())
-                val bytes = runCatching { inputStream.readBytes() }.getOrNull()
-                if (bytes == null) {
+            if (isZipBytes(decompressed)) {
+                runCatching {
+                    ZipInputStream(ByteArrayInputStream(decompressed)).use { nested ->
+                        handleZipInputStream(nested, sourceFile = null)
+                    }
+                }.onFailure {
                     parseErrorCount += 1
-                    parseErrorNames.add(entry.name)
-                } else if (entryName.endsWith(".zip")) {
-                    runCatching {
-                        ZipInputStream(ByteArrayInputStream(bytes)).use { nested ->
-                            handleZipInputStream(nested, sourceFile = null)
-                        }
-                    }.onFailure {
+                    parseErrorNames.add(sourceLabel)
+                }
+                return
+            }
+            val jsonLabel = sourceLabel.removeSuffix(".gz")
+            handleJsonBytes(decompressed, sourceFile = sourceFile, sourceLabel = jsonLabel)
+        }
+
+        fun handleZipInputStream(inputStream: ZipInputStream, sourceFile: File?) {
+            var entry = inputStream.nextEntry
+            while (entry != null) {
+                if (!entry.isDirectory) {
+                    val entryName = entry.name.lowercase(Locale.getDefault())
+                    val bytes = runCatching { inputStream.readBytes() }.getOrNull()
+                    if (bytes == null) {
                         parseErrorCount += 1
                         parseErrorNames.add(entry.name)
+                    } else if (entryName.endsWith(".zip")) {
+                        runCatching {
+                            ZipInputStream(ByteArrayInputStream(bytes)).use { nested ->
+                                handleZipInputStream(nested, sourceFile = null)
+                            }
+                        }.onFailure {
+                            parseErrorCount += 1
+                            parseErrorNames.add(entry.name)
+                        }
+                    } else if (entryName.endsWith(".gz")) {
+                        handleGzipBytes(bytes, sourceFile = sourceFile, sourceLabel = entry.name)
+                    } else if (isJsonLike(entryName)) {
+                        handleJsonBytes(bytes, sourceFile = sourceFile, sourceLabel = entry.name)
                     }
-                } else if (entryName.endsWith(".gz")) {
-                    handleGzipBytes(bytes, sourceFile = sourceFile, sourceLabel = entry.name)
-                } else if (isJsonLike(entryName)) {
-                    handleJsonBytes(bytes, sourceFile = sourceFile, sourceLabel = entry.name)
                 }
+                entry = inputStream.nextEntry
             }
-            entry = inputStream.nextEntry
         }
     }
+
+    val handlers = MeasurementFileHandlers()
 
     dedupedFiles.forEach { file ->
         val name = file.name.lowercase(Locale.getDefault())
@@ -2365,7 +2369,7 @@ private suspend fun verifyMeasurementFiles(
             name.endsWith(".zip") -> {
                 runCatching {
                     ZipInputStream(file.inputStream()).use { zip ->
-                        handleZipInputStream(zip, sourceFile = null)
+                        handlers.handleZipInputStream(zip, sourceFile = null)
                     }
                 }.onFailure {
                     parseErrorCount += 1
@@ -2374,7 +2378,7 @@ private suspend fun verifyMeasurementFiles(
             }
             name.endsWith(".gz") -> {
                 runCatching {
-                    handleGzipBytes(file.readBytes(), sourceFile = file, sourceLabel = file.name)
+                    handlers.handleGzipBytes(file.readBytes(), sourceFile = file, sourceLabel = file.name)
                 }.onFailure {
                     parseErrorCount += 1
                     parseErrorNames.add(file.name)
@@ -2572,42 +2576,6 @@ private fun AssetFileSection(
                         Icon(Icons.Default.Description, contentDescription = null)
                         Spacer(modifier = Modifier.width(8.dp))
                         Text("Agregar Mediciones")
-                    }
-                    Button(
-                        onClick = {
-                            onInteraction()
-                            scope.launch {
-                                val summary = verifyMeasurementFiles(
-                                    context,
-                                    files,
-                                    asset,
-                                    repository,
-                                    discardedLabels
-                                )
-                                verificationSummary = summary
-                                if (summary.result.duplicateFileCount > 0) {
-                                    files = assetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
-                                }
-                                if (summary.warnings.isEmpty()) {
-                                    Toast.makeText(
-                                        context,
-                                        "Verificación inicial completa: se encontraron todas las mediciones.",
-                                        Toast.LENGTH_LONG
-                                    ).show()
-                                } else {
-                                    Toast.makeText(
-                                        context,
-                                        summary.warnings.first(),
-                                        Toast.LENGTH_LONG
-                                    ).show()
-                                }
-                            }
-                        },
-                        enabled = files.isNotEmpty() && asset.type in setOf(AssetType.NODE, AssetType.AMPLIFIER)
-                    ) {
-                        Icon(Icons.Default.CheckCircle, contentDescription = null)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Verificar")
                     }
                 }
                 verificationSummary?.let { summary ->
