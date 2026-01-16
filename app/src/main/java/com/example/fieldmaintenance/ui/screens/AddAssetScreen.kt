@@ -17,6 +17,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ExpandLess
@@ -2590,6 +2591,7 @@ private fun AssetFileSection(
     var moduleExpanded by remember { mutableStateOf(true) }
     var verificationSummaryRx by remember { mutableStateOf<MeasurementVerificationSummary?>(null) }
     var verificationSummaryModule by remember { mutableStateOf<MeasurementVerificationSummary?>(null) }
+    var duplicateNotice by remember { mutableStateOf<List<String>>(emptyList()) }
 
     data class RequiredCounts(
         val expectedDocsis: Int,
@@ -2688,6 +2690,10 @@ private fun AssetFileSection(
                 expectedChannelOverride = rxRequired.expectedChannel
             )
             verificationSummaryRx = summary
+            val duplicates = summary.result.duplicateFileNames + summary.result.duplicateEntryNames
+            if (duplicates.isNotEmpty() && duplicateNotice.isEmpty()) {
+                duplicateNotice = duplicates
+            }
             if (summary.result.duplicateFileCount > 0) {
                 rxFiles = rxAssetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
             }
@@ -2710,6 +2716,10 @@ private fun AssetFileSection(
                 expectedChannelOverride = moduleRequired.expectedChannel
             )
             verificationSummaryModule = summary
+            val duplicates = summary.result.duplicateFileNames + summary.result.duplicateEntryNames
+            if (duplicates.isNotEmpty() && duplicateNotice.isEmpty()) {
+                duplicateNotice = duplicates
+            }
             if (summary.result.duplicateFileCount > 0) {
                 moduleFiles = moduleAssetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
             }
@@ -3389,6 +3399,42 @@ private fun AssetFileSection(
             dismissButton = {
                 TextButton(onClick = { fileToDelete = null }) { Text("Cancelar") }
             }
+        )
+    }
+
+    if (duplicateNotice.isNotEmpty()) {
+        AlertDialog(
+            onDismissRequest = { },
+            properties = DialogProperties(
+                dismissOnBackPress = false,
+                dismissOnClickOutside = false
+            ),
+            title = {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "Mediciones duplicadas",
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(onClick = { duplicateNotice = emptyList() }) {
+                        Icon(Icons.Default.Close, contentDescription = "Cerrar")
+                    }
+                }
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    duplicateNotice.forEach { name ->
+                        Text(
+                            "No se agregó la medición $name por estar duplicada.",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            },
+            confirmButton = {}
         )
     }
 }
