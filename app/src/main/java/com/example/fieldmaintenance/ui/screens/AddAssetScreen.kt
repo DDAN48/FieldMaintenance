@@ -1572,6 +1572,16 @@ private fun annotateImageWithLabel(file: File, labelInfo: PhotoLabelInfo) {
 
 private fun getLastKnownLocation(context: Context): Location? {
     val manager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return null
+    val hasPermission = ContextCompat.checkSelfPermission(
+        context,
+        Manifest.permission.ACCESS_FINE_LOCATION
+    ) == PackageManager.PERMISSION_GRANTED || ContextCompat.checkSelfPermission(
+        context,
+        Manifest.permission.ACCESS_COARSE_LOCATION
+    ) == PackageManager.PERMISSION_GRANTED
+    if (!hasPermission) {
+        return null
+    }
     val providers = listOf(
         LocationManager.GPS_PROVIDER,
         LocationManager.NETWORK_PROVIDER,
