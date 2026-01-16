@@ -3263,9 +3263,16 @@ private fun AssetFileSection(
                                         } else {
                                             rxFiles = updated
                                         }
+                                    } else {
+                                        surplusSelection - name
                                     }
                                 }
-                            }
+                            )
+                            Text(
+                                name,
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.weight(1f)
+                            )
                         }
                     }
                 }) { Text("Eliminar") }
