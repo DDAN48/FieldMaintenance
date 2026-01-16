@@ -135,90 +135,8 @@ fun ShareImportScreen(
         }
     }
 
-    Scaffold(
-        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
-        topBar = {
-            TopAppBar(
-                title = { Text("Importar Mediciones") },
-                navigationIcon = {
-                    IconButton(onClick = {
-                        onShareHandled()
-                        navController.popBackStack(Screen.Home.route, inclusive = false)
-                    }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Atrás")
-                    }
-                },
-                actions = {
-                    IconButton(onClick = {
-                        onShareHandled()
-                        navController.navigate(Screen.Home.route)
-                    }) {
-                        Icon(Icons.Default.Home, contentDescription = "Inicio")
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimary
-                )
-            )
-        }
-    ) { paddingValues ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(16.dp)
-            ) {
-            Spacer(modifier = Modifier.height(12.dp))
-
-                if (reports.isEmpty()) {
-                    Text("No hay mantenimientos creados todavía.")
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Button(onClick = { navController.navigate(Screen.Home.route) }) {
-                        Text("Crear mantenimiento")
-                    }
-                    return@Box
-                }
-
-                Text(
-                    text = if (sharedUris.isEmpty()) {
-                        "Seleccione un mantenimiento para ver las mediciones."
-                    } else {
-                        "Seleccione una carpeta para guardar las mediciones."
-                    },
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-
-                LazyColumn(
-                    contentPadding = PaddingValues(bottom = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    items(reports) { report ->
-                        ReportShareCard(
-                            report = report,
-                            sharedUris = sharedUris,
-                            context = context,
-                            autoReturn = hasPendingAsset,
-                            onImportFinished = {
-                                onShareHandled()
-                                if (!navController.popBackStack()) {
-                                    navController.navigate(Screen.Home.route)
-                                }
-                            },
-                            onShowMessage = { message ->
-                                scope.launch { snackbarHostState.showSnackbar(message) }
-                            }
-                        )
-                    }
-                }
-            }
-
+    if (hasPendingAsset) {
+        Box(modifier = Modifier.fillMaxSize()) {
             if (isAutoImporting) {
                 Box(
                     modifier = Modifier
@@ -240,6 +158,117 @@ fun ShareImportScreen(
                             color = Color.White,
                             style = MaterialTheme.typography.bodyMedium
                         )
+                    }
+                }
+            }
+        }
+    } else {
+        Scaffold(
+            snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
+            topBar = {
+                TopAppBar(
+                    title = { Text("Importar Mediciones") },
+                    navigationIcon = {
+                        IconButton(onClick = {
+                            onShareHandled()
+                            navController.popBackStack(Screen.Home.route, inclusive = false)
+                        }) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Atrás")
+                        }
+                    },
+                    actions = {
+                        IconButton(onClick = {
+                            onShareHandled()
+                            navController.navigate(Screen.Home.route)
+                        }) {
+                            Icon(Icons.Default.Home, contentDescription = "Inicio")
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        titleContentColor = MaterialTheme.colorScheme.onPrimary
+                    )
+                )
+            }
+        ) { paddingValues ->
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(16.dp)
+                ) {
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    if (reports.isEmpty()) {
+                        Text("No hay mantenimientos creados todavía.")
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Button(onClick = { navController.navigate(Screen.Home.route) }) {
+                            Text("Crear mantenimiento")
+                        }
+                        return@Box
+                    }
+
+                    Text(
+                        text = if (sharedUris.isEmpty()) {
+                            "Seleccione un mantenimiento para ver las mediciones."
+                        } else {
+                            "Seleccione una carpeta para guardar las mediciones."
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    LazyColumn(
+                        contentPadding = PaddingValues(bottom = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        items(reports) { report ->
+                            ReportShareCard(
+                                report = report,
+                                sharedUris = sharedUris,
+                                context = context,
+                                autoReturn = hasPendingAsset,
+                                onImportFinished = {
+                                    onShareHandled()
+                                    if (!navController.popBackStack()) {
+                                        navController.navigate(Screen.Home.route)
+                                    }
+                                },
+                                onShowMessage = { message ->
+                                    scope.launch { snackbarHostState.showSnackbar(message) }
+                                }
+                            )
+                        }
+                    }
+                }
+
+                if (isAutoImporting) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = 0.5f))
+                            .clickable(
+                                indication = null,
+                                interactionSource = remember { MutableInteractionSource() }
+                            ) {},
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            CircularProgressIndicator(color = Color.White)
+                            Text(
+                                text = "Subiendo mediciones...",
+                                color = Color.White,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
                     }
                 }
             }

@@ -3260,84 +3260,6 @@ private fun AssetFileSection(
                                         } else {
                                             rxFiles = updated
                                         }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }) { Text("Eliminar") }
-            },
-            dismissButton = {
-                TextButton(onClick = { pendingDeleteEntry = null }) { Text("Cancelar") }
-            }
-        )
-    }
-
-    if (duplicateNotice.isNotEmpty()) {
-        AlertDialog(
-            onDismissRequest = { },
-            properties = DialogProperties(
-                dismissOnBackPress = false,
-                dismissOnClickOutside = false
-            ),
-            title = {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        "Mediciones duplicadas",
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.weight(1f)
-                    )
-                    IconButton(onClick = { duplicateNotice = emptyList() }) {
-                        Icon(Icons.Default.Close, contentDescription = "Cerrar")
-                    }
-                }
-            },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    duplicateNotice.forEach { name ->
-                        Text(
-                            "No se agregó la medición $name por estar duplicada.",
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                    }
-                }
-            },
-            confirmButton = {}
-        )
-    }
-
-    if (surplusNotice.isNotEmpty()) {
-        val selectedCount = surplusSelection.size
-        AlertDialog(
-            onDismissRequest = { },
-            properties = DialogProperties(
-                dismissOnBackPress = false,
-                dismissOnClickOutside = false
-            ),
-            title = { Text("Mediciones sobrantes") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(
-                        "Se detectaron $surplusTargetCount mediciones de más. Seleccione cuáles desea eliminar.",
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                    surplusNotice.forEach { name ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Checkbox(
-                                checked = surplusSelection.contains(name),
-                                onCheckedChange = { checked ->
-                                    surplusSelection = if (checked) {
-                                        if (surplusSelection.size < surplusTargetCount) {
-                                            surplusSelection + name
-                                        } else {
-                                            surplusSelection
-                                        }
                                     } else {
                                         surplusSelection - name
                                     }
@@ -3350,57 +3272,10 @@ private fun AssetFileSection(
                             )
                         }
                     }
-                }
+                }) { Text("Eliminar") }
             },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        val selected = surplusSelection
-                        val updated = if (surplusIsModule) {
-                            moduleDiscardedLabels + selected
-                        } else {
-                            rxDiscardedLabels + selected
-                        }
-                        if (surplusIsModule) {
-                            moduleDiscardedLabels = updated
-                            saveDiscardedLabels(moduleDiscardedFile, updated)
-                        } else {
-                            rxDiscardedLabels = updated
-                            saveDiscardedLabels(rxDiscardedFile, updated)
-                        }
-                        surplusNotice = emptyList()
-                        surplusSelection = emptySet()
-                        surplusTargetCount = 0
-                        scope.launch {
-                            if (surplusIsModule) {
-                                val moduleRequired = requiredCounts(moduleAsset.type, isModule = true)
-                                verificationSummaryModule = verifyMeasurementFiles(
-                                    context,
-                                    moduleFiles,
-                                    moduleAsset,
-                                    repository,
-                                    moduleDiscardedLabels,
-                                    expectedDocsisOverride = moduleRequired.expectedDocsis,
-                                    expectedChannelOverride = moduleRequired.expectedChannel
-                                )
-                            } else {
-                                val rxRequired = requiredCounts(asset.type, isModule = false)
-                                verificationSummaryRx = verifyMeasurementFiles(
-                                    context,
-                                    rxFiles,
-                                    asset,
-                                    repository,
-                                    rxDiscardedLabels,
-                                    expectedDocsisOverride = rxRequired.expectedDocsis,
-                                    expectedChannelOverride = rxRequired.expectedChannel
-                                )
-                            }
-                        }
-                    },
-                    enabled = selectedCount == surplusTargetCount
-                ) {
-                    Text("Cerrar")
-                }
+            dismissButton = {
+                TextButton(onClick = { pendingDeleteEntry = null }) { Text("Cancelar") }
             }
         )
     }
