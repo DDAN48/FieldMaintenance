@@ -2315,7 +2315,11 @@ private suspend fun verifyMeasurementFiles(
         val lower = name.lowercase(Locale.getDefault())
         val jsonNumbered = Regex(".*\\.json\\d+$")
         val jsonDotNumbered = Regex(".*\\.json\\.\\d+$")
-        return lower.endsWith(".json") || jsonNumbered.matches(lower) || jsonDotNumbered.matches(lower)
+        val jsonHyphenNumbered = Regex(".*\\.json-\\d+$")
+        return lower.endsWith(".json") ||
+            jsonNumbered.matches(lower) ||
+            jsonDotNumbered.matches(lower) ||
+            jsonHyphenNumbered.matches(lower)
     }
 
     fun isZipBytes(bytes: ByteArray): Boolean {
