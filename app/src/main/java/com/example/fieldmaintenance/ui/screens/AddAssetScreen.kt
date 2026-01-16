@@ -2560,8 +2560,6 @@ private fun AssetFileSection(
     onInteraction: () -> Unit,
     asset: Asset
 ) {
-    data class DeleteTarget(val file: File, val isModule: Boolean)
-
     val isNodeAsset = asset.type == AssetType.NODE
     val rxAssetDir = remember(reportFolder, asset) {
         MaintenanceStorage.ensureAssetDir(context, reportFolder, asset)
@@ -2576,7 +2574,6 @@ private fun AssetFileSection(
     }
     var rxFiles by remember(rxAssetDir) { mutableStateOf(rxAssetDir.listFiles()?.sortedBy { it.name } ?: emptyList()) }
     var moduleFiles by remember(moduleAssetDir) { mutableStateOf(moduleAssetDir.listFiles()?.sortedBy { it.name } ?: emptyList()) }
-    var fileToDelete by remember { mutableStateOf<DeleteTarget?>(null) }
     val scope = rememberCoroutineScope()
     val rxDiscardedFile = remember(rxAssetDir) { File(rxAssetDir, ".discarded_measurements.txt") }
     var rxDiscardedLabels by remember(rxAssetDir) { mutableStateOf(loadDiscardedLabels(rxDiscardedFile)) }
@@ -2621,6 +2618,8 @@ private fun AssetFileSection(
     var surplusSelection by remember { mutableStateOf<Set<String>>(emptySet()) }
     var surplusTargetCount by remember { mutableStateOf(0) }
     var surplusIsModule by remember { mutableStateOf(false) }
+    var pendingDeleteEntry by remember { mutableStateOf<MeasurementEntry?>(null) }
+    var pendingDeleteIsModule by remember { mutableStateOf(false) }
 
     data class RequiredCounts(
         val expectedDocsis: Int,
@@ -2861,6 +2860,7 @@ private fun AssetFileSection(
                     summary: MeasurementVerificationSummary,
                     assetForDisplay: Asset,
                     onToggleDiscard: (MeasurementEntry) -> Unit,
+                    onRequestDelete: (MeasurementEntry) -> Unit,
                     isModule: Boolean
                 ) {
                     val smallTextStyle = MaterialTheme.typography.bodySmall
@@ -2950,11 +2950,7 @@ private fun AssetFileSection(
                                 isComplete = summary.result.docsisExpert >= summary.expectedDocsis
                             )
                             docsisListEntries.forEachIndexed { index, entry ->
-                                val modifier = if (entry.fromZip) {
-                                    Modifier.clickable { onToggleDiscard(entry) }
-                                } else {
-                                    Modifier
-                                }
+                                val modifier = Modifier.clickable { onRequestDelete(entry) }
                                 Text(
                                     "M${index + 1}: ${displayLabel(entry)}",
                                     style = smallTextStyle,
@@ -2969,11 +2965,7 @@ private fun AssetFileSection(
                             isComplete = summary.result.channelExpert >= summary.expectedChannel
                         )
                         channelDisplayEntries.forEachIndexed { index, entry ->
-                            val modifier = if (entry.fromZip) {
-                                Modifier.clickable { onToggleDiscard(entry) }
-                            } else {
-                                Modifier
-                            }
+                            val modifier = Modifier.clickable { onRequestDelete(entry) }
                             Text(
                                 "M${index + 1}: ${displayLabel(entry)}",
                                 style = smallTextStyle,
@@ -3166,7 +3158,16 @@ private fun AssetFileSection(
                         }
                         if (rxExpanded) {
                             verificationSummaryRx?.let { summary ->
-                                VerificationSummaryView(summary, asset, ::toggleDiscardRx, isModule = false)
+                                VerificationSummaryView(
+                                    summary,
+                                    asset,
+                                    ::toggleDiscardRx,
+                                    onRequestDelete = { entry ->
+                                        pendingDeleteEntry = entry
+                                        pendingDeleteIsModule = false
+                                    },
+                                    isModule = false
+                                )
                             }
                         }
                         Row(
@@ -3186,7 +3187,16 @@ private fun AssetFileSection(
                         }
                         if (moduleExpanded) {
                             verificationSummaryModule?.let { summary ->
-                                VerificationSummaryView(summary, moduleAsset, ::toggleDiscardModule, isModule = true)
+                                VerificationSummaryView(
+                                    summary,
+                                    moduleAsset,
+                                    ::toggleDiscardModule,
+                                    onRequestDelete = { entry ->
+                                        pendingDeleteEntry = entry
+                                        pendingDeleteIsModule = true
+                                    },
+                                    isModule = true
+                                )
                             }
                         }
                     }
@@ -3201,108 +3211,196 @@ private fun AssetFileSection(
                         }
                     }
                     verificationSummaryRx?.let { summary ->
-                        VerificationSummaryView(summary, asset, ::toggleDiscardRx, isModule = false)
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            "Archivos agregados",
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.weight(1f)
+                        VerificationSummaryView(
+                            summary,
+                            asset,
+                            ::toggleDiscardRx,
+                            onRequestDelete = { entry ->
+                                pendingDeleteEntry = entry
+                                pendingDeleteIsModule = false
+                            },
+                            isModule = false
                         )
-                        IconButton(
-                            onClick = {
-                                onInteraction()
-                                navController.navigate(Screen.MeasurementsTrash.route)
-                            }
-                        ) {
-                            Icon(Icons.Default.Delete, contentDescription = "Abrir papelera de mediciones")
-                        }
-                    }
-                    @Composable
-                    fun FileList(title: String?, entries: List<File>, isModule: Boolean) {
-                        if (!title.isNullOrBlank()) {
-                            Text(title, fontWeight = FontWeight.SemiBold)
-                        }
-                        if (entries.isEmpty()) {
-                            Text(
-                                "No hay mediciones agregadas.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        } else {
-                            entries.forEach { file ->
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        file.name,
-                                        modifier = Modifier.weight(1f),
-                                        style = MaterialTheme.typography.bodySmall
-                                    )
-                                    IconButton(onClick = { fileToDelete = DeleteTarget(file, isModule) }) {
-                                        Icon(Icons.Default.Delete, contentDescription = "Mover a papelera")
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    if (isNodeAsset) {
-                        FileList(title = "RX", entries = rxFiles, isModule = false)
-                        Spacer(modifier = Modifier.height(4.dp))
-                        FileList(title = "Modulo", entries = moduleFiles, isModule = true)
-                    } else if (rxFiles.isEmpty()) {
-                        Text(
-                            "No hay mediciones agregadas.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    } else {
-                        FileList(title = null, entries = rxFiles, isModule = false)
                     }
                 }
             }
         }
     }
-
-    if (fileToDelete != null) {
+    if (pendingDeleteEntry != null) {
         AlertDialog(
-            onDismissRequest = { fileToDelete = null },
-            title = { Text("Mover a papelera") },
-            text = { Text("¿Esta seguro de mover este archivo a la papelera?") },
+            onDismissRequest = { pendingDeleteEntry = null },
+            title = { Text("Eliminar medición") },
+            text = { Text("¿Desea eliminar esta medición?") },
             confirmButton = {
                 TextButton(onClick = {
-                    val target = fileToDelete
-                    fileToDelete = null
-                    if (target != null) {
-                        scope.launch(Dispatchers.IO) {
-                            MaintenanceStorage.moveMeasurementFileToTrash(context, target.file)
-                            val updated = if (target.isModule) {
-                                moduleAssetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
+                    val entry = pendingDeleteEntry
+                    val isModule = pendingDeleteIsModule
+                    pendingDeleteEntry = null
+                    if (entry != null) {
+                        if (entry.fromZip) {
+                            if (isModule) {
+                                toggleDiscardModule(entry)
                             } else {
-                                rxAssetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
+                                toggleDiscardRx(entry)
                             }
-                            withContext(Dispatchers.Main) {
-                                if (target.isModule) {
-                                    moduleFiles = updated
-                                } else {
-                                    rxFiles = updated
+                        } else {
+                            val list = if (isModule) moduleFiles else rxFiles
+                            val file = list.firstOrNull { it.name == entry.label }
+                            if (file != null) {
+                                scope.launch(Dispatchers.IO) {
+                                    MaintenanceStorage.moveMeasurementFileToTrash(context, file)
+                                    val updated = if (isModule) {
+                                        moduleAssetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
+                                    } else {
+                                        rxAssetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
+                                    }
+                                    withContext(Dispatchers.Main) {
+                                        if (isModule) {
+                                            moduleFiles = updated
+                                        } else {
+                                            rxFiles = updated
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
-                }) { Text("Mover") }
+                }) { Text("Eliminar") }
             },
             dismissButton = {
-                TextButton(onClick = { fileToDelete = null }) { Text("Cancelar") }
+                TextButton(onClick = { pendingDeleteEntry = null }) { Text("Cancelar") }
+            }
+        )
+    }
+
+    if (duplicateNotice.isNotEmpty()) {
+        AlertDialog(
+            onDismissRequest = { },
+            properties = DialogProperties(
+                dismissOnBackPress = false,
+                dismissOnClickOutside = false
+            ),
+            title = {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "Mediciones duplicadas",
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(onClick = { duplicateNotice = emptyList() }) {
+                        Icon(Icons.Default.Close, contentDescription = "Cerrar")
+                    }
+                }
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    duplicateNotice.forEach { name ->
+                        Text(
+                            "No se agregó la medición $name por estar duplicada.",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            },
+            confirmButton = {}
+        )
+    }
+
+    if (surplusNotice.isNotEmpty()) {
+        val selectedCount = surplusSelection.size
+        AlertDialog(
+            onDismissRequest = { },
+            properties = DialogProperties(
+                dismissOnBackPress = false,
+                dismissOnClickOutside = false
+            ),
+            title = { Text("Mediciones sobrantes") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        "Se detectaron $surplusTargetCount mediciones de más. Seleccione cuáles desea eliminar.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    surplusNotice.forEach { name ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Checkbox(
+                                checked = surplusSelection.contains(name),
+                                onCheckedChange = { checked ->
+                                    surplusSelection = if (checked) {
+                                        if (surplusSelection.size < surplusTargetCount) {
+                                            surplusSelection + name
+                                        } else {
+                                            surplusSelection
+                                        }
+                                    } else {
+                                        surplusSelection - name
+                                    }
+                                }
+                            )
+                            Text(
+                                name,
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val selected = surplusSelection
+                        val updated = if (surplusIsModule) {
+                            moduleDiscardedLabels + selected
+                        } else {
+                            rxDiscardedLabels + selected
+                        }
+                        if (surplusIsModule) {
+                            moduleDiscardedLabels = updated
+                            saveDiscardedLabels(moduleDiscardedFile, updated)
+                        } else {
+                            rxDiscardedLabels = updated
+                            saveDiscardedLabels(rxDiscardedFile, updated)
+                        }
+                        surplusNotice = emptyList()
+                        surplusSelection = emptySet()
+                        surplusTargetCount = 0
+                        scope.launch {
+                            if (surplusIsModule) {
+                                val moduleRequired = requiredCounts(moduleAsset.type, isModule = true)
+                                verificationSummaryModule = verifyMeasurementFiles(
+                                    context,
+                                    moduleFiles,
+                                    moduleAsset,
+                                    repository,
+                                    moduleDiscardedLabels,
+                                    expectedDocsisOverride = moduleRequired.expectedDocsis,
+                                    expectedChannelOverride = moduleRequired.expectedChannel
+                                )
+                            } else {
+                                val rxRequired = requiredCounts(asset.type, isModule = false)
+                                verificationSummaryRx = verifyMeasurementFiles(
+                                    context,
+                                    rxFiles,
+                                    asset,
+                                    repository,
+                                    rxDiscardedLabels,
+                                    expectedDocsisOverride = rxRequired.expectedDocsis,
+                                    expectedChannelOverride = rxRequired.expectedChannel
+                                )
+                            }
+                        }
+                    },
+                    enabled = selectedCount == surplusTargetCount
+                ) {
+                    Text("Cerrar")
+                }
             }
         )
     }
