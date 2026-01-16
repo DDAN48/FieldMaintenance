@@ -2064,6 +2064,7 @@ private data class DigitalChannelRow(
     val channel: Int,
     val frequencyMHz: Double?,
     val levelDbmv: Double?,
+    val levelOk: Boolean?,
     val mer: Double?,
     val berPre: Double?,
     val berPost: Double?,
@@ -2299,14 +2300,40 @@ private suspend fun verifyMeasurementFiles(
                 val berPreMax = common?.optJSONObject("berPre")?.optDouble("max", Double.NaN)?.takeIf { !it.isNaN() }
                 val berPostMax = common?.optJSONObject("berPost")?.optDouble("max", Double.NaN)?.takeIf { !it.isNaN() }
                 val icfrMax = common?.optJSONObject("icfr")?.optDouble("max", Double.NaN)?.takeIf { !it.isNaN() }
+                val txTargets = rules?.optJSONObject("channelexpert")
+                    ?.optJSONObject(assetKey)
+                    ?.optJSONObject(equipmentKey)
+                    ?.optJSONObject("txTargets")
+                val txConfig = if (assetType == AssetType.NODE && nodeTxType != null) {
+                    txTargets?.optJSONObject(nodeTxType)
+                } else {
+                    null
+                }
+                val pilotTarget = txConfig?.optDouble("pilotTarget", Double.NaN)
+                val digitalOffset = txTargets?.optDouble("digitalOffset", Double.NaN)
+                val digitalTolerance = txTargets?.optDouble("digitalTolerance", Double.NaN)
+                val digitalTarget = if (pilotTarget != null && !pilotTarget.isNaN() &&
+                    digitalOffset != null && !digitalOffset.isNaN()
+                ) {
+                    pilotTarget + digitalOffset
+                } else {
+                    null
+                }
 
                 val digitalRows = rows.filter { it.channel != null && it.channel in 14..115 }
                     .mapNotNull { row ->
                         val channel = row.channel ?: return@mapNotNull null
+                        val levelOk = if (digitalTarget != null && digitalTolerance != null && !digitalTolerance.isNaN()) {
+                            val adjusted = (row.levelDbmv ?: return@mapNotNull null) + testPointOffset
+                            adjusted >= digitalTarget - digitalTolerance && adjusted <= digitalTarget + digitalTolerance
+                        } else {
+                            null
+                        }
                         DigitalChannelRow(
                             channel = channel,
                             frequencyMHz = row.frequencyMHz,
                             levelDbmv = row.levelDbmv,
+                            levelOk = levelOk,
                             mer = row.merDb,
                             berPre = row.berPre,
                             berPost = row.berPost,
@@ -2945,7 +2972,7 @@ private fun AssetFileSection(
                                             Text(formatDbmv(row.frequencyMHz), modifier = Modifier.weight(1f), style = smallTextStyle)
                                             MeasurementValueCell(
                                                 value = formatDbmv(row.levelDbmv),
-                                                ok = true,
+                                                ok = row.levelOk != false,
                                                 discarded = entry.isDiscarded
                                             )
                                             MeasurementValueCell(
