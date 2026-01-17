@@ -195,12 +195,18 @@ fun AmplifierAdjustmentCard(
     }
 
     fun isWeirdDbmv(v: Double?): Boolean = v != null && (v < -20.0 || v > 80.0)
-    fun maybeTriggerEntradaAlert(canal: String, med: Double?, plan: Double? = null) {
+    fun maybeTriggerEntradaAlert(
+        canal: String,
+        med: Double?,
+        plan: Double? = null,
+        calc: Double? = null
+    ) {
         if (med == null) return
-        val delta = if (plan != null) kotlin.math.abs(med - plan) else null
+        val reference = plan ?: calc
+        val delta = if (reference != null) kotlin.math.abs(med - reference) else null
         val needsAlert = med < 15.0 || (delta != null && delta >= 4.0)
         if (!needsAlert) return
-        val planLabel = plan?.let { CiscoHfcAmpCalculator.format1(it) } ?: "—"
+        val planLabel = reference?.let { CiscoHfcAmpCalculator.format1(it) } ?: "—"
         val diffLabel = delta?.let { CiscoHfcAmpCalculator.format1(it) } ?: "—"
         val message = buildString {
             append("EL nivel medido esta desviado ")
