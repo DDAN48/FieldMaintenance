@@ -121,7 +121,7 @@ fun ShareImportScreen(
                 val reportFolder = MaintenanceStorage.reportFolderName(report.eventName, report.id)
                 val assetDir = MaintenanceStorage.ensureAssetDir(context, reportFolder, resolvedAsset)
                 sharedUris.forEach { uri ->
-                    MaintenanceStorage.copySharedFileToDir(context, uri, assetDir)
+                    MaintenanceStorage.importMeasurementFileToDir(context, uri, assetDir)
                 }
             }
             previousEntry?.savedStateHandle?.remove<String>(PendingMeasurementReportIdKey)
@@ -356,7 +356,7 @@ private fun AssetShareRow(
             scope.launch(Dispatchers.IO) {
                 val assetDir = MaintenanceStorage.ensureAssetDir(context, reportFolder, asset)
                 sharedUris.forEach { uri ->
-                    MaintenanceStorage.copySharedFileToDir(context, uri, assetDir)
+                    MaintenanceStorage.importMeasurementFileToDir(context, uri, assetDir)
                 }
                 val updated = assetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
                 withContext(Dispatchers.Main) {
