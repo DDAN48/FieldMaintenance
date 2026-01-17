@@ -141,7 +141,11 @@ fun ShareImportScreen(
             pendingAssetType = null
             snackbarHostState.showSnackbar("Archivos guardados en $assetLabel")
             onShareHandled()
-            navController.popBackStack()
+            if (!navController.popBackStack()) {
+                navController.navigate(Screen.AddAsset.createRoute(reportId, assetId)) {
+                    launchSingleTop = true
+                }
+            }
         } finally {
             isAutoImporting = false
         }
