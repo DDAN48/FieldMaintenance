@@ -85,9 +85,15 @@ fun ShareImportScreen(
     val scope = rememberCoroutineScope()
     var isAutoImporting by remember { mutableStateOf(false) }
     val previousEntry = navController.previousBackStackEntry
-    val pendingReportId = previousEntry?.savedStateHandle?.get<String>(PendingMeasurementReportIdKey)
-    val pendingAssetId = previousEntry?.savedStateHandle?.get<String>(PendingMeasurementAssetIdKey)
-    val pendingAssetType = previousEntry?.savedStateHandle?.get<String>(PendingMeasurementAssetTypeKey)
+    var pendingReportId by remember {
+        mutableStateOf(previousEntry?.savedStateHandle?.get<String>(PendingMeasurementReportIdKey))
+    }
+    var pendingAssetId by remember {
+        mutableStateOf(previousEntry?.savedStateHandle?.get<String>(PendingMeasurementAssetIdKey))
+    }
+    var pendingAssetType by remember {
+        mutableStateOf(previousEntry?.savedStateHandle?.get<String>(PendingMeasurementAssetTypeKey))
+    }
     val hasPendingAsset = !pendingReportId.isNullOrBlank() && !pendingAssetId.isNullOrBlank()
 
     LaunchedEffect(sharedUris, hasPendingAsset) {
@@ -102,6 +108,9 @@ fun ShareImportScreen(
                 previousEntry?.savedStateHandle?.remove<String>(PendingMeasurementReportIdKey)
                 previousEntry?.savedStateHandle?.remove<String>(PendingMeasurementAssetIdKey)
                 previousEntry?.savedStateHandle?.remove<String>(PendingMeasurementAssetTypeKey)
+                pendingReportId = null
+                pendingAssetId = null
+                pendingAssetType = null
                 return@LaunchedEffect
             }
             val resolvedAsset = if (pendingAssetType == AssetType.AMPLIFIER.name) {
@@ -127,6 +136,9 @@ fun ShareImportScreen(
             previousEntry?.savedStateHandle?.remove<String>(PendingMeasurementReportIdKey)
             previousEntry?.savedStateHandle?.remove<String>(PendingMeasurementAssetIdKey)
             previousEntry?.savedStateHandle?.remove<String>(PendingMeasurementAssetTypeKey)
+            pendingReportId = null
+            pendingAssetId = null
+            pendingAssetType = null
             snackbarHostState.showSnackbar("Archivos guardados en $assetLabel")
             onShareHandled()
             navController.popBackStack()
