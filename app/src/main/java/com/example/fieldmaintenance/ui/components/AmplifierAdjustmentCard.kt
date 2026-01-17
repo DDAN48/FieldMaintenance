@@ -170,7 +170,16 @@ fun AmplifierAdjustmentCard(
     }
 
     val adj = buildAdjustment()
-    val entradaCalc = CiscoHfcAmpCalculator.nivelesEntradaCalculados(adj)
+    val entradaCalc = if (
+        adj.inputCh50Dbmv != null &&
+        adj.inputCh116Dbmv != null &&
+        adj.inputPlanCh50Dbmv != null &&
+        adj.inputPlanHighDbmv != null
+    ) {
+        CiscoHfcAmpCalculator.nivelesEntradaCalculados(adj)
+    } else {
+        null
+    }
     val salidaCalc = CiscoHfcAmpCalculator.nivelesSalidaCalculados(adj)
     val tilt = CiscoHfcAmpCalculator.fwdInEqTilt(adj, bandwidth)
     val pad = CiscoHfcAmpCalculator.fwdInPad(adj, bandwidth, amplifierMode)
@@ -806,7 +815,7 @@ private fun EntradaHeaderRow() {
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text("CANAL", modifier = Modifier.width(60.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
-        Text("RREQ", modifier = Modifier.width(90.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
+        Text("FREQ", modifier = Modifier.width(90.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
         Text("Medido (dBmV)", modifier = Modifier.width(88.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.width(8.dp))
         Text("Plano (dBmV)", modifier = Modifier.width(88.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
