@@ -215,13 +215,7 @@ fun AmplifierAdjustmentCard(
             append(". Revise posibles problemas en la entrada para continuar con los ajustes.")
         }
         val key = "$canal:${med}:${plan}"
-        if (entradaAlert?.key != key) {
-            entradaAlert = EntradaAlert(
-                key = key,
-                title = "Nivel fuera de rango",
-                message = message
-            )
-        }
+
     }
 
     // Outer "frame" for the whole module (visual border)
