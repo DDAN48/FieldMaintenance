@@ -38,8 +38,14 @@ import com.example.fieldmaintenance.util.DatabaseProvider
 import com.example.fieldmaintenance.util.EmailManager
 import com.example.fieldmaintenance.util.ExportManager
 import com.example.fieldmaintenance.util.MaintenanceStorage
+import com.example.fieldmaintenance.util.countMeasurements
+import com.example.fieldmaintenance.util.loadDiscardedLabels
+import com.example.fieldmaintenance.util.meetsRequired
+import com.example.fieldmaintenance.util.requiredCounts
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.saveable.rememberSaveable
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlin.math.abs
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -108,17 +114,41 @@ fun AssetSummaryScreen(navController: NavController, reportId: String) {
                     val nodeAdjustment by repository.getNodeAdjustment(asset.id).collectAsState(initial = null)
                     val amplifierAdjustment by repository.getAmplifierAdjustment(asset.id).collectAsState(initial = null)
                     val reportFolder = MaintenanceStorage.reportFolderName(report?.eventName, reportId)
-                    val measurementCount = remember(asset, reportFolder) {
-                        MaintenanceStorage.ensureAssetDir(context, reportFolder, asset)
-                            .listFiles()
-                            ?.count { it.isFile } ?: 0
+                    data class MeasurementCompletion(val rxComplete: Boolean, val moduleComplete: Boolean) {
+                        val isComplete: Boolean
+                            get() = rxComplete && moduleComplete
+                    }
+                    val measurementCompletion by produceState<MeasurementCompletion?>(
+                        initialValue = null,
+                        key1 = asset,
+                        key2 = reportFolder
+                    ) {
+                        value = withContext(Dispatchers.IO) {
+                            val rxDir = MaintenanceStorage.ensureAssetDir(context, reportFolder, asset)
+                            val rxDiscarded = loadDiscardedLabels(java.io.File(rxDir, ".discarded_measurements.txt"))
+                            val rxCounts = countMeasurements(rxDir.listFiles()?.toList().orEmpty(), rxDiscarded)
+                            val rxRequired = requiredCounts(asset.type, isModule = false)
+                            val rxOk = meetsRequired(rxCounts, rxRequired)
+
+                            val moduleOk = if (asset.type == AssetType.NODE) {
+                                val moduleAsset = asset.copy(type = AssetType.AMPLIFIER)
+                                val moduleDir = MaintenanceStorage.ensureAssetDir(context, reportFolder, moduleAsset)
+                                val moduleDiscarded = loadDiscardedLabels(java.io.File(moduleDir, ".discarded_measurements.txt"))
+                                val moduleCounts = countMeasurements(moduleDir.listFiles()?.toList().orEmpty(), moduleDiscarded)
+                                val moduleRequired = requiredCounts(moduleAsset.type, isModule = true)
+                                meetsRequired(moduleCounts, moduleRequired)
+                            } else {
+                                true
+                            }
+                            MeasurementCompletion(rxOk, moduleOk)
+                        }
                     }
                     val hasMissingData = remember(
                         asset,
                         photos,
                         nodeAdjustment,
                         amplifierAdjustment,
-                        measurementCount
+                        measurementCompletion
                     ) {
                         val techNormalized = asset.technology?.trim()?.lowercase() ?: ""
                         val moduleCount = photos.count { it.photoType == PhotoType.MODULE }
@@ -183,7 +213,7 @@ fun AssetSummaryScreen(navController: NavController, reportId: String) {
                                 adj.outCh136Dbmv != null
                         }
 
-                        val measurementsOk = measurementCount > 0
+                        val measurementsOk = measurementCompletion?.isComplete ?: false
                         !(moduleOk && opticsOk && nodeAdjOk && ampAdjOk && measurementsOk)
                     }
 
