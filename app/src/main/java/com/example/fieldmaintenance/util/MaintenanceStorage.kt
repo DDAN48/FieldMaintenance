@@ -7,10 +7,12 @@ import android.os.Environment
 import android.provider.OpenableColumns
 import com.example.fieldmaintenance.data.model.Asset
 import com.example.fieldmaintenance.data.model.AssetType
+import java.io.BufferedInputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.text.Normalizer
 import java.util.Locale
+import java.util.zip.ZipInputStream
 
 object MaintenanceStorage {
     private const val BASE_FOLDER = "FieldMaintenance"
@@ -65,6 +67,36 @@ object MaintenanceStorage {
             }
         } ?: return null
         return targetFile
+    }
+
+    fun importMeasurementsFromUri(context: Context, uri: Uri, targetDir: File): List<File> {
+        targetDir.mkdirs()
+        val displayName = queryDisplayName(context, uri)
+        val imported = mutableListOf<File>()
+        if (!isZipUri(context, uri, displayName)) {
+            copySharedFileToDir(context, uri, targetDir, displayName)?.let { imported.add(it) }
+            return imported
+        }
+        context.contentResolver.openInputStream(uri)?.use { input ->
+            ZipInputStream(BufferedInputStream(input)).use { zipStream ->
+                var entry = zipStream.nextEntry
+                while (entry != null) {
+                    if (!entry.isDirectory) {
+                        val entryName = File(entry.name).name
+                        if (entryName.isNotBlank()) {
+                            val targetFile = uniqueFile(targetDir, entryName)
+                            FileOutputStream(targetFile).use { output ->
+                                zipStream.copyTo(output)
+                            }
+                            imported.add(targetFile)
+                        }
+                    }
+                    zipStream.closeEntry()
+                    entry = zipStream.nextEntry
+                }
+            }
+        }
+        return imported
     }
 
     fun moveMeasurementFileToTrash(context: Context, source: File): File? {
@@ -134,6 +166,12 @@ object MaintenanceStorage {
             }
         }
         return null
+    }
+
+    private fun isZipUri(context: Context, uri: Uri, displayName: String?): Boolean {
+        val nameMatches = displayName?.lowercase(Locale.ROOT)?.endsWith(".zip") == true
+        val type = context.contentResolver.getType(uri)?.lowercase(Locale.ROOT)
+        return nameMatches || type == "application/zip" || type == "application/x-zip-compressed"
     }
 
     private fun uniqueFile(dir: File, fileName: String): File {
