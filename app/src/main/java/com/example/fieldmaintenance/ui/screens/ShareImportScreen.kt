@@ -137,7 +137,11 @@ fun ShareImportScreen(
                 previousEntry?.savedStateHandle?.remove<String>(PendingMeasurementAssetIdKey)
                 previousEntry?.savedStateHandle?.remove<String>(PendingMeasurementAssetTypeKey)
                 pendingStore.clear()
-                snackbarHostState.showSnackbar("Archivos guardados en $assetLabel")
+                Toast.makeText(
+                    context,
+                    "Archivos guardados en $assetLabel",
+                    Toast.LENGTH_SHORT
+                ).show()
                 onShareHandled()
                 navController.navigate(Screen.AddAsset.createRoute(reportId, assetId)) {
                     launchSingleTop = true
