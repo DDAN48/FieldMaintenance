@@ -63,6 +63,7 @@ import com.example.fieldmaintenance.data.model.AssetType
 import com.example.fieldmaintenance.data.model.MaintenanceReport
 import com.example.fieldmaintenance.ui.navigation.PendingMeasurementAssetIdKey
 import com.example.fieldmaintenance.ui.navigation.PendingMeasurementReportIdKey
+import com.example.fieldmaintenance.ui.navigation.PendingMeasurementAssetTypeKey
 import com.example.fieldmaintenance.ui.navigation.Screen
 import com.example.fieldmaintenance.util.DatabaseProvider
 import com.example.fieldmaintenance.util.MaintenanceStorage
@@ -84,8 +85,15 @@ fun ShareImportScreen(
     val scope = rememberCoroutineScope()
     var isAutoImporting by remember { mutableStateOf(false) }
     val previousEntry = navController.previousBackStackEntry
-    val pendingReportId = previousEntry?.savedStateHandle?.get<String>(PendingMeasurementReportIdKey)
-    val pendingAssetId = previousEntry?.savedStateHandle?.get<String>(PendingMeasurementAssetIdKey)
+    var pendingReportId by remember {
+        mutableStateOf(previousEntry?.savedStateHandle?.get<String>(PendingMeasurementReportIdKey))
+    }
+    var pendingAssetId by remember {
+        mutableStateOf(previousEntry?.savedStateHandle?.get<String>(PendingMeasurementAssetIdKey))
+    }
+    var pendingAssetType by remember {
+        mutableStateOf(previousEntry?.savedStateHandle?.get<String>(PendingMeasurementAssetTypeKey))
+    }
     val hasPendingAsset = !pendingReportId.isNullOrBlank() && !pendingAssetId.isNullOrBlank()
 
     LaunchedEffect(sharedUris, hasPendingAsset) {
@@ -99,9 +107,18 @@ fun ShareImportScreen(
             if (report == null || asset == null) {
                 previousEntry?.savedStateHandle?.remove<String>(PendingMeasurementReportIdKey)
                 previousEntry?.savedStateHandle?.remove<String>(PendingMeasurementAssetIdKey)
+                previousEntry?.savedStateHandle?.remove<String>(PendingMeasurementAssetTypeKey)
+                pendingReportId = null
+                pendingAssetId = null
+                pendingAssetType = null
                 return@LaunchedEffect
             }
-            val assetLabel = when (asset.type) {
+            val resolvedAsset = if (pendingAssetType == AssetType.AMPLIFIER.name) {
+                asset.copy(type = AssetType.AMPLIFIER)
+            } else {
+                asset
+            }
+            val assetLabel = when (resolvedAsset.type) {
                 AssetType.NODE -> "Nodo"
                 AssetType.AMPLIFIER -> {
                     val portName = asset.port?.name ?: ""
@@ -111,105 +128,30 @@ fun ShareImportScreen(
             }
             withContext(Dispatchers.IO) {
                 val reportFolder = MaintenanceStorage.reportFolderName(report.eventName, report.id)
-                val assetDir = MaintenanceStorage.ensureAssetDir(context, reportFolder, asset)
+                val assetDir = MaintenanceStorage.ensureAssetDir(context, reportFolder, resolvedAsset)
                 sharedUris.forEach { uri ->
                     MaintenanceStorage.copySharedFileToDir(context, uri, assetDir)
                 }
             }
             previousEntry?.savedStateHandle?.remove<String>(PendingMeasurementReportIdKey)
             previousEntry?.savedStateHandle?.remove<String>(PendingMeasurementAssetIdKey)
+            previousEntry?.savedStateHandle?.remove<String>(PendingMeasurementAssetTypeKey)
+            pendingReportId = null
+            pendingAssetId = null
+            pendingAssetType = null
             snackbarHostState.showSnackbar("Archivos guardados en $assetLabel")
             onShareHandled()
-            navController.popBackStack()
+            navController.navigate(Screen.AddAsset.createRoute(reportId, assetId)) {
+                launchSingleTop = true
+                popUpTo(Screen.ShareImport.route) { inclusive = true }
+            }
         } finally {
             isAutoImporting = false
         }
     }
 
-    Scaffold(
-        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
-        topBar = {
-            TopAppBar(
-                title = { Text("Importar Mediciones") },
-                navigationIcon = {
-                    IconButton(onClick = {
-                        onShareHandled()
-                        navController.popBackStack(Screen.Home.route, inclusive = false)
-                    }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Atrás")
-                    }
-                },
-                actions = {
-                    IconButton(onClick = {
-                        onShareHandled()
-                        navController.navigate(Screen.Home.route)
-                    }) {
-                        Icon(Icons.Default.Home, contentDescription = "Inicio")
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimary
-                )
-            )
-        }
-    ) { paddingValues ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(16.dp)
-            ) {
-            Spacer(modifier = Modifier.height(12.dp))
-
-                if (reports.isEmpty()) {
-                    Text("No hay mantenimientos creados todavía.")
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Button(onClick = { navController.navigate(Screen.Home.route) }) {
-                        Text("Crear mantenimiento")
-                    }
-                    return@Box
-                }
-
-                Text(
-                    text = if (sharedUris.isEmpty()) {
-                        "Seleccione un mantenimiento para ver las mediciones."
-                    } else {
-                        "Seleccione una carpeta para guardar las mediciones."
-                    },
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-
-                LazyColumn(
-                    contentPadding = PaddingValues(bottom = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    items(reports) { report ->
-                        ReportShareCard(
-                            report = report,
-                            sharedUris = sharedUris,
-                            context = context,
-                            autoReturn = hasPendingAsset,
-                            onImportFinished = {
-                                onShareHandled()
-                                if (!navController.popBackStack()) {
-                                    navController.navigate(Screen.Home.route)
-                                }
-                            },
-                            onShowMessage = { message ->
-                                scope.launch { snackbarHostState.showSnackbar(message) }
-                            }
-                        )
-                    }
-                }
-            }
-
+    if (hasPendingAsset) {
+        Box(modifier = Modifier.fillMaxSize()) {
             if (isAutoImporting) {
                 Box(
                     modifier = Modifier
@@ -231,6 +173,117 @@ fun ShareImportScreen(
                             color = Color.White,
                             style = MaterialTheme.typography.bodyMedium
                         )
+                    }
+                }
+            }
+        }
+    } else {
+        Scaffold(
+            snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
+            topBar = {
+                TopAppBar(
+                    title = { Text("Importar Mediciones") },
+                    navigationIcon = {
+                        IconButton(onClick = {
+                            onShareHandled()
+                            navController.popBackStack(Screen.Home.route, inclusive = false)
+                        }) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Atrás")
+                        }
+                    },
+                    actions = {
+                        IconButton(onClick = {
+                            onShareHandled()
+                            navController.navigate(Screen.Home.route)
+                        }) {
+                            Icon(Icons.Default.Home, contentDescription = "Inicio")
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        titleContentColor = MaterialTheme.colorScheme.onPrimary
+                    )
+                )
+            }
+        ) { paddingValues ->
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(16.dp)
+                ) {
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    if (reports.isEmpty()) {
+                        Text("No hay mantenimientos creados todavía.")
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Button(onClick = { navController.navigate(Screen.Home.route) }) {
+                            Text("Crear mantenimiento")
+                        }
+                        return@Box
+                    }
+
+                    Text(
+                        text = if (sharedUris.isEmpty()) {
+                            "Seleccione un mantenimiento para ver las mediciones."
+                        } else {
+                            "Seleccione una carpeta para guardar las mediciones."
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    LazyColumn(
+                        contentPadding = PaddingValues(bottom = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        items(reports) { report ->
+                            ReportShareCard(
+                                report = report,
+                                sharedUris = sharedUris,
+                                context = context,
+                                autoReturn = hasPendingAsset,
+                                onImportFinished = {
+                                    onShareHandled()
+                                    if (!navController.popBackStack()) {
+                                        navController.navigate(Screen.Home.route)
+                                    }
+                                },
+                                onShowMessage = { message ->
+                                    scope.launch { snackbarHostState.showSnackbar(message) }
+                                }
+                            )
+                        }
+                    }
+                }
+
+                if (isAutoImporting) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = 0.5f))
+                            .clickable(
+                                indication = null,
+                                interactionSource = remember { MutableInteractionSource() }
+                            ) {},
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            CircularProgressIndicator(color = Color.White)
+                            Text(
+                                text = "Subiendo mediciones...",
+                                color = Color.White,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
                     }
                 }
             }
