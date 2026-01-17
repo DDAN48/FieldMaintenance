@@ -79,6 +79,7 @@ fun AmplifierAdjustmentCard(
     var salidaCalcExpanded by rememberSaveable(assetId) { mutableStateOf(true) }
     var compareExpanded by rememberSaveable(assetId) { mutableStateOf(true) }
     var recoExpanded by rememberSaveable(assetId) { mutableStateOf(true) }
+    var entradaAlert by remember(assetId) { mutableStateOf<EntradaAlert?>(null) }
 
     var dirty by rememberSaveable(assetId) { mutableStateOf(false) }
 
@@ -186,6 +187,32 @@ fun AmplifierAdjustmentCard(
     val agc = CiscoHfcAmpCalculator.agcPad(adj, bandwidth, amplifierMode)
 
     fun isWeirdDbmv(v: Double?): Boolean = v != null && (v < -20.0 || v > 80.0)
+    fun maybeTriggerEntradaAlert(canal: String, med: Double?, calc: Double?) {
+        if (med == null) return
+        val delta = if (calc != null) kotlin.math.abs(med - calc) else null
+        val needsAlert = med < 15.0 || (delta != null && delta >= 4.0)
+        if (!needsAlert) return
+        val message = buildString {
+            append("Nivel medido ")
+            append(CiscoHfcAmpCalculator.format1(med))
+            append(" dBmV")
+            if (calc != null) {
+                append(" (calculado ")
+                append(CiscoHfcAmpCalculator.format1(calc))
+                append(" dBmV).")
+            } else {
+                append(".")
+            }
+        }
+        val key = "$canal:${med}:${calc}"
+        if (entradaAlert?.key != key) {
+            entradaAlert = EntradaAlert(
+                key = key,
+                title = "Nivel fuera de rango",
+                message = message
+            )
+        }
+    }
 
     // Outer "frame" for the whole module (visual border)
     Card(
@@ -247,6 +274,13 @@ fun AmplifierAdjustmentCard(
                         onMedidoChange = { dirty = true; inCh50 = it },
                         onPlanChange = { dirty = true; inPlanCh50 = it }
                     )
+                    LaunchedEffect(inCh50, entradaCalc) {
+                        maybeTriggerEntradaAlert(
+                            canal = "CH50",
+                            med = parseDbmv(inCh50),
+                            calc = entradaCalc?.get("CH50")
+                        )
+                    }
                     val highFreq = inHighFreq ?: 750
                     val highCanal = if (highFreq == 870) "CH136" else "CH116"
                     EntradaRowWithFreqSelector(
@@ -260,6 +294,14 @@ fun AmplifierAdjustmentCard(
                         onMedidoChange = { dirty = true; inHigh = it },
                         onPlanChange = { dirty = true; inPlanHigh = it }
                     )
+                    LaunchedEffect(inHigh, inHighFreq, entradaCalc) {
+                        val canalKey = if (inHighFreq == 870) "CH136" else "CH116"
+                        maybeTriggerEntradaAlert(
+                            canal = canalKey,
+                            med = parseDbmv(inHigh),
+                            calc = entradaCalc?.get(canalKey)
+                        )
+                    }
 
                     Spacer(Modifier.height(10.dp))
                     // Calculated list (no extra title; CALC column already indicates)
@@ -422,7 +464,23 @@ fun AmplifierAdjustmentCard(
             }
         }
     }
+    entradaAlert?.let { alert ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { entradaAlert = null },
+            title = { Text(alert.title) },
+            text = { Text(alert.message) },
+            confirmButton = {
+                TextButton(onClick = { entradaAlert = null }) { Text("Aceptar") }
+            }
+        )
+    }
 }
+
+private data class EntradaAlert(
+    val key: String,
+    val title: String,
+    val message: String
+)
 
 @Composable
 private fun SectionTitle(text: String) {
