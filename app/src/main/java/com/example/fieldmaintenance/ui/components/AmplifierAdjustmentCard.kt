@@ -43,7 +43,6 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -283,13 +282,7 @@ fun AmplifierAdjustmentCard(
                         planValue = inPlanCh50,
                         isError = showRequiredErrors && parseDbmv(inCh50) == null,
                         onMedidoChange = { dirty = true; inCh50 = it },
-                        onPlanChange = { dirty = true; inPlanCh50 = it },
-                        onMedidoBlur = {
-                            maybeTriggerEntradaAlert("CH50", parseDbmv(inCh50), parseDbmv(inPlanCh50))
-                        },
-                        onPlanBlur = {
-                            maybeTriggerEntradaAlert("CH50", parseDbmv(inCh50), parseDbmv(inPlanCh50))
-                        }
+                        onPlanChange = { dirty = true; inPlanCh50 = it }
                     )
                     LaunchedEffect(inCh50, entradaCalc) {
                         maybeTriggerEntradaAlert(
@@ -309,13 +302,7 @@ fun AmplifierAdjustmentCard(
                         planValue = inPlanHigh,
                         isError = showRequiredErrors && parseDbmv(inHigh) == null,
                         onMedidoChange = { dirty = true; inHigh = it },
-                        onPlanChange = { dirty = true; inPlanHigh = it },
-                        onMedidoBlur = {
-                            maybeTriggerEntradaAlert(highCanal, parseDbmv(inHigh), parseDbmv(inPlanHigh))
-                        },
-                        onPlanBlur = {
-                            maybeTriggerEntradaAlert(highCanal, parseDbmv(inHigh), parseDbmv(inPlanHigh))
-                        }
+                        onPlanChange = { dirty = true; inPlanHigh = it }
                     )
                     LaunchedEffect(inHigh, inHighFreq, entradaCalc) {
                         val canalKey = if (inHighFreq == 870) "CH136" else "CH116"
@@ -350,7 +337,7 @@ fun AmplifierAdjustmentCard(
                 ) {
                     if (!entradaValid) {
                         Text(
-                            "Complete mediciones de entrada válidas para continuar.",
+                            "Complete mediciones de entrada válidas para continuar. La diferencia entre el nivel de entrada y medido aceptable es menor a 4. Nivel minimo de entrada permitido es 15 dBmV si esta indicado por plano.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.error
                         )
@@ -437,7 +424,7 @@ fun AmplifierAdjustmentCard(
                 ) {
                     if (!entradaValid) {
                         Text(
-                            "Complete mediciones de entrada válidas para continuar.",
+                            "Complete mediciones de entrada válidas para continuar. La diferencia entre el nivel de entrada y medido aceptable es menor a 4. Nivel minimo de entrada permitido es 15 dBmV si esta indicado por plano.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.error
                         )
@@ -494,7 +481,7 @@ fun AmplifierAdjustmentCard(
                 ) {
                     if (!entradaValid) {
                         Text(
-                            "Complete mediciones de entrada válidas para continuar.",
+                            "Complete mediciones de entrada válidas para continuar. La diferencia entre el nivel de entrada y medido aceptable es menor a 4. Nivel minimo de entrada permitido es 15 dBmV si esta indicado por plano.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.error
                         )
@@ -543,8 +530,7 @@ private fun DbmvField(
     compact: Boolean = false,
     compactHeight: Dp = 36.dp,
     textColor: Color? = null,
-    onChange: (String) -> Unit,
-    onFocusLost: (() -> Unit)? = null
+    onChange: (String) -> Unit
 ) {
     var wasFocused by remember { mutableStateOf(false) }
     if (!compact) {
@@ -587,14 +573,7 @@ private fun DbmvField(
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     textStyle = MaterialTheme.typography.bodyMedium.copy(color = textColor ?: MaterialTheme.colorScheme.onSurface),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .onFocusChanged { state ->
-                            if (wasFocused && !state.isFocused) {
-                                onFocusLost?.invoke()
-                            }
-                            wasFocused = state.isFocused
-                        }
+                    modifier = Modifier.fillMaxWidth()
                 )
             }
         }
@@ -688,9 +667,7 @@ private fun EntradaRowPlan(
     planValue: String,
     isError: Boolean,
     onMedidoChange: (String) -> Unit,
-    onPlanChange: (String) -> Unit,
-    onMedidoBlur: () -> Unit,
-    onPlanBlur: () -> Unit
+    onPlanChange: (String) -> Unit
 ) {
     val med = medidoValue.trim().takeIf { it.isNotBlank() }?.replace(',', '.')?.toDoubleOrNull()
     val plan = planValue.trim().takeIf { it.isNotBlank() }?.replace(',', '.')?.toDoubleOrNull()
@@ -712,8 +689,7 @@ private fun EntradaRowPlan(
             compact = true,
             isError = isError,
             textColor = medColor,
-            onChange = onMedidoChange,
-            onFocusLost = onMedidoBlur
+            onChange = onMedidoChange
         )
         Spacer(Modifier.width(8.dp))
         DbmvField(
@@ -723,8 +699,7 @@ private fun EntradaRowPlan(
             compact = true,
             isError = false,
             textColor = MaterialTheme.colorScheme.onSurface,
-            onChange = onPlanChange,
-            onFocusLost = onPlanBlur
+            onChange = onPlanChange
         )
     }
     HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
@@ -740,9 +715,7 @@ private fun EntradaRowWithFreqSelector(
     planValue: String,
     isError: Boolean,
     onMedidoChange: (String) -> Unit,
-    onPlanChange: (String) -> Unit,
-    onMedidoBlur: () -> Unit,
-    onPlanBlur: () -> Unit
+    onPlanChange: (String) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
     val med = medidoValue.trim().takeIf { it.isNotBlank() }?.replace(',', '.')?.toDoubleOrNull()
@@ -794,8 +767,7 @@ private fun EntradaRowWithFreqSelector(
             compact = true,
             isError = isError,
             textColor = medColor,
-            onChange = onMedidoChange,
-            onFocusLost = onMedidoBlur
+            onChange = onMedidoChange
         )
         Spacer(Modifier.width(8.dp))
         DbmvField(
@@ -805,8 +777,7 @@ private fun EntradaRowWithFreqSelector(
             compact = true,
             isError = false,
             textColor = MaterialTheme.colorScheme.onSurface,
-            onChange = onPlanChange,
-            onFocusLost = onPlanBlur
+            onChange = onPlanChange
         )
     }
     HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
