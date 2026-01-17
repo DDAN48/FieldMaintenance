@@ -428,6 +428,7 @@ private fun DbmvField(
     isError: Boolean = false,
     compact: Boolean = false,
     compactHeight: Dp = 36.dp,
+    textColor: Color? = null,
     onChange: (String) -> Unit
 ) {
     if (!compact) {
@@ -439,7 +440,7 @@ private fun DbmvField(
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
             singleLine = true,
             isError = isError,
-            textStyle = MaterialTheme.typography.bodyLarge
+            textStyle = MaterialTheme.typography.bodyLarge.copy(color = textColor ?: MaterialTheme.colorScheme.onSurface)
         )
         return
     }
@@ -469,7 +470,7 @@ private fun DbmvField(
                     onValueChange = onChange,
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = textColor ?: MaterialTheme.colorScheme.onSurface),
                     modifier = Modifier.fillMaxWidth()
                 )
             }
@@ -568,14 +569,9 @@ private fun EntradaRowPlan(
 ) {
     val med = medidoValue.trim().takeIf { it.isNotBlank() }?.replace(',', '.')?.toDoubleOrNull()
     val plan = planValue.trim().takeIf { it.isNotBlank() }?.replace(',', '.')?.toDoubleOrNull()
-    val diff = if (med != null && plan != null) med - plan else null
-    val absDiff = diff?.let { kotlin.math.abs(it) }
-    val diffLabel = diff?.let { CiscoHfcAmpCalculator.format1(it) } ?: "—"
-    val diffColor = when {
-        diff == null -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-        absDiff != null && absDiff >= 2.0 -> MaterialTheme.colorScheme.error
-        else -> Color(0xFF2E7D32)
-    }
+    val absDiff = if (med != null && plan != null) kotlin.math.abs(med - plan) else null
+    val needsAttention = (absDiff != null && absDiff >= 2.0) || (med != null && med < 15.0)
+    val medColor = if (needsAttention) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -587,27 +583,21 @@ private fun EntradaRowPlan(
         DbmvField(
             label = "",
             value = medidoValue,
-            modifier = Modifier.width(92.dp),
+            modifier = Modifier.width(88.dp),
             compact = true,
             isError = isError,
+            textColor = medColor,
             onChange = onMedidoChange
         )
         Spacer(Modifier.width(8.dp))
         DbmvField(
             label = "",
             value = planValue,
-            modifier = Modifier.width(92.dp),
+            modifier = Modifier.width(88.dp),
             compact = true,
             isError = false,
+            textColor = MaterialTheme.colorScheme.onSurface,
             onChange = onPlanChange
-        )
-        Spacer(Modifier.width(8.dp))
-        Text(
-            "${if (diff != null && diff >= 0) "+" else ""}$diffLabel",
-            modifier = Modifier.width(44.dp),
-            textAlign = TextAlign.End,
-            color = diffColor,
-            fontWeight = FontWeight.SemiBold
         )
     }
     HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
@@ -628,14 +618,9 @@ private fun EntradaRowWithFreqSelector(
     var expanded by remember { mutableStateOf(false) }
     val med = medidoValue.trim().takeIf { it.isNotBlank() }?.replace(',', '.')?.toDoubleOrNull()
     val plan = planValue.trim().takeIf { it.isNotBlank() }?.replace(',', '.')?.toDoubleOrNull()
-    val diff = if (med != null && plan != null) med - plan else null
-    val absDiff = diff?.let { kotlin.math.abs(it) }
-    val diffLabel = diff?.let { CiscoHfcAmpCalculator.format1(it) } ?: "—"
-    val diffColor = when {
-        diff == null -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-        absDiff != null && absDiff >= 2.0 -> MaterialTheme.colorScheme.error
-        else -> Color(0xFF2E7D32)
-    }
+    val absDiff = if (med != null && plan != null) kotlin.math.abs(med - plan) else null
+    val needsAttention = (absDiff != null && absDiff >= 2.0) || (med != null && med < 15.0)
+    val medColor = if (needsAttention) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
 
     Row(
         modifier = Modifier
@@ -676,27 +661,21 @@ private fun EntradaRowWithFreqSelector(
         DbmvField(
             label = "",
             value = medidoValue,
-            modifier = Modifier.width(92.dp),
+            modifier = Modifier.width(88.dp),
             compact = true,
             isError = isError,
+            textColor = medColor,
             onChange = onMedidoChange
         )
         Spacer(Modifier.width(8.dp))
         DbmvField(
             label = "",
             value = planValue,
-            modifier = Modifier.width(92.dp),
+            modifier = Modifier.width(88.dp),
             compact = true,
             isError = false,
+            textColor = MaterialTheme.colorScheme.onSurface,
             onChange = onPlanChange
-        )
-        Spacer(Modifier.width(8.dp))
-        Text(
-            "${if (diff != null && diff >= 0) "+" else ""}$diffLabel",
-            modifier = Modifier.width(44.dp),
-            textAlign = TextAlign.End,
-            color = diffColor,
-            fontWeight = FontWeight.SemiBold
         )
     }
     HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
@@ -827,12 +806,10 @@ private fun EntradaHeaderRow() {
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text("CANAL", modifier = Modifier.width(60.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
-        Text("FRECUENCIA", modifier = Modifier.width(90.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
-        Text("AMPLITUD", modifier = Modifier.width(92.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
+        Text("RREQ", modifier = Modifier.width(90.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
+        Text("Medido (dBmV)", modifier = Modifier.width(88.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.width(8.dp))
-        Text("PLANO", modifier = Modifier.width(92.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
-        Spacer(Modifier.width(8.dp))
-        Text("DIF", modifier = Modifier.width(44.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.End)
+        Text("Plano (dBmV)", modifier = Modifier.width(88.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
     }
     Spacer(Modifier.height(6.dp))
 }
