@@ -43,6 +43,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.font.FontWeight
@@ -185,26 +186,32 @@ fun AmplifierAdjustmentCard(
     val tilt = CiscoHfcAmpCalculator.fwdInEqTilt(adj, bandwidth)
     val pad = CiscoHfcAmpCalculator.fwdInPad(adj, bandwidth, amplifierMode)
     val agc = CiscoHfcAmpCalculator.agcPad(adj, bandwidth, amplifierMode)
+    val entradaValid = run {
+        val ch50Med = parseDbmv(inCh50)
+        val ch50Plan = parseDbmv(inPlanCh50)
+        val highMed = parseDbmv(inHigh)
+        val highPlan = parseDbmv(inPlanHigh)
+        val ch50Ok = ch50Med != null && ch50Plan != null && ch50Med >= 15.0 && kotlin.math.abs(ch50Med - ch50Plan) < 4.0
+        val highOk = highMed != null && highPlan != null && highMed >= 15.0 && kotlin.math.abs(highMed - highPlan) < 4.0
+        ch50Ok && highOk
+    }
 
     fun isWeirdDbmv(v: Double?): Boolean = v != null && (v < -20.0 || v > 80.0)
-    fun maybeTriggerEntradaAlert(canal: String, med: Double?, calc: Double?) {
+    fun maybeTriggerEntradaAlert(canal: String, med: Double?, plan: Double?) {
         if (med == null) return
-        val delta = if (calc != null) kotlin.math.abs(med - calc) else null
+        val delta = if (plan != null) kotlin.math.abs(med - plan) else null
         val needsAlert = med < 15.0 || (delta != null && delta >= 4.0)
         if (!needsAlert) return
+        val planLabel = plan?.let { CiscoHfcAmpCalculator.format1(it) } ?: "—"
+        val diffLabel = delta?.let { CiscoHfcAmpCalculator.format1(it) } ?: "—"
         val message = buildString {
-            append("Nivel medido ")
-            append(CiscoHfcAmpCalculator.format1(med))
-            append(" dBmV")
-            if (calc != null) {
-                append(" (calculado ")
-                append(CiscoHfcAmpCalculator.format1(calc))
-                append(" dBmV).")
-            } else {
-                append(".")
-            }
+            append("EL nivel medido esta desviado ")
+            append(diffLabel)
+            append(" con respecto a los niveles del plano ")
+            append(planLabel)
+            append(". Revise posibles problemas en la entrada para continuar con los ajustes.")
         }
-        val key = "$canal:${med}:${calc}"
+        val key = "$canal:${med}:${plan}"
         if (entradaAlert?.key != key) {
             entradaAlert = EntradaAlert(
                 key = key,
@@ -272,7 +279,13 @@ fun AmplifierAdjustmentCard(
                         planValue = inPlanCh50,
                         isError = showRequiredErrors && parseDbmv(inCh50) == null,
                         onMedidoChange = { dirty = true; inCh50 = it },
-                        onPlanChange = { dirty = true; inPlanCh50 = it }
+                        onPlanChange = { dirty = true; inPlanCh50 = it },
+                        onMedidoBlur = {
+                            maybeTriggerEntradaAlert("CH50", parseDbmv(inCh50), parseDbmv(inPlanCh50))
+                        },
+                        onPlanBlur = {
+                            maybeTriggerEntradaAlert("CH50", parseDbmv(inCh50), parseDbmv(inPlanCh50))
+                        }
                     )
                     LaunchedEffect(inCh50, entradaCalc) {
                         maybeTriggerEntradaAlert(
@@ -292,7 +305,13 @@ fun AmplifierAdjustmentCard(
                         planValue = inPlanHigh,
                         isError = showRequiredErrors && parseDbmv(inHigh) == null,
                         onMedidoChange = { dirty = true; inHigh = it },
-                        onPlanChange = { dirty = true; inPlanHigh = it }
+                        onPlanChange = { dirty = true; inPlanHigh = it },
+                        onMedidoBlur = {
+                            maybeTriggerEntradaAlert(highCanal, parseDbmv(inHigh), parseDbmv(inPlanHigh))
+                        },
+                        onPlanBlur = {
+                            maybeTriggerEntradaAlert(highCanal, parseDbmv(inHigh), parseDbmv(inPlanHigh))
+                        }
                     )
                     LaunchedEffect(inHigh, inHighFreq, entradaCalc) {
                         val canalKey = if (inHighFreq == 870) "CH136" else "CH116"
@@ -325,6 +344,14 @@ fun AmplifierAdjustmentCard(
                     expanded = salidaPlanoExpanded,
                     onToggle = { salidaPlanoExpanded = !salidaPlanoExpanded }
                 ) {
+                    if (!entradaValid) {
+                        Text(
+                            "Complete mediciones de entrada válidas para continuar.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                        return@CollapsibleSection
+                    }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -404,6 +431,14 @@ fun AmplifierAdjustmentCard(
                     expanded = compareExpanded,
                     onToggle = { compareExpanded = !compareExpanded }
                 ) {
+                    if (!entradaValid) {
+                        Text(
+                            "Complete mediciones de entrada válidas para continuar.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                        return@CollapsibleSection
+                    }
                     CompareHeaderRow()
                     CompareRow(
                         canal = "CH50",
@@ -453,6 +488,14 @@ fun AmplifierAdjustmentCard(
                     expanded = recoExpanded,
                     onToggle = { recoExpanded = !recoExpanded }
                 ) {
+                    if (!entradaValid) {
+                        Text(
+                            "Complete mediciones de entrada válidas para continuar.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                        return@CollapsibleSection
+                    }
                     RecommendationLine("FWD IN PAD", pad)
                     RecommendationLine(
                         label = if (tilt != null && tilt > 0) "FWD IN invEQ (TILT)" else "FWD IN EQ (TILT)",
@@ -496,8 +539,10 @@ private fun DbmvField(
     compact: Boolean = false,
     compactHeight: Dp = 36.dp,
     textColor: Color? = null,
-    onChange: (String) -> Unit
+    onChange: (String) -> Unit,
+    onFocusLost: (() -> Unit)? = null
 ) {
+    var wasFocused by remember { mutableStateOf(false) }
     if (!compact) {
         OutlinedTextField(
             value = value,
@@ -538,7 +583,14 @@ private fun DbmvField(
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     textStyle = MaterialTheme.typography.bodyMedium.copy(color = textColor ?: MaterialTheme.colorScheme.onSurface),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .onFocusChanged { state ->
+                            if (wasFocused && !state.isFocused) {
+                                onFocusLost?.invoke()
+                            }
+                            wasFocused = state.isFocused
+                        }
                 )
             }
         }
@@ -632,7 +684,9 @@ private fun EntradaRowPlan(
     planValue: String,
     isError: Boolean,
     onMedidoChange: (String) -> Unit,
-    onPlanChange: (String) -> Unit
+    onPlanChange: (String) -> Unit,
+    onMedidoBlur: () -> Unit,
+    onPlanBlur: () -> Unit
 ) {
     val med = medidoValue.trim().takeIf { it.isNotBlank() }?.replace(',', '.')?.toDoubleOrNull()
     val plan = planValue.trim().takeIf { it.isNotBlank() }?.replace(',', '.')?.toDoubleOrNull()
@@ -654,7 +708,8 @@ private fun EntradaRowPlan(
             compact = true,
             isError = isError,
             textColor = medColor,
-            onChange = onMedidoChange
+            onChange = onMedidoChange,
+            onFocusLost = onMedidoBlur
         )
         Spacer(Modifier.width(8.dp))
         DbmvField(
@@ -664,7 +719,8 @@ private fun EntradaRowPlan(
             compact = true,
             isError = false,
             textColor = MaterialTheme.colorScheme.onSurface,
-            onChange = onPlanChange
+            onChange = onPlanChange,
+            onFocusLost = onPlanBlur
         )
     }
     HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
@@ -680,7 +736,9 @@ private fun EntradaRowWithFreqSelector(
     planValue: String,
     isError: Boolean,
     onMedidoChange: (String) -> Unit,
-    onPlanChange: (String) -> Unit
+    onPlanChange: (String) -> Unit,
+    onMedidoBlur: () -> Unit,
+    onPlanBlur: () -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
     val med = medidoValue.trim().takeIf { it.isNotBlank() }?.replace(',', '.')?.toDoubleOrNull()
@@ -732,7 +790,8 @@ private fun EntradaRowWithFreqSelector(
             compact = true,
             isError = isError,
             textColor = medColor,
-            onChange = onMedidoChange
+            onChange = onMedidoChange,
+            onFocusLost = onMedidoBlur
         )
         Spacer(Modifier.width(8.dp))
         DbmvField(
@@ -742,7 +801,8 @@ private fun EntradaRowWithFreqSelector(
             compact = true,
             isError = false,
             textColor = MaterialTheme.colorScheme.onSurface,
-            onChange = onPlanChange
+            onChange = onPlanChange,
+            onFocusLost = onPlanBlur
         )
     }
     HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
