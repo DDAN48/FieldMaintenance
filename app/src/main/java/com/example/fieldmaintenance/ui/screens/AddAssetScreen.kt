@@ -3248,11 +3248,31 @@ private fun AssetFileSection(
                                 } else {
                                     rxAssetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
                                 }
+                                val required = if (isModule) {
+                                    requiredCounts(moduleAsset.type, isModule = true)
+                                } else {
+                                    requiredCounts(asset.type, isModule = false)
+                                }
+                                val summary = if (updated.isNotEmpty()) {
+                                    verifyMeasurementFiles(
+                                        context,
+                                        updated,
+                                        if (isModule) moduleAsset else asset,
+                                        repository,
+                                        if (isModule) moduleDiscardedLabels else rxDiscardedLabels,
+                                        expectedDocsisOverride = required.expectedDocsis,
+                                        expectedChannelOverride = required.expectedChannel
+                                    )
+                                } else {
+                                    null
+                                }
                                 withContext(Dispatchers.Main) {
                                     if (isModule) {
                                         moduleFiles = updated
+                                        verificationSummaryModule = summary
                                     } else {
                                         rxFiles = updated
+                                        verificationSummaryRx = summary
                                     }
                                 }
                             }
