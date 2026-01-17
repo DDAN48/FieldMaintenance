@@ -407,7 +407,26 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = { Text(if (isEdit) "Editar Activo" else "Agregar Activo") },
+                title = {
+                    Column {
+                        Text(if (isEdit) "Editar Activo" else "Agregar Activo")
+                        if (assetType == AssetType.AMPLIFIER) {
+                            val bwText = frequency?.mhz?.let { "$it MHz" } ?: "—"
+                            val tipoText = amplifierMode?.label ?: "—"
+                            val nodeLabel = reportNodeName.ifBlank { "Nodo" }
+                            val codeLabel = if (port != null && portIndex != null) {
+                                "${port?.name}${String.format("%02d", portIndex)}"
+                            } else {
+                                "SIN-COD"
+                            }
+                            Text(
+                                "$nodeLabel $codeLabel - Frec: $bwText - Tipo: $tipoText",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                            )
+                        }
+                    }
+                },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Atrás")

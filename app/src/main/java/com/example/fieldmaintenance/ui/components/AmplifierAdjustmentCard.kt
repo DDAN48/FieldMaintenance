@@ -239,13 +239,6 @@ fun AmplifierAdjustmentCard(
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold
                     )
-                    val bwText = bandwidth?.mhz?.let { "$it MHz" } ?: "—"
-                    val tipoText = amplifierMode?.label ?: "—"
-                    Text(
-                        "Ancho de banda: $bwText  ·  Tipo: $tipoText",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                    )
                 }
                 Icon(
                     imageVector = if (moduleExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
