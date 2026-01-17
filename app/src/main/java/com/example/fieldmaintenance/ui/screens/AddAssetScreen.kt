@@ -194,6 +194,20 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
             ampAdj.outCh136Dbmv != null
         okAdj
     }
+    val ampEntradaOk = if (assetType != AssetType.AMPLIFIER) true else {
+        val adj = ampAdj
+        if (adj == null) {
+            false
+        } else {
+            val ch50Med = adj.inputCh50Dbmv
+            val ch50Plan = adj.inputPlanCh50Dbmv
+            val highMed = adj.inputCh116Dbmv
+            val highPlan = adj.inputPlanHighDbmv
+            val ch50Ok = ch50Med != null && ch50Plan != null && ch50Med >= 15.0 && kotlin.math.abs(ch50Med - ch50Plan) < 4.0
+            val highOk = highMed != null && highPlan != null && highMed >= 15.0 && kotlin.math.abs(highMed - highPlan) < 4.0
+            ch50Ok && highOk
+        }
+    }
 
     val autoNodeAdjOk = if (assetType != AssetType.NODE) true else {
         val adj = nodeAdjustment
@@ -931,23 +945,31 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
 
             if (autoSaved && !isRphyNode) {
                 Spacer(modifier = Modifier.height(8.dp))
-                AssetFileSection(
-                    context = context,
-                    navController = navController,
-                    repository = repository,
-                    reportFolder = MaintenanceStorage.reportFolderName(report?.eventName, reportId),
-                    onInteraction = triggerAdjustmentsCollapse,
-                    asset = Asset(
-                        id = workingAssetId,
-                        reportId = reportId,
-                        type = assetType,
-                        frequencyMHz = frequency?.mhz ?: 0,
-                        amplifierMode = amplifierMode,
-                        port = port,
-                        portIndex = portIndex,
-                        technology = if (assetType == AssetType.NODE) technology else null
+                if (assetType == AssetType.AMPLIFIER && !ampEntradaOk) {
+                    Text(
+                        "Complete mediciones de entrada válidas para continuar. La diferencia entre el nivel de entrada y medido aceptable es menor a 4. Nivel minimo de entrada permitido es 15 dBmV si esta indicado por plano.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
                     )
-                )
+                } else {
+                    AssetFileSection(
+                        context = context,
+                        navController = navController,
+                        repository = repository,
+                        reportFolder = MaintenanceStorage.reportFolderName(report?.eventName, reportId),
+                        onInteraction = triggerAdjustmentsCollapse,
+                        asset = Asset(
+                            id = workingAssetId,
+                            reportId = reportId,
+                            type = assetType,
+                            frequencyMHz = frequency?.mhz ?: 0,
+                            amplifierMode = amplifierMode,
+                            port = port,
+                            portIndex = portIndex,
+                            technology = if (assetType == AssetType.NODE) technology else null
+                        )
+                    )
+                }
             }
             
             Spacer(modifier = Modifier.height(16.dp))
@@ -3237,31 +3259,50 @@ private fun AssetFileSection(
                     val isModule = pendingDeleteIsModule
                     pendingDeleteEntry = null
                     if (entry != null) {
-                        if (entry.fromZip) {
+                        val list = if (isModule) moduleFiles else rxFiles
+                        val entryName = entry.label.substringAfterLast('/')
+                        val file = list.firstOrNull { it.name == entryName }
+                        if (file != null) {
+                            scope.launch(Dispatchers.IO) {
+                                MaintenanceStorage.moveMeasurementFileToTrash(context, file)
+                                val updated = if (isModule) {
+                                    moduleAssetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
+                                } else {
+                                    rxAssetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
+                                }
+                                val required = if (isModule) {
+                                    requiredCounts(moduleAsset.type, isModule = true)
+                                } else {
+                                    requiredCounts(asset.type, isModule = false)
+                                }
+                                val summary = if (updated.isNotEmpty()) {
+                                    verifyMeasurementFiles(
+                                        context,
+                                        updated,
+                                        if (isModule) moduleAsset else asset,
+                                        repository,
+                                        if (isModule) moduleDiscardedLabels else rxDiscardedLabels,
+                                        expectedDocsisOverride = required.expectedDocsis,
+                                        expectedChannelOverride = required.expectedChannel
+                                    )
+                                } else {
+                                    null
+                                }
+                                withContext(Dispatchers.Main) {
+                                    if (isModule) {
+                                        moduleFiles = updated
+                                        verificationSummaryModule = summary
+                                    } else {
+                                        rxFiles = updated
+                                        verificationSummaryRx = summary
+                                    }
+                                }
+                            }
+                        } else if (entry.fromZip) {
                             if (isModule) {
                                 toggleDiscardModule(entry)
                             } else {
                                 toggleDiscardRx(entry)
-                            }
-                        } else {
-                            val list = if (isModule) moduleFiles else rxFiles
-                            val file = list.firstOrNull { it.name == entry.label }
-                            if (file != null) {
-                                scope.launch(Dispatchers.IO) {
-                                    MaintenanceStorage.moveMeasurementFileToTrash(context, file)
-                                    val updated = if (isModule) {
-                                        moduleAssetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
-                                    } else {
-                                        rxAssetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
-                                    }
-                                    withContext(Dispatchers.Main) {
-                                        if (isModule) {
-                                            moduleFiles = updated
-                                        } else {
-                                            rxFiles = updated
-                                        }
-                                    }
-                                }
                             }
                         }
                     }
