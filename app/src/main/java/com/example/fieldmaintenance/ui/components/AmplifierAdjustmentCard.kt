@@ -43,6 +43,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.font.FontWeight
@@ -79,6 +80,7 @@ fun AmplifierAdjustmentCard(
     var salidaCalcExpanded by rememberSaveable(assetId) { mutableStateOf(true) }
     var compareExpanded by rememberSaveable(assetId) { mutableStateOf(true) }
     var recoExpanded by rememberSaveable(assetId) { mutableStateOf(true) }
+    var entradaAlert by remember(assetId) { mutableStateOf<EntradaAlert?>(null) }
 
     var dirty by rememberSaveable(assetId) { mutableStateOf(false) }
 
@@ -95,6 +97,8 @@ fun AmplifierAdjustmentCard(
     var inCh50 by rememberSaveable { mutableStateOf("") }
     var inHigh by rememberSaveable { mutableStateOf("") }
     var inHighFreq by rememberSaveable { mutableStateOf<Int?>(750) } // 750 (CH116) or 870 (CH136)
+    var inPlanCh50 by rememberSaveable { mutableStateOf("") }
+    var inPlanHigh by rememberSaveable { mutableStateOf("") }
 
     var planLowFreq by rememberSaveable { mutableStateOf<Int?>(54) }
     var planLowDbmv by rememberSaveable { mutableStateOf("") }
@@ -116,6 +120,8 @@ fun AmplifierAdjustmentCard(
         inCh50 = fmt(initial.inputCh50Dbmv)
         inHigh = fmt(initial.inputCh116Dbmv)
         inHighFreq = initial.inputHighFreqMHz ?: 750
+        inPlanCh50 = fmt(initial.inputPlanCh50Dbmv)
+        inPlanHigh = fmt(initial.inputPlanHighDbmv)
         planLowFreq = initial.planLowFreqMHz ?: 54
         planLowDbmv = fmt(initial.planLowDbmv)
         planHighFreq = initial.planHighFreqMHz ?: 750
@@ -133,6 +139,8 @@ fun AmplifierAdjustmentCard(
             inputCh50Dbmv = parseDbmv(inCh50),
             inputCh116Dbmv = parseDbmv(inHigh),
             inputHighFreqMHz = inHighFreq,
+            inputPlanCh50Dbmv = parseDbmv(inPlanCh50),
+            inputPlanHighDbmv = parseDbmv(inPlanHigh),
             planLowFreqMHz = planLowFreq,
             planLowDbmv = parseDbmv(planLowDbmv),
             planHighFreqMHz = planHighFreq,
@@ -164,13 +172,54 @@ fun AmplifierAdjustmentCard(
     }
 
     val adj = buildAdjustment()
-    val entradaCalc = CiscoHfcAmpCalculator.nivelesEntradaCalculados(adj)
+    val entradaCalc = if (
+        adj.inputCh50Dbmv != null &&
+        adj.inputCh116Dbmv != null &&
+        adj.inputPlanCh50Dbmv != null &&
+        adj.inputPlanHighDbmv != null
+    ) {
+        CiscoHfcAmpCalculator.nivelesEntradaCalculados(adj)
+    } else {
+        null
+    }
     val salidaCalc = CiscoHfcAmpCalculator.nivelesSalidaCalculados(adj)
     val tilt = CiscoHfcAmpCalculator.fwdInEqTilt(adj, bandwidth)
     val pad = CiscoHfcAmpCalculator.fwdInPad(adj, bandwidth, amplifierMode)
     val agc = CiscoHfcAmpCalculator.agcPad(adj, bandwidth, amplifierMode)
+    val entradaValid = run {
+        val ch50Med = parseDbmv(inCh50)
+        val ch50Plan = parseDbmv(inPlanCh50)
+        val highMed = parseDbmv(inHigh)
+        val highPlan = parseDbmv(inPlanHigh)
+        val ch50Ok = ch50Med != null && ch50Plan != null && ch50Med >= 15.0 && kotlin.math.abs(ch50Med - ch50Plan) < 4.0
+        val highOk = highMed != null && highPlan != null && highMed >= 15.0 && kotlin.math.abs(highMed - highPlan) < 4.0
+        ch50Ok && highOk
+    }
 
     fun isWeirdDbmv(v: Double?): Boolean = v != null && (v < -20.0 || v > 80.0)
+    fun maybeTriggerEntradaAlert(canal: String, med: Double?, plan: Double?) {
+        if (med == null) return
+        val delta = if (plan != null) kotlin.math.abs(med - plan) else null
+        val needsAlert = med < 15.0 || (delta != null && delta >= 4.0)
+        if (!needsAlert) return
+        val planLabel = plan?.let { CiscoHfcAmpCalculator.format1(it) } ?: "—"
+        val diffLabel = delta?.let { CiscoHfcAmpCalculator.format1(it) } ?: "—"
+        val message = buildString {
+            append("EL nivel medido esta desviado ")
+            append(diffLabel)
+            append(" con respecto a los niveles del plano ")
+            append(planLabel)
+            append(". Revise posibles problemas en la entrada para continuar con los ajustes.")
+        }
+        val key = "$canal:${med}:${plan}"
+        if (entradaAlert?.key != key) {
+            entradaAlert = EntradaAlert(
+                key = key,
+                title = "Nivel fuera de rango",
+                message = message
+            )
+        }
+    }
 
     // Outer "frame" for the whole module (visual border)
     Card(
@@ -221,25 +270,41 @@ fun AmplifierAdjustmentCard(
                     expanded = entradaExpanded,
                     onToggle = { entradaExpanded = !entradaExpanded }
                 ) {
-                    // Header row like the reference (CANAL / FRECUENCIA / AMPLITUD)
-                    HeaderRow(c3 = "AMPLITUD (dBmV)")
-                    MedidoRow(
+                    // Header row like the reference (CANAL / FRECUENCIA / AMPLITUD / PLANO / DIF)
+                    EntradaHeaderRow()
+                    EntradaRowPlan(
                         canal = "CH50",
                         freqText = "379 MHz",
-                        value = inCh50,
+                        medidoValue = inCh50,
+                        planValue = inPlanCh50,
                         isError = showRequiredErrors && parseDbmv(inCh50) == null,
-                        onChange = { dirty = true; inCh50 = it }
+                        onMedidoChange = { dirty = true; inCh50 = it },
+                        onPlanChange = { dirty = true; inPlanCh50 = it },
+                        onMedidoBlur = {
+                            maybeTriggerEntradaAlert("CH50", parseDbmv(inCh50), parseDbmv(inPlanCh50))
+                        },
+                        onPlanBlur = {
+                            maybeTriggerEntradaAlert("CH50", parseDbmv(inCh50), parseDbmv(inPlanCh50))
+                        }
                     )
                     val highFreq = inHighFreq ?: 750
                     val highCanal = if (highFreq == 870) "CH136" else "CH116"
-                    MedidoRowWithFreqSelector(
+                    EntradaRowWithFreqSelector(
                         canal = highCanal,
                         freqMHz = highFreq,
                         optionsMHz = listOf(750, 870),
                         onFreqChange = { dirty = true; inHighFreq = it },
-                        value = inHigh,
+                        medidoValue = inHigh,
+                        planValue = inPlanHigh,
                         isError = showRequiredErrors && parseDbmv(inHigh) == null,
-                        onChange = { dirty = true; inHigh = it }
+                        onMedidoChange = { dirty = true; inHigh = it },
+                        onPlanChange = { dirty = true; inPlanHigh = it },
+                        onMedidoBlur = {
+                            maybeTriggerEntradaAlert(highCanal, parseDbmv(inHigh), parseDbmv(inPlanHigh))
+                        },
+                        onPlanBlur = {
+                            maybeTriggerEntradaAlert(highCanal, parseDbmv(inHigh), parseDbmv(inPlanHigh))
+                        }
                     )
 
                     Spacer(Modifier.height(10.dp))
@@ -264,6 +329,14 @@ fun AmplifierAdjustmentCard(
                     expanded = salidaPlanoExpanded,
                     onToggle = { salidaPlanoExpanded = !salidaPlanoExpanded }
                 ) {
+                    if (!entradaValid) {
+                        Text(
+                            "Complete mediciones de entrada válidas para continuar.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                        return@CollapsibleSection
+                    }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -343,6 +416,14 @@ fun AmplifierAdjustmentCard(
                     expanded = compareExpanded,
                     onToggle = { compareExpanded = !compareExpanded }
                 ) {
+                    if (!entradaValid) {
+                        Text(
+                            "Complete mediciones de entrada válidas para continuar.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                        return@CollapsibleSection
+                    }
                     CompareHeaderRow()
                     CompareRow(
                         canal = "CH50",
@@ -392,6 +473,14 @@ fun AmplifierAdjustmentCard(
                     expanded = recoExpanded,
                     onToggle = { recoExpanded = !recoExpanded }
                 ) {
+                    if (!entradaValid) {
+                        Text(
+                            "Complete mediciones de entrada válidas para continuar.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                        return@CollapsibleSection
+                    }
                     RecommendationLine("FWD IN PAD", pad)
                     RecommendationLine(
                         label = if (tilt != null && tilt > 0) "FWD IN invEQ (TILT)" else "FWD IN EQ (TILT)",
@@ -403,7 +492,23 @@ fun AmplifierAdjustmentCard(
             }
         }
     }
+    entradaAlert?.let { alert ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { entradaAlert = null },
+            title = { Text(alert.title) },
+            text = { Text(alert.message) },
+            confirmButton = {
+                TextButton(onClick = { entradaAlert = null }) { Text("Aceptar") }
+            }
+        )
+    }
 }
+
+private data class EntradaAlert(
+    val key: String,
+    val title: String,
+    val message: String
+)
 
 @Composable
 private fun SectionTitle(text: String) {
@@ -418,8 +523,11 @@ private fun DbmvField(
     isError: Boolean = false,
     compact: Boolean = false,
     compactHeight: Dp = 36.dp,
-    onChange: (String) -> Unit
+    textColor: Color? = null,
+    onChange: (String) -> Unit,
+    onFocusLost: (() -> Unit)? = null
 ) {
+    var wasFocused by remember { mutableStateOf(false) }
     if (!compact) {
         OutlinedTextField(
             value = value,
@@ -429,7 +537,7 @@ private fun DbmvField(
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
             singleLine = true,
             isError = isError,
-            textStyle = MaterialTheme.typography.bodyLarge
+            textStyle = MaterialTheme.typography.bodyLarge.copy(color = textColor ?: MaterialTheme.colorScheme.onSurface)
         )
         return
     }
@@ -459,8 +567,15 @@ private fun DbmvField(
                     onValueChange = onChange,
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
-                    modifier = Modifier.fillMaxWidth()
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = textColor ?: MaterialTheme.colorScheme.onSurface),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .onFocusChanged { state ->
+                            if (wasFocused && !state.isFocused) {
+                                onFocusLost?.invoke()
+                            }
+                            wasFocused = state.isFocused
+                        }
                 )
             }
         }
@@ -547,13 +662,22 @@ private fun CollapsibleSection(
 }
 
 @Composable
-private fun MedidoRow(
+private fun EntradaRowPlan(
     canal: String,
     freqText: String,
-    value: String,
+    medidoValue: String,
+    planValue: String,
     isError: Boolean,
-    onChange: (String) -> Unit
+    onMedidoChange: (String) -> Unit,
+    onPlanChange: (String) -> Unit,
+    onMedidoBlur: () -> Unit,
+    onPlanBlur: () -> Unit
 ) {
+    val med = medidoValue.trim().takeIf { it.isNotBlank() }?.replace(',', '.')?.toDoubleOrNull()
+    val plan = planValue.trim().takeIf { it.isNotBlank() }?.replace(',', '.')?.toDoubleOrNull()
+    val absDiff = if (med != null && plan != null) kotlin.math.abs(med - plan) else null
+    val needsAttention = (absDiff != null && absDiff >= 2.0) || (med != null && med < 15.0)
+    val medColor = if (needsAttention) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -564,28 +688,49 @@ private fun MedidoRow(
         Text(freqText, modifier = Modifier.width(90.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f))
         DbmvField(
             label = "",
-            value = value,
-            modifier = Modifier.width(92.dp),
+            value = medidoValue,
+            modifier = Modifier.width(88.dp),
             compact = true,
             isError = isError,
-            onChange = onChange
+            textColor = medColor,
+            onChange = onMedidoChange,
+            onFocusLost = onMedidoBlur
         )
-        Text("dBmV", modifier = Modifier.padding(start = 8.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f))
+        Spacer(Modifier.width(8.dp))
+        DbmvField(
+            label = "",
+            value = planValue,
+            modifier = Modifier.width(88.dp),
+            compact = true,
+            isError = false,
+            textColor = MaterialTheme.colorScheme.onSurface,
+            onChange = onPlanChange,
+            onFocusLost = onPlanBlur
+        )
     }
     HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
 }
 
 @Composable
-private fun MedidoRowWithFreqSelector(
+private fun EntradaRowWithFreqSelector(
     canal: String,
     freqMHz: Int,
     optionsMHz: List<Int>,
     onFreqChange: (Int) -> Unit,
-    value: String,
+    medidoValue: String,
+    planValue: String,
     isError: Boolean,
-    onChange: (String) -> Unit
+    onMedidoChange: (String) -> Unit,
+    onPlanChange: (String) -> Unit,
+    onMedidoBlur: () -> Unit,
+    onPlanBlur: () -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
+    val med = medidoValue.trim().takeIf { it.isNotBlank() }?.replace(',', '.')?.toDoubleOrNull()
+    val plan = planValue.trim().takeIf { it.isNotBlank() }?.replace(',', '.')?.toDoubleOrNull()
+    val absDiff = if (med != null && plan != null) kotlin.math.abs(med - plan) else null
+    val needsAttention = (absDiff != null && absDiff >= 2.0) || (med != null && med < 15.0)
+    val medColor = if (needsAttention) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
 
     Row(
         modifier = Modifier
@@ -625,13 +770,25 @@ private fun MedidoRowWithFreqSelector(
 
         DbmvField(
             label = "",
-            value = value,
-            modifier = Modifier.width(92.dp),
+            value = medidoValue,
+            modifier = Modifier.width(88.dp),
             compact = true,
             isError = isError,
-            onChange = onChange
+            textColor = medColor,
+            onChange = onMedidoChange,
+            onFocusLost = onMedidoBlur
         )
-        Text("dBmV", modifier = Modifier.padding(start = 8.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f))
+        Spacer(Modifier.width(8.dp))
+        DbmvField(
+            label = "",
+            value = planValue,
+            modifier = Modifier.width(88.dp),
+            compact = true,
+            isError = false,
+            textColor = MaterialTheme.colorScheme.onSurface,
+            onChange = onPlanChange,
+            onFocusLost = onPlanBlur
+        )
     }
     HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
 }
@@ -755,6 +912,21 @@ private fun HeaderRow(c1: String = "CANAL", c2: String = "FRECUENCIA", c3: Strin
 }
 
 @Composable
+private fun EntradaHeaderRow() {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text("CANAL", modifier = Modifier.width(60.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
+        Text("FREQ", modifier = Modifier.width(90.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
+        Text("Medido (dBmV)", modifier = Modifier.width(88.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.width(8.dp))
+        Text("Plano (dBmV)", modifier = Modifier.width(88.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
+    }
+    Spacer(Modifier.height(6.dp))
+}
+
+@Composable
 private fun CompareHeaderRow() {
     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Text("CANAL", modifier = Modifier.width(54.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
@@ -767,4 +939,3 @@ private fun CompareHeaderRow() {
     }
     Spacer(Modifier.height(6.dp))
 }
-
