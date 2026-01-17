@@ -3237,31 +3237,50 @@ private fun AssetFileSection(
                     val isModule = pendingDeleteIsModule
                     pendingDeleteEntry = null
                     if (entry != null) {
-                        if (entry.fromZip) {
+                        val list = if (isModule) moduleFiles else rxFiles
+                        val entryName = entry.label.substringAfterLast('/')
+                        val file = list.firstOrNull { it.name == entryName }
+                        if (file != null) {
+                            scope.launch(Dispatchers.IO) {
+                                MaintenanceStorage.moveMeasurementFileToTrash(context, file)
+                                val updated = if (isModule) {
+                                    moduleAssetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
+                                } else {
+                                    rxAssetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
+                                }
+                                val required = if (isModule) {
+                                    requiredCounts(moduleAsset.type, isModule = true)
+                                } else {
+                                    requiredCounts(asset.type, isModule = false)
+                                }
+                                val summary = if (updated.isNotEmpty()) {
+                                    verifyMeasurementFiles(
+                                        context,
+                                        updated,
+                                        if (isModule) moduleAsset else asset,
+                                        repository,
+                                        if (isModule) moduleDiscardedLabels else rxDiscardedLabels,
+                                        expectedDocsisOverride = required.expectedDocsis,
+                                        expectedChannelOverride = required.expectedChannel
+                                    )
+                                } else {
+                                    null
+                                }
+                                withContext(Dispatchers.Main) {
+                                    if (isModule) {
+                                        moduleFiles = updated
+                                        verificationSummaryModule = summary
+                                    } else {
+                                        rxFiles = updated
+                                        verificationSummaryRx = summary
+                                    }
+                                }
+                            }
+                        } else if (entry.fromZip) {
                             if (isModule) {
                                 toggleDiscardModule(entry)
                             } else {
                                 toggleDiscardRx(entry)
-                            }
-                        } else {
-                            val list = if (isModule) moduleFiles else rxFiles
-                            val file = list.firstOrNull { it.name == entry.label }
-                            if (file != null) {
-                                scope.launch(Dispatchers.IO) {
-                                    MaintenanceStorage.moveMeasurementFileToTrash(context, file)
-                                    val updated = if (isModule) {
-                                        moduleAssetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
-                                    } else {
-                                        rxAssetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
-                                    }
-                                    withContext(Dispatchers.Main) {
-                                        if (isModule) {
-                                            moduleFiles = updated
-                                        } else {
-                                            rxFiles = updated
-                                        }
-                                    }
-                                }
                             }
                         }
                     }
