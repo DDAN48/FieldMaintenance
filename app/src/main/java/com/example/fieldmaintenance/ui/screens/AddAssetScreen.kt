@@ -410,20 +410,31 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
                 title = {
                     Column {
                         Text(if (isEdit) "Editar Activo" else "Agregar Activo")
-                        if (assetType == AssetType.AMPLIFIER) {
-                            val bwText = frequency?.mhz?.let { "$it MHz" } ?: "—"
-                            val tipoText = amplifierMode?.label ?: "—"
-                            val nodeLabel = reportNodeName.ifBlank { "Nodo" }
-                            val codeLabel = if (port != null && portIndex != null) {
-                                "${port?.name}${String.format("%02d", portIndex)}"
-                            } else {
-                                "SIN-COD"
+                        val bwText = frequency?.mhz?.let { "$it MHz" } ?: "—"
+                        when (assetType) {
+                            AssetType.AMPLIFIER -> {
+                                val tipoText = amplifierMode?.label ?: "—"
+                                val nodeLabel = reportNodeName.ifBlank { "Nodo" }
+                                val codeLabel = if (port != null && portIndex != null) {
+                                    "${port?.name}${String.format("%02d", portIndex)}"
+                                } else {
+                                    "SIN-COD"
+                                }
+                                Text(
+                                    "$nodeLabel $codeLabel - $bwText - $tipoText",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                                )
                             }
-                            Text(
-                                "$nodeLabel $codeLabel - Frec: $bwText - Tipo: $tipoText",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                            )
+                            AssetType.NODE -> {
+                                val techText = technology?.trim().orEmpty().ifBlank { "—" }
+                                val nodeLabel = reportNodeName.ifBlank { "Nodo" }
+                                Text(
+                                    "$nodeLabel - $bwText - $techText",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                                )
+                            }
                         }
                     }
                 },
