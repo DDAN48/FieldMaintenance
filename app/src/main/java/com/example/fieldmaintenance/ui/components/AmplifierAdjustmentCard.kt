@@ -75,7 +75,6 @@ fun AmplifierAdjustmentCard(
     // Individual section collapse states (all open by default)
     var entradaExpanded by rememberSaveable(assetId) { mutableStateOf(true) }
     var salidaPlanoExpanded by rememberSaveable(assetId) { mutableStateOf(true) }
-    var compareExpanded by rememberSaveable(assetId) { mutableStateOf(true) }
     var recoExpanded by rememberSaveable(assetId) { mutableStateOf(true) }
     var entradaAlert by remember(assetId) { mutableStateOf<EntradaAlert?>(null) }
 
@@ -240,13 +239,6 @@ fun AmplifierAdjustmentCard(
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold
                     )
-                    val bwText = bandwidth?.mhz?.let { "$it MHz" } ?: "—"
-                    val tipoText = amplifierMode?.label ?: "—"
-                    Text(
-                        "Ancho de banda: $bwText  ·  Tipo: $tipoText",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                    )
                 }
                 Icon(
                     imageVector = if (moduleExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
@@ -394,76 +386,66 @@ fun AmplifierAdjustmentCard(
                         }
                     }
                     Spacer(Modifier.height(10.dp))
-                    // Calculated list (same module; no extra title needed)
-                    SimpleCalcList(
-                        rows = listOf(
-                            CalcRowData("L54", "54 MHz", salidaCalc?.get("L54")),
-                            CalcRowData("L102", "102 MHz", salidaCalc?.get("L102")),
-                            CalcRowData("CH3", "61 MHz", salidaCalc?.get("CH3")),
-                            CalcRowData("CH50", "379 MHz", salidaCalc?.get("CH50")),
-                            CalcRowData("CH70", "495 MHz", salidaCalc?.get("CH70")),
-                            CalcRowData("CH110", "711 MHz", salidaCalc?.get("CH110")),
-                            CalcRowData("CH116", "750 MHz", salidaCalc?.get("CH116")),
-                            CalcRowData("CH136", "870 MHz", salidaCalc?.get("CH136")),
-                            CalcRowData("CH158", "1000 MHz", salidaCalc?.get("CH158")),
-                        )
+                    SalidaHeaderRow()
+                    SalidaCompareRow(
+                        canal = "L54",
+                        freqText = "54 MHz",
+                        calc = salidaCalc?.get("L54")
                     )
-                }
-
-                CollapsibleSection(
-                    titleBold = "Niveles SALIDA",
-                    titleLight = "calculado vs medido",
-                    expanded = compareExpanded,
-                    onToggle = { compareExpanded = !compareExpanded }
-                ) {
-                    if (!entradaValid) {
-                        Text(
-                            "Complete mediciones de entrada válidas para continuar. La diferencia entre el nivel de entrada y medido aceptable es menor a 4. Nivel minimo de entrada permitido es 15 dBmV si esta indicado por plano.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error
-                        )
-                        return@CollapsibleSection
-                    }
-                    CompareHeaderRow()
-                    CompareRow(
-                        "CH50",
-                        "379 MHz",
-                        salidaCalc?.get("CH50"),
-                        outCh50,
-                        showRequiredErrors && parseDbmv(outCh50) == null,
+                    SalidaCompareRow(
+                        canal = "L102",
+                        freqText = "102 MHz",
+                        calc = salidaCalc?.get("L102")
+                    )
+                    SalidaCompareRow(
+                        canal = "CH3",
+                        freqText = "61 MHz",
+                        calc = salidaCalc?.get("CH3")
+                    )
+                    SalidaCompareRow(
+                        canal = "CH50",
+                        freqText = "379 MHz",
+                        calc = salidaCalc?.get("CH50"),
+                        medidoText = outCh50,
+                        isRequiredError = showRequiredErrors && parseDbmv(outCh50) == null,
                         onMedidoChange = { dirty = true; outCh50 = it }
                     )
-                    CompareRow(
-                        "CH70",
-                        "495 MHz",
-                        salidaCalc?.get("CH70"),
-                        outCh70,
-                        showRequiredErrors && parseDbmv(outCh70) == null,
+                    SalidaCompareRow(
+                        canal = "CH70",
+                        freqText = "495 MHz",
+                        calc = salidaCalc?.get("CH70"),
+                        medidoText = outCh70,
+                        isRequiredError = showRequiredErrors && parseDbmv(outCh70) == null,
                         onMedidoChange = { dirty = true; outCh70 = it }
                     )
-                    CompareRow(
-                        "CH110",
-                        "711 MHz",
-                        salidaCalc?.get("CH110"),
-                        outCh110,
-                        showRequiredErrors && parseDbmv(outCh110) == null,
+                    SalidaCompareRow(
+                        canal = "CH110",
+                        freqText = "711 MHz",
+                        calc = salidaCalc?.get("CH110"),
+                        medidoText = outCh110,
+                        isRequiredError = showRequiredErrors && parseDbmv(outCh110) == null,
                         onMedidoChange = { dirty = true; outCh110 = it }
                     )
-                    CompareRow(
-                        "CH116",
-                        "750 MHz",
-                        salidaCalc?.get("CH116"),
-                        outCh116,
-                        showRequiredErrors && parseDbmv(outCh116) == null,
+                    SalidaCompareRow(
+                        canal = "CH116",
+                        freqText = "750 MHz",
+                        calc = salidaCalc?.get("CH116"),
+                        medidoText = outCh116,
+                        isRequiredError = showRequiredErrors && parseDbmv(outCh116) == null,
                         onMedidoChange = { dirty = true; outCh116 = it }
                     )
-                    CompareRow(
-                        "CH136",
-                        "870 MHz",
-                        salidaCalc?.get("CH136"),
-                        outCh136,
-                        showRequiredErrors && parseDbmv(outCh136) == null,
+                    SalidaCompareRow(
+                        canal = "CH136",
+                        freqText = "870 MHz",
+                        calc = salidaCalc?.get("CH136"),
+                        medidoText = outCh136,
+                        isRequiredError = showRequiredErrors && parseDbmv(outCh136) == null,
                         onMedidoChange = { dirty = true; outCh136 = it }
+                    )
+                    SalidaCompareRow(
+                        canal = "CH158",
+                        freqText = "1000 MHz",
+                        calc = salidaCalc?.get("CH158")
                     )
                 }
 
@@ -811,16 +793,17 @@ private fun SimpleCalcList(rows: List<CalcRowData>) {
 }
 
 @Composable
-private fun CompareRow(
+private fun SalidaCompareRow(
     canal: String,
     freqText: String,
     calc: Double?,
-    medidoText: String,
-    isRequiredError: Boolean,
-    onMedidoChange: (String) -> Unit
+    medidoText: String? = null,
+    isRequiredError: Boolean = false,
+    onMedidoChange: ((String) -> Unit)? = null
 ) {
-    val med = medidoText.trim().takeIf { it.isNotBlank() }?.replace(',', '.')?.toDoubleOrNull()
-    val delta = if (calc != null && med != null) med - calc else null
+    val hasInput = medidoText != null && onMedidoChange != null
+    val med = medidoText?.trim()?.takeIf { it.isNotBlank() }?.replace(',', '.')?.toDoubleOrNull()
+    val delta = if (hasInput && calc != null && med != null) med - calc else null
     val absDelta = delta?.let { kotlin.math.abs(it) }
     val isBad = absDelta != null && absDelta > 1.2
     val isOk = absDelta != null && absDelta <= 0.5
@@ -841,15 +824,24 @@ private fun CompareRow(
             fontWeight = FontWeight.SemiBold
         )
         Spacer(Modifier.width(6.dp))
-        DbmvField(
-            label = "",
-            value = medidoText,
-            modifier = Modifier.width(70.dp),
-            compact = true,
-            compactHeight = 36.dp,
-            isError = isRequiredError,
-            onChange = onMedidoChange
-        )
+        if (hasInput) {
+            DbmvField(
+                label = "",
+                value = medidoText.orEmpty(),
+                modifier = Modifier.width(70.dp),
+                compact = true,
+                compactHeight = 36.dp,
+                isError = isRequiredError,
+                onChange = { onMedidoChange?.invoke(it) }
+            )
+        } else {
+            Text(
+                "—",
+                modifier = Modifier.width(70.dp),
+                textAlign = TextAlign.Center,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+            )
+        }
         Spacer(Modifier.width(8.dp))
         Text(
             "${if (delta != null && delta >= 0) "+" else ""}$deltaLabel",
@@ -911,7 +903,7 @@ private fun EntradaHeaderRow() {
 }
 
 @Composable
-private fun CompareHeaderRow() {
+private fun SalidaHeaderRow() {
     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Text("CANAL", modifier = Modifier.width(54.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
         Text("FREQ", modifier = Modifier.width(78.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
