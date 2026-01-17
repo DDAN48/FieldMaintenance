@@ -22,6 +22,9 @@ data class AmplifierAdjustment(
      * We keep the amplitude value in [inputCh116Dbmv] for backward compatibility.
      */
     val inputHighFreqMHz: Int? = null,
+    // Plan input reference levels (no calculations depend on these)
+    val inputPlanCh50Dbmv: Double? = null,
+    val inputPlanHighDbmv: Double? = null,
 
     // Plan output line points (frequencies can vary)
     val planLowFreqMHz: Int? = null,   // 54 or 102
@@ -38,5 +41,4 @@ data class AmplifierAdjustment(
 
     val updatedAt: Long = System.currentTimeMillis()
 )
-
 
