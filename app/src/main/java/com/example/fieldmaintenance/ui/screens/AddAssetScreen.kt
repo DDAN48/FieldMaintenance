@@ -3232,51 +3232,41 @@ private fun AssetFileSection(
             }
         }
     }
-    if (pendingDeleteEntry != null) {
+    pendingDeleteEntry?.let { entry ->
         AlertDialog(
             onDismissRequest = { pendingDeleteEntry = null },
             title = { Text("Eliminar medición") },
             text = { Text("¿Desea eliminar esta medición?") },
             confirmButton = {
                 TextButton(onClick = {
-                    val entry = pendingDeleteEntry
                     val isModule = pendingDeleteIsModule
                     pendingDeleteEntry = null
-                    if (entry != null) {
-                        if (entry.fromZip) {
-                            if (isModule) {
-                                toggleDiscardModule(entry)
-                            } else {
-                                toggleDiscardRx(entry)
-                            }
+                    if (entry.fromZip) {
+                        if (isModule) {
+                            toggleDiscardModule(entry)
                         } else {
-                            val list = if (isModule) moduleFiles else rxFiles
-                            val lookupName = entry.sourceFileName ?: entry.label
-                            val file = list.firstOrNull { it.name == lookupName }
-                            if (file != null) {
-                                scope.launch(Dispatchers.IO) {
-                                    MaintenanceStorage.moveMeasurementFileToTrash(context, file)
-                                    val updated = if (isModule) {
-                                        moduleAssetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
+                            toggleDiscardRx(entry)
+                        }
+                    } else {
+                        val list = if (isModule) moduleFiles else rxFiles
+                        val lookupName = entry.sourceFileName ?: entry.label
+                        val file = list.firstOrNull { it.name == lookupName }
+                        if (file != null) {
+                            scope.launch(Dispatchers.IO) {
+                                MaintenanceStorage.moveMeasurementFileToTrash(context, file)
+                                val updated = if (isModule) {
+                                    moduleAssetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
+                                } else {
+                                    rxAssetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
+                                }
+                                withContext(Dispatchers.Main) {
+                                    if (isModule) {
+                                        moduleFiles = updated
                                     } else {
-                                        rxAssetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
-                                    }
-                                    withContext(Dispatchers.Main) {
-                                        if (isModule) {
-                                            moduleFiles = updated
-                                        } else {
-                                            rxFiles = updated
-                                        }
-                                    } else {
-                                        surplusSelection - name
+                                        rxFiles = updated
                                     }
                                 }
-                            )
-                            Text(
-                                name,
-                                style = MaterialTheme.typography.bodySmall,
-                                modifier = Modifier.weight(1f)
-                            )
+                            }
                         }
                     }
                 }) { Text("Eliminar") }
@@ -3338,27 +3328,27 @@ private fun AssetFileSection(
                         "Se detectaron $surplusTargetCount mediciones de más. Seleccione cuáles desea eliminar.",
                         style = MaterialTheme.typography.bodySmall
                     )
-                    surplusNotice.forEach { name ->
+                    surplusNotice.forEach { entryName ->
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Checkbox(
-                                checked = surplusSelection.contains(name),
+                                checked = surplusSelection.contains(entryName),
                                 onCheckedChange = { checked ->
                                     surplusSelection = if (checked) {
                                         if (surplusSelection.size < surplusTargetCount) {
-                                            surplusSelection + name
+                                            surplusSelection + entryName
                                         } else {
                                             surplusSelection
                                         }
                                     } else {
-                                        surplusSelection - name
+                                        surplusSelection - entryName
                                     }
                                 }
                             )
                             Text(
-                                name,
+                                entryName,
                                 style = MaterialTheme.typography.bodySmall,
                                 modifier = Modifier.weight(1f)
                             )
