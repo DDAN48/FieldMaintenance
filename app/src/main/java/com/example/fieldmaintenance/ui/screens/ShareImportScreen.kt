@@ -56,6 +56,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.navigation.NavController
 import androidx.core.content.FileProvider
 import android.content.Intent
+import android.widget.Toast
 import java.io.File
 import java.net.URLConnection
 import com.example.fieldmaintenance.data.model.Asset
@@ -72,6 +73,7 @@ import com.example.fieldmaintenance.util.PendingMeasurementStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 
 @Composable
 fun ShareImportScreen(
@@ -100,47 +102,69 @@ fun ShareImportScreen(
     LaunchedEffect(sharedUris, hasPendingAsset, pendingReportId, pendingAssetId, pendingAssetType) {
         if (!hasPendingAsset || sharedUris.isEmpty()) return@LaunchedEffect
         isAutoImporting = true
+        val reportId = pendingReportId
+        val assetId = pendingAssetId
+        val report = reportId?.let { withContext(Dispatchers.IO) { repository.getReportById(it) } }
+        val asset = assetId?.let { withContext(Dispatchers.IO) { repository.getAssetById(it) } }
+        val resolvedAsset = if (asset != null && pendingAssetType == AssetType.AMPLIFIER.name) {
+            asset.copy(type = AssetType.AMPLIFIER)
+        } else {
+            asset
+        }
+        val importResult = runCatching {
+            if (report == null || resolvedAsset == null) return@runCatching
+            withTimeout(30_000) {
+                withContext(Dispatchers.IO) {
+                    val reportFolder = MaintenanceStorage.reportFolderName(report.eventName, report.id)
+                    val assetDir = MaintenanceStorage.ensureAssetDir(context, reportFolder, resolvedAsset)
+                    sharedUris.forEach { uri ->
+                        MaintenanceStorage.copySharedFileToDir(context, uri, assetDir)
+                    }
+                }
+            }
+        }
         try {
-            val reportId = pendingReportId ?: return@LaunchedEffect
-            val assetId = pendingAssetId ?: return@LaunchedEffect
-            val report = withContext(Dispatchers.IO) { repository.getReportById(reportId) }
-            val asset = withContext(Dispatchers.IO) { repository.getAssetById(assetId) }
-            if (report == null || asset == null) {
+            if (reportId != null && assetId != null && importResult.isSuccess && report != null && resolvedAsset != null) {
+                val assetLabel = when (resolvedAsset.type) {
+                    AssetType.NODE -> "Nodo"
+                    AssetType.AMPLIFIER -> {
+                        val portName = resolvedAsset.port?.name ?: ""
+                        val portIndex = resolvedAsset.portIndex?.let { String.format("%02d", it) } ?: ""
+                        "Amplificador $portName$portIndex".trim()
+                    }
+                }
                 previousEntry?.savedStateHandle?.remove<String>(PendingMeasurementReportIdKey)
                 previousEntry?.savedStateHandle?.remove<String>(PendingMeasurementAssetIdKey)
                 previousEntry?.savedStateHandle?.remove<String>(PendingMeasurementAssetTypeKey)
                 pendingStore.clear()
-                return@LaunchedEffect
-            }
-            val resolvedAsset = if (pendingAssetType == AssetType.AMPLIFIER.name) {
-                asset.copy(type = AssetType.AMPLIFIER)
+                snackbarHostState.showSnackbar("Archivos guardados en $assetLabel")
+                onShareHandled()
+                navController.navigate(Screen.AddAsset.createRoute(reportId, assetId)) {
+                    launchSingleTop = true
+                    popUpTo(Screen.ShareImport.route) { inclusive = true }
+                }
             } else {
-                asset
-            }
-            val assetLabel = when (resolvedAsset.type) {
-                AssetType.NODE -> "Nodo"
-                AssetType.AMPLIFIER -> {
-                    val portName = asset.port?.name ?: ""
-                    val portIndex = asset.portIndex?.let { String.format("%02d", it) } ?: ""
-                    "Amplificador $portName$portIndex".trim()
+                previousEntry?.savedStateHandle?.remove<String>(PendingMeasurementReportIdKey)
+                previousEntry?.savedStateHandle?.remove<String>(PendingMeasurementAssetIdKey)
+                previousEntry?.savedStateHandle?.remove<String>(PendingMeasurementAssetTypeKey)
+                pendingStore.clear()
+                Toast.makeText(
+                    context,
+                    "No se pudieron importar las mediciones.",
+                    Toast.LENGTH_SHORT
+                ).show()
+                onShareHandled()
+                if (reportId != null && assetId != null) {
+                    navController.navigate(Screen.AddAsset.createRoute(reportId, assetId)) {
+                        launchSingleTop = true
+                        popUpTo(Screen.ShareImport.route) { inclusive = true }
+                    }
+                } else {
+                    navController.navigate(Screen.Home.route) {
+                        launchSingleTop = true
+                        popUpTo(Screen.ShareImport.route) { inclusive = true }
+                    }
                 }
-            }
-            withContext(Dispatchers.IO) {
-                val reportFolder = MaintenanceStorage.reportFolderName(report.eventName, report.id)
-                val assetDir = MaintenanceStorage.ensureAssetDir(context, reportFolder, resolvedAsset)
-                sharedUris.forEach { uri ->
-                    MaintenanceStorage.copySharedFileToDir(context, uri, assetDir)
-                }
-            }
-            previousEntry?.savedStateHandle?.remove<String>(PendingMeasurementReportIdKey)
-            previousEntry?.savedStateHandle?.remove<String>(PendingMeasurementAssetIdKey)
-            previousEntry?.savedStateHandle?.remove<String>(PendingMeasurementAssetTypeKey)
-            pendingStore.clear()
-            snackbarHostState.showSnackbar("Archivos guardados en $assetLabel")
-            onShareHandled()
-            navController.navigate(Screen.AddAsset.createRoute(reportId, assetId)) {
-                launchSingleTop = true
-                popUpTo(Screen.ShareImport.route) { inclusive = true }
             }
         } finally {
             isAutoImporting = false
