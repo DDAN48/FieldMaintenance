@@ -194,6 +194,20 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
             ampAdj.outCh136Dbmv != null
         okAdj
     }
+    val ampEntradaOk = if (assetType != AssetType.AMPLIFIER) true else {
+        val adj = ampAdj
+        if (adj == null) {
+            false
+        } else {
+            val ch50Med = adj.inputCh50Dbmv
+            val ch50Plan = adj.inputPlanCh50Dbmv
+            val highMed = adj.inputCh116Dbmv
+            val highPlan = adj.inputPlanHighDbmv
+            val ch50Ok = ch50Med != null && ch50Plan != null && ch50Med >= 15.0 && kotlin.math.abs(ch50Med - ch50Plan) < 4.0
+            val highOk = highMed != null && highPlan != null && highMed >= 15.0 && kotlin.math.abs(highMed - highPlan) < 4.0
+            ch50Ok && highOk
+        }
+    }
 
     val autoNodeAdjOk = if (assetType != AssetType.NODE) true else {
         val adj = nodeAdjustment
@@ -931,23 +945,31 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
 
             if (autoSaved && !isRphyNode) {
                 Spacer(modifier = Modifier.height(8.dp))
-                AssetFileSection(
-                    context = context,
-                    navController = navController,
-                    repository = repository,
-                    reportFolder = MaintenanceStorage.reportFolderName(report?.eventName, reportId),
-                    onInteraction = triggerAdjustmentsCollapse,
-                    asset = Asset(
-                        id = workingAssetId,
-                        reportId = reportId,
-                        type = assetType,
-                        frequencyMHz = frequency?.mhz ?: 0,
-                        amplifierMode = amplifierMode,
-                        port = port,
-                        portIndex = portIndex,
-                        technology = if (assetType == AssetType.NODE) technology else null
+                if (assetType == AssetType.AMPLIFIER && !ampEntradaOk) {
+                    Text(
+                        "Complete mediciones de entrada válidas para continuar. La diferencia entre el nivel de entrada y medido aceptable es menor a 4. Nivel minimo de entrada permitido es 15 dBmV si esta indicado por plano.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
                     )
-                )
+                } else {
+                    AssetFileSection(
+                        context = context,
+                        navController = navController,
+                        repository = repository,
+                        reportFolder = MaintenanceStorage.reportFolderName(report?.eventName, reportId),
+                        onInteraction = triggerAdjustmentsCollapse,
+                        asset = Asset(
+                            id = workingAssetId,
+                            reportId = reportId,
+                            type = assetType,
+                            frequencyMHz = frequency?.mhz ?: 0,
+                            amplifierMode = amplifierMode,
+                            port = port,
+                            portIndex = portIndex,
+                            technology = if (assetType == AssetType.NODE) technology else null
+                        )
+                    )
+                }
             }
             
             Spacer(modifier = Modifier.height(16.dp))
