@@ -86,6 +86,7 @@ import com.example.fieldmaintenance.util.AppSettings
 import com.example.fieldmaintenance.util.MaintenanceStorage
 import com.example.fieldmaintenance.util.PlanCache
 import com.example.fieldmaintenance.util.PlanRepository
+import com.example.fieldmaintenance.util.PendingMeasurementStore
 import com.example.fieldmaintenance.util.hasIncompleteAssets
 import java.util.Locale
 import java.io.ByteArrayInputStream
@@ -2563,6 +2564,7 @@ private fun AssetFileSection(
     asset: Asset
 ) {
     val isNodeAsset = asset.type == AssetType.NODE
+    val pendingStore = remember { PendingMeasurementStore(context.applicationContext) }
     val rxAssetDir = remember(reportFolder, asset) {
         MaintenanceStorage.ensureAssetDir(context, reportFolder, asset)
     }
@@ -2588,6 +2590,9 @@ private fun AssetFileSection(
     fun startViaviImport(assetTypeForImport: AssetType) {
         onInteraction()
         if (viaviIntent != null) {
+            scope.launch {
+                pendingStore.save(asset.reportId, asset.id, assetTypeForImport.name)
+            }
             navController.currentBackStackEntry?.savedStateHandle?.apply {
                 set(PendingMeasurementReportIdKey, asset.reportId)
                 set(PendingMeasurementAssetIdKey, asset.id)

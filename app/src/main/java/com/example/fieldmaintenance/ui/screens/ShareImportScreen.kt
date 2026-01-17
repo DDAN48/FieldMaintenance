@@ -67,6 +67,8 @@ import com.example.fieldmaintenance.ui.navigation.PendingMeasurementAssetTypeKey
 import com.example.fieldmaintenance.ui.navigation.Screen
 import com.example.fieldmaintenance.util.DatabaseProvider
 import com.example.fieldmaintenance.util.MaintenanceStorage
+import com.example.fieldmaintenance.util.PendingMeasurementState
+import com.example.fieldmaintenance.util.PendingMeasurementStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -84,19 +86,18 @@ fun ShareImportScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     var isAutoImporting by remember { mutableStateOf(false) }
+    val pendingStore = remember { PendingMeasurementStore(context.applicationContext) }
+    val storedPending by pendingStore.pending.collectAsState(initial = PendingMeasurementState())
     val previousEntry = navController.previousBackStackEntry
-    var pendingReportId by remember {
-        mutableStateOf(previousEntry?.savedStateHandle?.get<String>(PendingMeasurementReportIdKey))
-    }
-    var pendingAssetId by remember {
-        mutableStateOf(previousEntry?.savedStateHandle?.get<String>(PendingMeasurementAssetIdKey))
-    }
-    var pendingAssetType by remember {
-        mutableStateOf(previousEntry?.savedStateHandle?.get<String>(PendingMeasurementAssetTypeKey))
-    }
+    val pendingReportId = previousEntry?.savedStateHandle?.get<String>(PendingMeasurementReportIdKey)
+        ?: storedPending.reportId
+    val pendingAssetId = previousEntry?.savedStateHandle?.get<String>(PendingMeasurementAssetIdKey)
+        ?: storedPending.assetId
+    val pendingAssetType = previousEntry?.savedStateHandle?.get<String>(PendingMeasurementAssetTypeKey)
+        ?: storedPending.assetType
     val hasPendingAsset = !pendingReportId.isNullOrBlank() && !pendingAssetId.isNullOrBlank()
 
-    LaunchedEffect(sharedUris, hasPendingAsset) {
+    LaunchedEffect(sharedUris, hasPendingAsset, pendingReportId, pendingAssetId, pendingAssetType) {
         if (!hasPendingAsset || sharedUris.isEmpty()) return@LaunchedEffect
         isAutoImporting = true
         try {
@@ -108,9 +109,7 @@ fun ShareImportScreen(
                 previousEntry?.savedStateHandle?.remove<String>(PendingMeasurementReportIdKey)
                 previousEntry?.savedStateHandle?.remove<String>(PendingMeasurementAssetIdKey)
                 previousEntry?.savedStateHandle?.remove<String>(PendingMeasurementAssetTypeKey)
-                pendingReportId = null
-                pendingAssetId = null
-                pendingAssetType = null
+                pendingStore.clear()
                 return@LaunchedEffect
             }
             val resolvedAsset = if (pendingAssetType == AssetType.AMPLIFIER.name) {
@@ -136,9 +135,7 @@ fun ShareImportScreen(
             previousEntry?.savedStateHandle?.remove<String>(PendingMeasurementReportIdKey)
             previousEntry?.savedStateHandle?.remove<String>(PendingMeasurementAssetIdKey)
             previousEntry?.savedStateHandle?.remove<String>(PendingMeasurementAssetTypeKey)
-            pendingReportId = null
-            pendingAssetId = null
-            pendingAssetType = null
+            pendingStore.clear()
             snackbarHostState.showSnackbar("Archivos guardados en $assetLabel")
             onShareHandled()
             navController.navigate(Screen.AddAsset.createRoute(reportId, assetId)) {
