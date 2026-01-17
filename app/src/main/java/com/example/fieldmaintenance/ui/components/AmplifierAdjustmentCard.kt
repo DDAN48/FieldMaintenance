@@ -77,6 +77,7 @@ fun AmplifierAdjustmentCard(
     var salidaPlanoExpanded by rememberSaveable(assetId) { mutableStateOf(true) }
     var compareExpanded by rememberSaveable(assetId) { mutableStateOf(true) }
     var recoExpanded by rememberSaveable(assetId) { mutableStateOf(true) }
+    var entradaAlert by remember(assetId) { mutableStateOf<EntradaAlert?>(null) }
 
     var dirty by rememberSaveable(assetId) { mutableStateOf(false) }
 
@@ -193,6 +194,35 @@ fun AmplifierAdjustmentCard(
     }
 
     fun isWeirdDbmv(v: Double?): Boolean = v != null && (v < -20.0 || v > 80.0)
+    fun maybeTriggerEntradaAlert(
+        canal: String,
+        med: Double?,
+        plan: Double? = null,
+        calc: Double? = null
+    ) {
+        if (med == null) return
+        val reference = plan ?: calc
+        val delta = if (reference != null) kotlin.math.abs(med - reference) else null
+        val needsAlert = med < 15.0 || (delta != null && delta >= 4.0)
+        if (!needsAlert) return
+        val planLabel = reference?.let { CiscoHfcAmpCalculator.format1(it) } ?: "—"
+        val diffLabel = delta?.let { CiscoHfcAmpCalculator.format1(it) } ?: "—"
+        val message = buildString {
+            append("EL nivel medido esta desviado ")
+            append(diffLabel)
+            append(" con respecto a los niveles del plano ")
+            append(planLabel)
+            append(". Revise posibles problemas en la entrada para continuar con los ajustes.")
+        }
+        val key = "$canal:${med}:${plan}"
+        if (entradaAlert?.key != key) {
+            entradaAlert = EntradaAlert(
+                key = key,
+                title = "Nivel fuera de rango",
+                message = message
+            )
+        }
+    }
 
     // Outer "frame" for the whole module (visual border)
     Card(
@@ -254,6 +284,13 @@ fun AmplifierAdjustmentCard(
                         onMedidoChange = { dirty = true; inCh50 = it },
                         onPlanChange = { dirty = true; inPlanCh50 = it }
                     )
+                    LaunchedEffect(inCh50, entradaCalc) {
+                        maybeTriggerEntradaAlert(
+                            canal = "CH50",
+                            med = parseDbmv(inCh50),
+                            calc = entradaCalc?.get("CH50")
+                        )
+                    }
                     val highFreq = inHighFreq ?: 750
                     val highCanal = if (highFreq == 870) "CH136" else "CH116"
                     EntradaRowWithFreqSelector(
@@ -267,6 +304,14 @@ fun AmplifierAdjustmentCard(
                         onMedidoChange = { dirty = true; inHigh = it },
                         onPlanChange = { dirty = true; inPlanHigh = it }
                     )
+                    LaunchedEffect(inHigh, inHighFreq, entradaCalc) {
+                        val canalKey = if (inHighFreq == 870) "CH136" else "CH116"
+                        maybeTriggerEntradaAlert(
+                            canal = canalKey,
+                            med = parseDbmv(inHigh),
+                            calc = entradaCalc?.get(canalKey)
+                        )
+                    }
 
                     Spacer(Modifier.height(10.dp))
                     // Calculated list (no extra title; CALC column already indicates)
@@ -453,7 +498,23 @@ fun AmplifierAdjustmentCard(
             }
         }
     }
+    entradaAlert?.let { alert ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { entradaAlert = null },
+            title = { Text(alert.title) },
+            text = { Text(alert.message) },
+            confirmButton = {
+                TextButton(onClick = { entradaAlert = null }) { Text("Aceptar") }
+            }
+        )
+    }
 }
+
+private data class EntradaAlert(
+    val key: String,
+    val title: String,
+    val message: String
+)
 
 @Composable
 private fun SectionTitle(text: String) {
@@ -471,6 +532,7 @@ private fun DbmvField(
     textColor: Color? = null,
     onChange: (String) -> Unit
 ) {
+    var wasFocused by remember { mutableStateOf(false) }
     if (!compact) {
         OutlinedTextField(
             value = value,
