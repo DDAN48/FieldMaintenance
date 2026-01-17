@@ -285,6 +285,13 @@ fun AmplifierAdjustmentCard(
                             maybeTriggerEntradaAlert("CH50", parseDbmv(inCh50), parseDbmv(inPlanCh50))
                         }
                     )
+                    LaunchedEffect(inCh50, entradaCalc) {
+                        maybeTriggerEntradaAlert(
+                            canal = "CH50",
+                            med = parseDbmv(inCh50),
+                            calc = entradaCalc?.get("CH50")
+                        )
+                    }
                     val highFreq = inHighFreq ?: 750
                     val highCanal = if (highFreq == 870) "CH136" else "CH116"
                     EntradaRowWithFreqSelector(
@@ -304,6 +311,14 @@ fun AmplifierAdjustmentCard(
                             maybeTriggerEntradaAlert(highCanal, parseDbmv(inHigh), parseDbmv(inPlanHigh))
                         }
                     )
+                    LaunchedEffect(inHigh, inHighFreq, entradaCalc) {
+                        val canalKey = if (inHighFreq == 870) "CH136" else "CH116"
+                        maybeTriggerEntradaAlert(
+                            canal = canalKey,
+                            med = parseDbmv(inHigh),
+                            calc = entradaCalc?.get(canalKey)
+                        )
+                    }
 
                     Spacer(Modifier.height(10.dp))
                     // Calculated list (no extra title; CALC column already indicates)
