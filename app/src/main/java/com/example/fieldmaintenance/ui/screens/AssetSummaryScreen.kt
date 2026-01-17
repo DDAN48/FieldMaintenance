@@ -40,6 +40,7 @@ import com.example.fieldmaintenance.util.ExportManager
 import com.example.fieldmaintenance.util.MaintenanceStorage
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.saveable.rememberSaveable
+import kotlin.math.abs
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -151,10 +152,28 @@ fun AssetSummaryScreen(navController: NavController, reportId: String) {
 
                         val ampAdjOk = if (asset.type != AssetType.AMPLIFIER) true else {
                             val adj = amplifierAdjustment
+                            val entradaValid = adj?.let {
+                                val ch50Med = it.inputCh50Dbmv
+                                val ch50Plan = it.inputPlanCh50Dbmv
+                                val highMed = it.inputCh116Dbmv
+                                val highPlan = it.inputPlanHighDbmv
+                                val ch50Ok = ch50Med != null &&
+                                    ch50Plan != null &&
+                                    ch50Med >= 15.0 &&
+                                    abs(ch50Med - ch50Plan) < 4.0
+                                val highOk = highMed != null &&
+                                    highPlan != null &&
+                                    highMed >= 15.0 &&
+                                    abs(highMed - highPlan) < 4.0
+                                ch50Ok && highOk
+                            } ?: false
                             adj != null &&
                                 adj.inputCh50Dbmv != null &&
                                 adj.inputCh116Dbmv != null &&
                                 (adj.inputHighFreqMHz == 750 || adj.inputHighFreqMHz == 870) &&
+                                adj.inputPlanCh50Dbmv != null &&
+                                adj.inputPlanHighDbmv != null &&
+                                entradaValid &&
                                 adj.planLowDbmv != null &&
                                 adj.planHighDbmv != null &&
                                 adj.outCh50Dbmv != null &&
