@@ -259,6 +259,17 @@ fun AmplifierAdjustmentCard(
                     expanded = entradaExpanded,
                     onToggle = { entradaExpanded = !entradaExpanded }
                 ) {
+                    Text(
+                        "FWD IN PAD: ${pad?.let { CiscoHfcAmpCalculator.format1(it) } ?: "—"}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                    )
+                    Text(
+                        "${if (tilt != null && tilt > 0) "FWD IN invEQ" else "FWD IN EQ"}: ${tilt?.let { CiscoHfcAmpCalculator.format1(it) } ?: "—"}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                    )
+                    Spacer(Modifier.height(6.dp))
                     // Header row like the reference (CANAL / FRECUENCIA / AMPLITUD / PLANO / DIF)
                     EntradaHeaderRow()
                     EntradaRowPlan(
@@ -448,16 +459,6 @@ fun AmplifierAdjustmentCard(
                         calc = salidaCalc?.get("CH158")
                     )
                     Spacer(Modifier.height(6.dp))
-                    Text(
-                        "FWD IN PAD: ${pad?.let { CiscoHfcAmpCalculator.format1(it) } ?: "—"}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                    )
-                    Text(
-                        "${if (tilt != null && tilt > 0) "FWD IN invEQ" else "FWD IN EQ"}: ${tilt?.let { CiscoHfcAmpCalculator.format1(it) } ?: "—"}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                    )
                     Text(
                         "AGC IN PAD: ${agc?.let { CiscoHfcAmpCalculator.format1(it) } ?: "—"}",
                         style = MaterialTheme.typography.bodySmall,
