@@ -1882,45 +1882,10 @@ private fun AssetFileSection(
         val moduleSummary = if (isNodeAsset) verificationSummaryModule else null
         Triple(rxSummary, moduleSummary, (rxSummary?.observationTotal ?: 0) + (moduleSummary?.observationTotal ?: 0))
     }
-    val observationHash = remember(observationSummary) {
-        val (rxSummary, moduleSummary, _) = observationSummary
-        buildString {
-            rxSummary?.let {
-                append("rx:${it.observationTotal}")
-                append(it.observationGroups.joinToString { group -> "${group.type}:${group.file}:${group.count}" })
-                append(it.geoIssueDetails.joinToString { detail -> "${detail.type}:${detail.file}:${detail.detail}" })
-            }
-            moduleSummary?.let {
-                append("mod:${it.observationTotal}")
-                append(it.observationGroups.joinToString { group -> "${group.type}:${group.file}:${group.count}" })
-                append(it.geoIssueDetails.joinToString { detail -> "${detail.type}:${detail.file}:${detail.detail}" })
-            }
-        }
-    }
     val observationPrefs = remember {
         context.getSharedPreferences("observation_flags", Context.MODE_PRIVATE)
     }
     var showObservationsDialog by rememberSaveable { mutableStateOf(false) }
-
-    @Composable
-    fun ObservationSection(
-        title: String,
-        summary: MeasurementVerificationSummary?
-    ) {
-        if (summary == null || summary.observationTotal == 0) return
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(title, fontWeight = FontWeight.SemiBold)
-            if (summary.geoIssueDetails.isNotEmpty()) {
-                Text("Georreferencias", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
-                summary.geoIssueDetails.forEach { detail ->
-                    Text(
-                        "${detail.file}: ${detail.detail}",
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                }
-            }
-        }
-    }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -2015,13 +1980,13 @@ private fun AssetFileSection(
                     )
                 }
             }
-            LaunchedEffect(canRefresh, observationHash, asset.id) {
+            LaunchedEffect(canRefresh, asset.id) {
                 if (canRefresh && observationSummary.third > 0) {
-                    val key = "obs_shown_${asset.id}"
-                    val storedHash = observationPrefs.getString(key, "").orEmpty()
-                    if (observationHash.isNotEmpty() && observationHash != storedHash) {
+                    val key = "obs_auto_shown_${asset.id}"
+                    val wasShown = observationPrefs.getBoolean(key, false)
+                    if (!wasShown) {
                         showObservationsDialog = true
-                        observationPrefs.edit().putString(key, observationHash).apply()
+                        observationPrefs.edit().putBoolean(key, true).apply()
                     }
                 }
             }
@@ -2032,19 +1997,28 @@ private fun AssetFileSection(
                     text = {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             val (rxSummary, moduleSummary, _) = observationSummary
+                            val geoIssues = buildList {
+                                rxSummary?.geoIssueDetails?.let { addAll(it) }
+                                if (isNodeAsset) {
+                                    moduleSummary?.geoIssueDetails?.let { addAll(it) }
+                                }
+                            }
                             if (observationSummary.third == 0) {
                                 Text("Sin observaciones.")
                             } else {
                                 Text("Observaciones detectadas: ${observationSummary.third}", fontWeight = FontWeight.SemiBold)
-                                ObservationSection(
-                                    title = "RX",
-                                    summary = rxSummary
-                                )
-                                if (isNodeAsset) {
-                                    ObservationSection(
-                                        title = "Módulo",
-                                        summary = moduleSummary
+                                if (geoIssues.isNotEmpty()) {
+                                    Text(
+                                        "Problemas de Georeferencia",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontWeight = FontWeight.SemiBold
                                     )
+                                    geoIssues.forEach { detail ->
+                                        Text(
+                                            "${detail.file}: ${detail.detail}",
+                                            style = MaterialTheme.typography.bodySmall
+                                        )
+                                    }
                                 }
                             }
                         }
