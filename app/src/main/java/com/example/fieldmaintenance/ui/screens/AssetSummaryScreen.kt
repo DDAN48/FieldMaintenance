@@ -38,9 +38,16 @@ import com.example.fieldmaintenance.util.DatabaseProvider
 import com.example.fieldmaintenance.util.EmailManager
 import com.example.fieldmaintenance.util.ExportManager
 import com.example.fieldmaintenance.util.MaintenanceStorage
+import com.example.fieldmaintenance.util.loadDiscardedLabels
+import com.example.fieldmaintenance.util.meetsRequired
+import com.example.fieldmaintenance.util.requiredCounts
+import com.example.fieldmaintenance.util.verifyMeasurementFiles
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.saveable.rememberSaveable
+import java.io.File
 import kotlin.math.abs
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -108,17 +115,56 @@ fun AssetSummaryScreen(navController: NavController, reportId: String) {
                     val nodeAdjustment by repository.getNodeAdjustment(asset.id).collectAsState(initial = null)
                     val amplifierAdjustment by repository.getAmplifierAdjustment(asset.id).collectAsState(initial = null)
                     val reportFolder = MaintenanceStorage.reportFolderName(report?.eventName, reportId)
-                    val measurementCount = remember(asset, reportFolder) {
-                        MaintenanceStorage.ensureAssetDir(context, reportFolder, asset)
-                            .listFiles()
-                            ?.count { it.isFile } ?: 0
+                    val measurementsOk by produceState(initialValue = true, asset, reportFolder) {
+                        val rxAssetDir = MaintenanceStorage.ensureAssetDir(context, reportFolder, asset)
+                        val rxFiles = rxAssetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
+                        val rxDiscardedFile = File(rxAssetDir, ".discarded_measurements.txt")
+                        val rxDiscardedLabels = loadDiscardedLabels(rxDiscardedFile)
+                        val rxRequired = requiredCounts(asset.type, isModule = false)
+                        val rxSummary = withContext(Dispatchers.IO) {
+                            verifyMeasurementFiles(
+                                context,
+                                rxFiles,
+                                asset,
+                                repository,
+                                rxDiscardedLabels,
+                                expectedDocsisOverride = rxRequired.expectedDocsis,
+                                expectedChannelOverride = rxRequired.expectedChannel
+                            )
+                        }
+                        val rxOk = meetsRequired(rxSummary, rxRequired)
+
+                        val moduleOk = if (asset.type == AssetType.NODE) {
+                            val moduleAsset = asset.copy(type = AssetType.AMPLIFIER)
+                            val moduleAssetDir = MaintenanceStorage.ensureAssetDir(context, reportFolder, moduleAsset)
+                            val moduleFiles = moduleAssetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
+                            val moduleDiscardedFile = File(moduleAssetDir, ".discarded_measurements.txt")
+                            val moduleDiscardedLabels = loadDiscardedLabels(moduleDiscardedFile)
+                            val moduleRequired = requiredCounts(moduleAsset.type, isModule = true)
+                            val moduleSummary = withContext(Dispatchers.IO) {
+                                verifyMeasurementFiles(
+                                    context,
+                                    moduleFiles,
+                                    moduleAsset,
+                                    repository,
+                                    moduleDiscardedLabels,
+                                    expectedDocsisOverride = moduleRequired.expectedDocsis,
+                                    expectedChannelOverride = moduleRequired.expectedChannel
+                                )
+                            }
+                            meetsRequired(moduleSummary, moduleRequired)
+                        } else {
+                            true
+                        }
+
+                        value = rxOk && moduleOk
                     }
                     val hasMissingData = remember(
                         asset,
                         photos,
                         nodeAdjustment,
                         amplifierAdjustment,
-                        measurementCount
+                        measurementsOk
                     ) {
                         val techNormalized = asset.technology?.trim()?.lowercase() ?: ""
                         val moduleCount = photos.count { it.photoType == PhotoType.MODULE }
@@ -183,7 +229,6 @@ fun AssetSummaryScreen(navController: NavController, reportId: String) {
                                 adj.outCh136Dbmv != null
                         }
 
-                        val measurementsOk = measurementCount > 0
                         !(moduleOk && opticsOk && nodeAdjOk && ampAdjOk && measurementsOk)
                     }
 
