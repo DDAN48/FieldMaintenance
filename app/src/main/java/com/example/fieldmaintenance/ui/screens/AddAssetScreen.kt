@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -1876,6 +1877,18 @@ private fun AssetFileSection(
         }
     }
 
+    val observationItems = remember(verificationSummaryRx, verificationSummaryModule, isNodeAsset) {
+        buildList {
+            verificationSummaryRx?.observationDetails?.forEach { add("RX: $it") }
+            if (isNodeAsset) {
+                verificationSummaryModule?.observationDetails?.forEach { add("Módulo: $it") }
+            }
+        }
+    }
+    val observationHash = remember(observationItems) { observationItems.joinToString("|") }
+    var showObservationsDialog by rememberSaveable { mutableStateOf(false) }
+    var lastObservationHash by rememberSaveable { mutableStateOf("") }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
@@ -1886,23 +1899,36 @@ private fun AssetFileSection(
                 .padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
+            val rxRequired = requiredCounts(asset.type, isModule = false)
+            val moduleRequired = requiredCounts(moduleAsset.type, isModule = true)
+            val canRefresh = if (isNodeAsset) {
+                meetsRequired(verificationSummaryRx, rxRequired) &&
+                    meetsRequired(verificationSummaryModule, moduleRequired)
+            } else {
+                meetsRequired(verificationSummaryRx, rxRequired)
+            }
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                val rxRequired = requiredCounts(asset.type, isModule = false)
-                val moduleRequired = requiredCounts(moduleAsset.type, isModule = true)
-                val canRefresh = if (isNodeAsset) {
-                    meetsRequired(verificationSummaryRx, rxRequired) &&
-                        meetsRequired(verificationSummaryModule, moduleRequired)
-                } else {
-                    meetsRequired(verificationSummaryRx, rxRequired)
-                }
                 Text(
                     "Carga de Mediciones",
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.weight(1f)
                 )
+                IconButton(
+                    onClick = { showObservationsDialog = true }
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Visibility,
+                        contentDescription = "Observaciones",
+                        tint = if (observationItems.isNotEmpty()) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.primary
+                        }
+                    )
+                }
                 IconButton(
                     onClick = {
                         onInteraction()
@@ -1955,6 +1981,34 @@ private fun AssetFileSection(
                         contentDescription = if (isExpanded) "Colapsar" else "Expandir"
                     )
                 }
+            }
+            LaunchedEffect(canRefresh, observationHash) {
+                if (canRefresh && observationItems.isNotEmpty() && observationHash != lastObservationHash) {
+                    showObservationsDialog = true
+                    lastObservationHash = observationHash
+                }
+            }
+            if (showObservationsDialog) {
+                AlertDialog(
+                    onDismissRequest = { showObservationsDialog = false },
+                    title = { Text("Fallas Detectadas") },
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            if (observationItems.isEmpty()) {
+                                Text("Sin observaciones.")
+                            } else {
+                                observationItems.forEach { item ->
+                                    Text("• $item")
+                                }
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = { showObservationsDialog = false }) {
+                            Text("Aceptar")
+                        }
+                    }
+                )
             }
             val geoLocation = if (isNodeAsset) {
                 verificationSummaryModule?.geoLocation ?: verificationSummaryRx?.geoLocation
