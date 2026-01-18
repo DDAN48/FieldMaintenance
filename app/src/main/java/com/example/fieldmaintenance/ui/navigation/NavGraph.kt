@@ -28,10 +28,18 @@ sealed class Screen(val route: String) {
     object GeneralInfo : Screen("general_info/{reportId}") {
         fun createRoute(reportId: String) = "general_info/$reportId"
     }
-    object AddAsset : Screen("add_asset/{reportId}?assetId={assetId}") {
-        fun createRoute(reportId: String, assetId: String? = null): String {
+    object AddAsset : Screen("add_asset/{reportId}?assetId={assetId}&assetType={assetType}") {
+        fun createRoute(
+            reportId: String,
+            assetId: String? = null,
+            assetType: com.example.fieldmaintenance.data.model.AssetType? = null
+        ): String {
             return if (assetId.isNullOrBlank()) {
-                "add_asset/$reportId"
+                if (assetType == null) {
+                    "add_asset/$reportId"
+                } else {
+                    "add_asset/$reportId?assetType=${assetType.name}"
+                }
             } else {
                 "add_asset/$reportId?assetId=$assetId"
             }
@@ -90,10 +98,12 @@ fun NavGraph(
         composable(Screen.AddAsset.route) { backStackEntry ->
             val reportId = backStackEntry.arguments?.getString("reportId") ?: ""
             val assetId = backStackEntry.arguments?.getString("assetId")
+            val assetType = backStackEntry.arguments?.getString("assetType")
             AddAssetScreen(
                 navController = navController,
                 reportId = reportId,
-                assetId = assetId
+                assetId = assetId,
+                assetTypeParam = assetType
             )
         }
         composable(Screen.AssetSummary.route) { backStackEntry ->

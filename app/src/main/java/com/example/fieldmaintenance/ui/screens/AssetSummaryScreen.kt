@@ -250,7 +250,14 @@ fun AssetSummaryScreen(navController: NavController, reportId: String) {
             
             if (!hasNode) {
                 OutlinedButton(
-                    onClick = { navController.navigate(Screen.AddAsset.createRoute(reportId)) },
+                    onClick = {
+                        navController.navigate(
+                            Screen.AddAsset.createRoute(
+                                reportId,
+                                assetType = AssetType.NODE
+                            )
+                        )
+                    },
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Icon(Icons.Default.Add, contentDescription = null)
@@ -260,7 +267,14 @@ fun AssetSummaryScreen(navController: NavController, reportId: String) {
             }
 
             OutlinedButton(
-                onClick = { navController.navigate(Screen.AddAsset.createRoute(reportId)) },
+                onClick = {
+                    navController.navigate(
+                        Screen.AddAsset.createRoute(
+                            reportId,
+                            assetType = AssetType.AMPLIFIER
+                        )
+                    )
+                },
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Icon(Icons.Default.Add, contentDescription = null)

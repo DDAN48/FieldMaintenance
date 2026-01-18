@@ -115,7 +115,12 @@ import java.util.UUID
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AddAssetScreen(navController: NavController, reportId: String, assetId: String? = null) {
+fun AddAssetScreen(
+    navController: NavController,
+    reportId: String,
+    assetId: String? = null,
+    assetTypeParam: String? = null
+) {
     val context = LocalContext.current
     DatabaseProvider.init(context)
     
@@ -140,7 +145,10 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
         }
     }
     
-    var assetType by remember { mutableStateOf(AssetType.NODE) }
+    val parsedAssetType = remember(assetTypeParam) {
+        assetTypeParam?.let { type -> runCatching { AssetType.valueOf(type) }.getOrNull() }
+    }
+    var assetType by remember { mutableStateOf(parsedAssetType ?: AssetType.NODE) }
     val frequencySaver = Saver<Frequency?, String>(
         save = { it?.name ?: "" },
         restore = { if (it.isBlank()) null else Frequency.valueOf(it) }
@@ -510,139 +518,262 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Tipo de Activo + Frecuencia en la misma línea (desplegables)
-            Row(
+            var identityExpanded by rememberSaveable { mutableStateOf(true) }
+            Card(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
             ) {
-                // Tipo de Activo
-                var expandedType by remember { mutableStateOf(false) }
-                ExposedDropdownMenuBox(
-                    expanded = expandedType,
-                    onExpandedChange = { expandedType = !expandedType },
-                    modifier = Modifier.weight(1f)
+                Column(
+                    modifier = Modifier.padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    OutlinedTextField(
-                        value = if (assetType == AssetType.NODE) "Nodo" else "Amplificador",
-                        onValueChange = {},
-                        readOnly = true,
-                        enabled = true,
-                        label = { Text("Tipo de Activo") },
+                    Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .menuAnchor(),
-                        trailingIcon = {
-                            ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedType)
-                        }
-                    )
-                    ExposedDropdownMenu(
-                        expanded = expandedType,
-                        onDismissRequest = { expandedType = false }
+                            .clickable { identityExpanded = !identityExpanded },
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        if (!hasNode) {
-                            DropdownMenuItem(
-                                text = { Text("Nodo") },
-                                onClick = {
-                                    assetType = AssetType.NODE
-                                    expandedType = false
-                                }
-                            )
-                        }
-                        DropdownMenuItem(
-                            text = { Text("Amplificador") },
-                            onClick = {
-                                assetType = AssetType.AMPLIFIER
-                                expandedType = false
-                            }
+                        Text(
+                            "Identidad del activo",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Icon(
+                            imageVector = if (identityExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                            contentDescription = null
                         )
                     }
-                }
+                    if (!identityExpanded) {
+                        return@Column
+                    }
 
-                // Frecuencia
-                var expandedFreq by remember { mutableStateOf(false) }
-                ExposedDropdownMenuBox(
-                    expanded = expandedFreq,
-                    onExpandedChange = { expandedFreq = !expandedFreq },
-                    modifier = Modifier.width(130.dp)
-                ) {
-                    OutlinedTextField(
-                        value = frequency?.let { "${it.mhz} MHz" } ?: "Seleccionar",
-                        onValueChange = {},
-                        readOnly = true,
-                        enabled = true,
-                        label = { Text("Frec módulo") },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .menuAnchor(),
-                        trailingIcon = {
-                            ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedFreq)
-                        },
-                        isError = attemptedSave && frequency == null,
-                        supportingText = {
-                            if (attemptedSave && frequency == null) Text("Obligatorio")
-                        }
-                    )
-                    ExposedDropdownMenu(
+                    var expandedFreq by remember { mutableStateOf(false) }
+                    ExposedDropdownMenuBox(
                         expanded = expandedFreq,
-                        onDismissRequest = { expandedFreq = false }
+                        onExpandedChange = { expandedFreq = !expandedFreq },
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        listOf(Frequency.MHz_42, Frequency.MHz_85).forEach { freq ->
-                            DropdownMenuItem(
-                                text = { Text("${freq.mhz} MHz") },
-                                onClick = {
-                                    frequency = freq
-                                    expandedFreq = false
+                        OutlinedTextField(
+                            value = frequency?.let { "${it.mhz} MHz" } ?: "Seleccionar",
+                            onValueChange = {},
+                            readOnly = true,
+                            enabled = true,
+                            label = { Text("Frec módulo") },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .menuAnchor(),
+                            trailingIcon = {
+                                ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedFreq)
+                            },
+                            isError = attemptedSave && frequency == null,
+                            supportingText = {
+                                if (attemptedSave && frequency == null) Text("Obligatorio")
+                            }
+                        )
+                        ExposedDropdownMenu(
+                            expanded = expandedFreq,
+                            onDismissRequest = { expandedFreq = false }
+                        ) {
+                            listOf(Frequency.MHz_42, Frequency.MHz_85).forEach { freq ->
+                                DropdownMenuItem(
+                                    text = { Text("${freq.mhz} MHz") },
+                                    onClick = {
+                                        frequency = freq
+                                        expandedFreq = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    if (assetType == AssetType.NODE) {
+                        var expandedTech by remember { mutableStateOf(false) }
+                        val techOptions = listOf("Legacy", "RPHY", "VCCAP")
+                        ExposedDropdownMenuBox(
+                            expanded = expandedTech,
+                            onExpandedChange = { expandedTech = !expandedTech },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            OutlinedTextField(
+                                value = technology ?: "Seleccionar",
+                                onValueChange = {},
+                                readOnly = true,
+                                enabled = true,
+                                label = { Text("Tecnología") },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .menuAnchor(),
+                                trailingIcon = {
+                                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedTech)
+                                },
+                                isError = attemptedSave && technology == null,
+                                supportingText = {
+                                    if (attemptedSave && technology == null) Text("Obligatorio")
                                 }
                             )
+                            ExposedDropdownMenu(
+                                expanded = expandedTech,
+                                onDismissRequest = { expandedTech = false }
+                            ) {
+                                techOptions.forEach { tech ->
+                                    DropdownMenuItem(
+                                        text = { Text(tech) },
+                                        onClick = {
+                                            technology = tech
+                                            expandedTech = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    if (assetType == AssetType.AMPLIFIER) {
+                        var expandedMode by remember { mutableStateOf(false) }
+                        ExposedDropdownMenuBox(
+                            expanded = expandedMode,
+                            onExpandedChange = { expandedMode = !expandedMode },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            OutlinedTextField(
+                                value = when (amplifierMode) {
+                                    AmplifierMode.HGD -> AmplifierMode.HGD.label
+                                    AmplifierMode.HGDT -> AmplifierMode.HGDT.label
+                                    AmplifierMode.LE -> AmplifierMode.LE.label
+                                    null -> "Seleccionar"
+                                },
+                                onValueChange = {},
+                                readOnly = true,
+                                enabled = true,
+                                label = { Text("Tipo") },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .menuAnchor(),
+                                trailingIcon = {
+                                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedMode)
+                                },
+                                isError = attemptedSave && amplifierMode == null,
+                                supportingText = {
+                                    if (attemptedSave && amplifierMode == null) Text("Obligatorio")
+                                }
+                            )
+                            ExposedDropdownMenu(
+                                expanded = expandedMode,
+                                onDismissRequest = { expandedMode = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("HGD") },
+                                    onClick = {
+                                        amplifierMode = AmplifierMode.HGD
+                                        expandedMode = false
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("HGBT") },
+                                    onClick = {
+                                        amplifierMode = AmplifierMode.HGDT
+                                        expandedMode = false
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("LE") },
+                                    onClick = {
+                                        amplifierMode = AmplifierMode.LE
+                                        expandedMode = false
+                                    }
+                                )
+                            }
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            var expandedPort by remember { mutableStateOf(false) }
+                            ExposedDropdownMenuBox(
+                                expanded = expandedPort,
+                                onExpandedChange = { expandedPort = !expandedPort },
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                OutlinedTextField(
+                                    value = port?.name ?: "Puerto",
+                                    onValueChange = {},
+                                    readOnly = true,
+                                    enabled = true,
+                                    label = { Text("Puerto") },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .menuAnchor(),
+                                    trailingIcon = {
+                                        ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedPort)
+                                    },
+                                    isError = attemptedSave && port == null,
+                                    supportingText = {
+                                        if (attemptedSave && port == null) Text("Obligatorio")
+                                    }
+                                )
+                                ExposedDropdownMenu(
+                                    expanded = expandedPort,
+                                    onDismissRequest = { expandedPort = false }
+                                ) {
+                                    Port.values().forEach { p ->
+                                        DropdownMenuItem(
+                                            text = { Text(p.name) },
+                                            onClick = {
+                                                port = p
+                                                expandedPort = false
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+
+                            var expandedIndex by remember { mutableStateOf(false) }
+                            ExposedDropdownMenuBox(
+                                expanded = expandedIndex,
+                                onExpandedChange = { expandedIndex = !expandedIndex },
+                                modifier = Modifier.width(120.dp)
+                            ) {
+                                val labelValue = portIndex?.let { String.format("%02d", it) } ?: "N°"
+                                OutlinedTextField(
+                                    value = labelValue,
+                                    onValueChange = {},
+                                    readOnly = true,
+                                    enabled = true,
+                                    label = { Text("N°") },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .menuAnchor(),
+                                    trailingIcon = {
+                                        ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedIndex)
+                                    },
+                                    isError = attemptedSave && portIndex == null,
+                                    supportingText = {
+                                        if (attemptedSave && portIndex == null) Text("Obligatorio")
+                                    }
+                                )
+                                ExposedDropdownMenu(
+                                    expanded = expandedIndex,
+                                    onDismissRequest = { expandedIndex = false }
+                                ) {
+                                    (1..4).forEach { idx ->
+                                        DropdownMenuItem(
+                                            text = { Text(String.format("%02d", idx)) },
+                                            onClick = {
+                                                portIndex = idx
+                                                expandedIndex = false
+                                            }
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }
             }
 
-            // Tecnología (solo para Nodo)
-            if (assetType == AssetType.NODE) {
-                var expandedTech by remember { mutableStateOf(false) }
-                val techOptions = listOf("Legacy", "RPHY", "VCCAP")
-                ExposedDropdownMenuBox(
-                    expanded = expandedTech,
-                    onExpandedChange = { expandedTech = !expandedTech },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    OutlinedTextField(
-                        value = technology ?: "Seleccionar",
-                        onValueChange = {},
-                        readOnly = true,
-                        enabled = true,
-                        label = { Text("Tecnología") },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .menuAnchor(),
-                        trailingIcon = {
-                            ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedTech)
-                        },
-                        isError = attemptedSave && technology == null,
-                        supportingText = {
-                            if (attemptedSave && technology == null) Text("Obligatorio")
-                        }
-                    )
-                    ExposedDropdownMenu(
-                        expanded = expandedTech,
-                        onDismissRequest = { expandedTech = false }
-                    ) {
-                        techOptions.forEach { tech ->
-                            DropdownMenuItem(
-                                text = { Text(tech) },
-                                onClick = {
-                                    technology = tech
-                                    expandedTech = false
-                                }
-                            )
-                        }
-                    }
-                }
-            }
-
-            // Submódulo: Ajuste de Nodo (después de Tipo + Frecuencia + Tecnología)
+            // Submódulo: Ajuste de Nodo (después de identidad)
             if (assetType == AssetType.NODE) {
                 NodeAdjustmentCard(
                     assetId = workingAssetId,
@@ -660,151 +791,6 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
                 )
             }
             
-            // Amplificador: 2da línea = Tipo (HGD/HGBT/LE), 3ra línea = Puerto + N°
-            if (assetType == AssetType.AMPLIFIER) {
-                // 2da línea: Tipo
-                var expandedMode by remember { mutableStateOf(false) }
-                ExposedDropdownMenuBox(
-                    expanded = expandedMode,
-                    onExpandedChange = { expandedMode = !expandedMode },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    OutlinedTextField(
-                        value = when (amplifierMode) {
-                            AmplifierMode.HGD -> AmplifierMode.HGD.label
-                            AmplifierMode.HGDT -> AmplifierMode.HGDT.label
-                            AmplifierMode.LE -> AmplifierMode.LE.label
-                            null -> "Seleccionar"
-                        },
-                        onValueChange = {},
-                        readOnly = true,
-                        enabled = true,
-                        label = { Text("Tipo") },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .menuAnchor(),
-                        trailingIcon = {
-                            ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedMode)
-                        },
-                        isError = attemptedSave && amplifierMode == null,
-                        supportingText = {
-                            if (attemptedSave && amplifierMode == null) Text("Obligatorio")
-                        }
-                    )
-                    ExposedDropdownMenu(
-                        expanded = expandedMode,
-                        onDismissRequest = { expandedMode = false }
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text("HGD") },
-                            onClick = {
-                                amplifierMode = AmplifierMode.HGD
-                                expandedMode = false
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("HGBT") },
-                            onClick = {
-                                amplifierMode = AmplifierMode.HGDT
-                                expandedMode = false
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("LE") },
-                            onClick = {
-                                amplifierMode = AmplifierMode.LE
-                                expandedMode = false
-                            }
-                        )
-                    }
-                }
-
-                // 3ra línea: Puerto + N°
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    var expandedPort by remember { mutableStateOf(false) }
-                    ExposedDropdownMenuBox(
-                        expanded = expandedPort,
-                        onExpandedChange = { expandedPort = !expandedPort },
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        OutlinedTextField(
-                            value = port?.name ?: "Puerto",
-                            onValueChange = {},
-                            readOnly = true,
-                            enabled = true,
-                            label = { Text("Puerto") },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .menuAnchor(),
-                            trailingIcon = {
-                                ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedPort)
-                            },
-                            isError = attemptedSave && port == null,
-                            supportingText = {
-                                if (attemptedSave && port == null) Text("Obligatorio")
-                            }
-                        )
-                        ExposedDropdownMenu(
-                            expanded = expandedPort,
-                            onDismissRequest = { expandedPort = false }
-                        ) {
-                            Port.values().forEach { p ->
-                                DropdownMenuItem(
-                                    text = { Text(p.name) },
-                                    onClick = {
-                                        port = p
-                                        expandedPort = false
-                                    }
-                                )
-                            }
-                        }
-                    }
-
-                    var expandedIndex by remember { mutableStateOf(false) }
-                    ExposedDropdownMenuBox(
-                        expanded = expandedIndex,
-                        onExpandedChange = { expandedIndex = !expandedIndex },
-                        modifier = Modifier.width(120.dp)
-                    ) {
-                        val labelValue = portIndex?.let { String.format("%02d", it) } ?: "N°"
-                        OutlinedTextField(
-                            value = labelValue,
-                            onValueChange = {},
-                            readOnly = true,
-                            enabled = true,
-                            label = { Text("N°") },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .menuAnchor(),
-                            trailingIcon = {
-                                ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedIndex)
-                            },
-                            isError = attemptedSave && portIndex == null,
-                            supportingText = {
-                                if (attemptedSave && portIndex == null) Text("Obligatorio")
-                            }
-                        )
-                        ExposedDropdownMenu(
-                            expanded = expandedIndex,
-                            onDismissRequest = { expandedIndex = false }
-                        ) {
-                            (1..4).forEach { idx ->
-                                DropdownMenuItem(
-                                    text = { Text(String.format("%02d", idx)) },
-                                    onClick = {
-                                        portIndex = idx
-                                        expandedIndex = false
-                                    }
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-
             // Submódulo: Ajuste de Amplificador (antes de Fotos)
             if (assetType == AssetType.AMPLIFIER) {
                 if (frequency == null || amplifierMode == null) {
