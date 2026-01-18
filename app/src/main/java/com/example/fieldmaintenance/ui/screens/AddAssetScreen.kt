@@ -1910,28 +1910,6 @@ private fun AssetFileSection(
         if (summary == null || summary.observationTotal == 0) return
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(title, fontWeight = FontWeight.SemiBold)
-            val groupsByType = summary.observationGroups.groupBy { it.type }
-            val typeOrder = listOf("docsisexpert", "channelexpert")
-            val typeLabels = mapOf(
-                "docsisexpert" to "DocsisExpert",
-                "channelexpert" to "ChannelExpert"
-            )
-            typeOrder.forEach { typeKey ->
-                val groups = groupsByType[typeKey].orEmpty()
-                if (groups.isNotEmpty()) {
-                    Text(
-                        typeLabels[typeKey] ?: typeKey,
-                        style = MaterialTheme.typography.bodySmall,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    groups.forEach { group ->
-                        Text(
-                            "${group.file}: ${group.count} observaciones",
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                    }
-                }
-            }
             if (summary.geoIssueDetails.isNotEmpty()) {
                 Text("Georreferencias", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
                 summary.geoIssueDetails.forEach { detail ->
@@ -2037,9 +2015,9 @@ private fun AssetFileSection(
                     )
                 }
             }
-            LaunchedEffect(canRefresh, observationHash, workingAssetId) {
+            LaunchedEffect(canRefresh, observationHash, asset.id) {
                 if (canRefresh && observationSummary.third > 0) {
-                    val key = "obs_shown_$workingAssetId"
+                    val key = "obs_shown_${asset.id}"
                     val storedHash = observationPrefs.getString(key, "").orEmpty()
                     if (observationHash.isNotEmpty() && observationHash != storedHash) {
                         showObservationsDialog = true
