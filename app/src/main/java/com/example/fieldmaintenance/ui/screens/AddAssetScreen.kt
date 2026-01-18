@@ -840,10 +840,32 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
             
             // Fotos
             Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                "Fotos",
-                style = MaterialTheme.typography.titleMedium
-            )
+            var photosExpanded by rememberSaveable { mutableStateOf(true) }
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { photosExpanded = !photosExpanded },
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            "Fotos",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Icon(
+                            imageVector = if (photosExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                            contentDescription = null
+                        )
+                    }
+                    if (!photosExpanded) {
+                        return@Column
+                    }
 
             val assetDisplayName = remember(reportNodeName, assetType, port, portIndex) {
                 val baseNodeName = reportNodeName.ifBlank { "Nodo" }
@@ -968,6 +990,8 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.primary
                     )
+                }
+            }
                 }
             }
 
