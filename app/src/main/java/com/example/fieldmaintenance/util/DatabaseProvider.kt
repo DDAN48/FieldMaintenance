@@ -16,6 +16,7 @@ object DatabaseProvider {
                 AppDatabase::class.java,
                 "maintenance_database"
             )
+                .fallbackToDestructiveMigrationOnDowngrade()
                 .addMigrations(AppDatabase.MIGRATION_1_2)
                 .addMigrations(AppDatabase.MIGRATION_2_3)
                 .addMigrations(AppDatabase.MIGRATION_3_4)

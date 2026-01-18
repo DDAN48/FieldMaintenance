@@ -332,6 +332,12 @@ fun AmplifierAdjustmentCard(
                     expanded = salidaPlanoExpanded,
                     onToggle = { salidaPlanoExpanded = !salidaPlanoExpanded }
                 ) {
+                    Text(
+                        "AGC IN PAD: ${agc?.let { CiscoHfcAmpCalculator.format1(it) } ?: "—"}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                    )
+                    Spacer(Modifier.height(6.dp))
                     if (!entradaValid) {
                         Text(
                             "Complete mediciones de entrada válidas para continuar. La diferencia entre el nivel de entrada y medido aceptable es menor a 4. Nivel minimo de entrada permitido es 15 dBmV si esta indicado por plano.",
@@ -457,12 +463,6 @@ fun AmplifierAdjustmentCard(
                         canal = "CH158",
                         freqText = "1000 MHz",
                         calc = salidaCalc?.get("CH158")
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        "AGC IN PAD: ${agc?.let { CiscoHfcAmpCalculator.format1(it) } ?: "—"}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                     )
                 }
 
