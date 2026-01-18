@@ -463,6 +463,18 @@ data class MeasurementVerificationResult(
     val validationIssueNames: List<String>
 )
 
+data class ObservationGroup(
+    val type: String,
+    val file: String,
+    val count: Int
+)
+
+data class GeoIssueDetail(
+    val type: String,
+    val file: String,
+    val detail: String
+)
+
 data class MeasurementEntry(
     val label: String,
     val type: String,
@@ -509,7 +521,9 @@ data class MeasurementVerificationSummary(
     val result: MeasurementVerificationResult,
     val warnings: List<String>,
     val geoLocation: GeoPoint?,
-    val observationDetails: List<String>
+    val observationTotal: Int,
+    val observationGroups: List<ObservationGroup>,
+    val geoIssueDetails: List<GeoIssueDetail>
 )
 
 suspend fun verifyMeasurementFiles(
@@ -545,10 +559,11 @@ suspend fun verifyMeasurementFiles(
     val duplicateFileNames = linkedSetOf<String>()
     var duplicateEntryCount = 0
     val duplicateEntryNames = linkedSetOf<String>()
-    val validationIssueNames = linkedSetOf<String>()
+    data class ValidationIssue(val type: String, val label: String, val message: String)
+    val validationIssues = mutableListOf<ValidationIssue>()
     var geoMissingCount = 0
     var geoInvalidCount = 0
-    val geoIssueDetails = linkedSetOf<String>()
+    val geoIssueDetails = mutableListOf<GeoIssueDetail>()
     val rules = loadMeasurementRules(context)
     val equipmentKey = equipmentKeyFor(asset)
     val amplifierTargets = if (assetType == AssetType.AMPLIFIER) {
@@ -684,15 +699,27 @@ suspend fun verifyMeasurementFiles(
                             geoInvalidCount += 1
                             val coords = rawGeoKey(geoResult)
                             val detail = if (coords == null) {
-                                "${sourceLabel}: ${geoResult.issue ?: "Georreferencia inválida"}"
+                                geoResult.issue ?: "Georreferencia inválida"
                             } else {
-                                "${sourceLabel}: ${geoResult.issue ?: "Georreferencia inválida"} ($coords)"
+                                "${geoResult.issue ?: "Georreferencia inválida"} ($coords)"
                             }
-                            geoIssueDetails.add(detail)
+                            geoIssueDetails.add(
+                                GeoIssueDetail(
+                                    type = normalizedType,
+                                    file = sourceLabel,
+                                    detail = detail
+                                )
+                            )
                         }
                     } else {
                         geoMissingCount += 1
-                        geoIssueDetails.add("${sourceLabel}: ${geoResult.issue ?: "Georreferencia ausente"}")
+                        geoIssueDetails.add(
+                            GeoIssueDetail(
+                                type = normalizedType,
+                                file = sourceLabel,
+                                detail = geoResult.issue ?: "Georreferencia ausente"
+                            )
+                        )
                     }
                 }
                 val testPointOffset = parseTestPointOffset(test)
@@ -839,7 +866,13 @@ suspend fun verifyMeasurementFiles(
                         nodeTxType = nodeTxType
                     )
                     issues.forEach { issue ->
-                        validationIssueNames.add("$sourceLabel: $issue")
+                        validationIssues.add(
+                            ValidationIssue(
+                                type = normalizedType,
+                                label = sourceLabel,
+                                message = issue
+                            )
+                        )
                     }
                 }
             }
@@ -1016,20 +1049,24 @@ suspend fun verifyMeasurementFiles(
         if (parseErrorCount > 0) {
             add("No se pudieron leer $parseErrorCount archivo(s) o entradas.")
         }
-        if (validationIssueNames.isNotEmpty()) {
-            add("Se encontraron mediciones fuera de rango (${validationIssueNames.size}).")
+        if (validationIssues.isNotEmpty()) {
+            add("Se encontraron mediciones fuera de rango (${validationIssues.size}).")
         }
         if (geoWarnings.isNotEmpty()) {
             addAll(geoWarnings)
         }
     }
-    val observationTotal = validationIssueNames.size + geoIssueDetails.size
-    val observationDetails = buildList {
-        if (observationTotal > 0) {
-            add("Observaciones detectadas: $observationTotal")
+    val observationTotal = validationIssues.size + geoIssueDetails.size
+    val observationGroups = validationIssues
+        .groupBy { it.type to it.label }
+        .map { (key, items) ->
+            ObservationGroup(
+                type = key.first,
+                file = key.second,
+                count = items.size
+            )
         }
-        addAll(geoIssueDetails)
-    }
+        .sortedWith(compareBy<ObservationGroup> { it.type }.thenBy { it.file })
 
     return MeasurementVerificationSummary(
         expectedDocsis = expectedDocsis,
@@ -1048,10 +1085,12 @@ suspend fun verifyMeasurementFiles(
             duplicateFileNames = duplicateFileNames.toList(),
             duplicateEntryCount = duplicateEntryCount,
             duplicateEntryNames = duplicateEntryNames.toList(),
-            validationIssueNames = validationIssueNames.toList()
+            validationIssueNames = validationIssues.map { "${it.label}: ${it.message}" }
         ),
         warnings = warnings,
         geoLocation = representativeGeo,
-        observationDetails = observationDetails
+        observationTotal = observationTotal,
+        observationGroups = observationGroups,
+        geoIssueDetails = geoIssueDetails
     )
 }

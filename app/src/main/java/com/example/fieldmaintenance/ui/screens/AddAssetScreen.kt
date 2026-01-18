@@ -1877,17 +1877,72 @@ private fun AssetFileSection(
         }
     }
 
-    val observationItems = remember(verificationSummaryRx, verificationSummaryModule, isNodeAsset) {
-        buildList {
-            verificationSummaryRx?.observationDetails?.forEach { add("RX: $it") }
-            if (isNodeAsset) {
-                verificationSummaryModule?.observationDetails?.forEach { add("Módulo: $it") }
+    val observationSummary = remember(verificationSummaryRx, verificationSummaryModule, isNodeAsset) {
+        val rxSummary = verificationSummaryRx
+        val moduleSummary = if (isNodeAsset) verificationSummaryModule else null
+        Triple(rxSummary, moduleSummary, (rxSummary?.observationTotal ?: 0) + (moduleSummary?.observationTotal ?: 0))
+    }
+    val observationHash = remember(observationSummary) {
+        val (rxSummary, moduleSummary, _) = observationSummary
+        buildString {
+            rxSummary?.let {
+                append("rx:${it.observationTotal}")
+                append(it.observationGroups.joinToString { group -> "${group.type}:${group.file}:${group.count}" })
+                append(it.geoIssueDetails.joinToString { detail -> "${detail.type}:${detail.file}:${detail.detail}" })
+            }
+            moduleSummary?.let {
+                append("mod:${it.observationTotal}")
+                append(it.observationGroups.joinToString { group -> "${group.type}:${group.file}:${group.count}" })
+                append(it.geoIssueDetails.joinToString { detail -> "${detail.type}:${detail.file}:${detail.detail}" })
             }
         }
     }
-    val observationHash = remember(observationItems) { observationItems.joinToString("|") }
+    val observationPrefs = remember {
+        context.getSharedPreferences("observation_flags", Context.MODE_PRIVATE)
+    }
     var showObservationsDialog by rememberSaveable { mutableStateOf(false) }
-    var lastObservationHash by rememberSaveable { mutableStateOf("") }
+
+    @Composable
+    fun ObservationSection(
+        title: String,
+        summary: MeasurementVerificationSummary?
+    ) {
+        if (summary == null || summary.observationTotal == 0) return
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(title, fontWeight = FontWeight.SemiBold)
+            val groupsByType = summary.observationGroups.groupBy { it.type }
+            val typeOrder = listOf("docsisexpert", "channelexpert")
+            val typeLabels = mapOf(
+                "docsisexpert" to "DocsisExpert",
+                "channelexpert" to "ChannelExpert"
+            )
+            typeOrder.forEach { typeKey ->
+                val groups = groupsByType[typeKey].orEmpty()
+                if (groups.isNotEmpty()) {
+                    Text(
+                        typeLabels[typeKey] ?: typeKey,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    groups.forEach { group ->
+                        Text(
+                            "${group.file}: ${group.count} observaciones",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            }
+            if (summary.geoIssueDetails.isNotEmpty()) {
+                Text("Georreferencias", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
+                summary.geoIssueDetails.forEach { detail ->
+                    Text(
+                        "${detail.file}: ${detail.detail}",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            }
+        }
+    }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -1922,7 +1977,7 @@ private fun AssetFileSection(
                     Icon(
                         imageVector = Icons.Default.RemoveRedEye,
                         contentDescription = "Observaciones",
-                        tint = if (observationItems.isNotEmpty()) {
+                        tint = if (observationSummary.third > 0) {
                             MaterialTheme.colorScheme.error
                         } else {
                             MaterialTheme.colorScheme.primary
@@ -1982,10 +2037,14 @@ private fun AssetFileSection(
                     )
                 }
             }
-            LaunchedEffect(canRefresh, observationHash) {
-                if (canRefresh && observationItems.isNotEmpty() && observationHash != lastObservationHash) {
-                    showObservationsDialog = true
-                    lastObservationHash = observationHash
+            LaunchedEffect(canRefresh, observationHash, workingAssetId) {
+                if (canRefresh && observationSummary.third > 0) {
+                    val key = "obs_shown_$workingAssetId"
+                    val storedHash = observationPrefs.getString(key, "").orEmpty()
+                    if (observationHash.isNotEmpty() && observationHash != storedHash) {
+                        showObservationsDialog = true
+                        observationPrefs.edit().putString(key, observationHash).apply()
+                    }
                 }
             }
             if (showObservationsDialog) {
@@ -1993,12 +2052,21 @@ private fun AssetFileSection(
                     onDismissRequest = { showObservationsDialog = false },
                     title = { Text("Fallas Detectadas") },
                     text = {
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            if (observationItems.isEmpty()) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            val (rxSummary, moduleSummary, _) = observationSummary
+                            if (observationSummary.third == 0) {
                                 Text("Sin observaciones.")
                             } else {
-                                observationItems.forEach { item ->
-                                    Text("• $item")
+                                Text("Observaciones detectadas: ${observationSummary.third}", fontWeight = FontWeight.SemiBold)
+                                ObservationSection(
+                                    title = "RX",
+                                    summary = rxSummary
+                                )
+                                if (isNodeAsset) {
+                                    ObservationSection(
+                                        title = "Módulo",
+                                        summary = moduleSummary
+                                    )
                                 }
                             }
                         }
