@@ -36,6 +36,7 @@ import androidx.activity.result.ActivityResult
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.example.fieldmaintenance.data.model.MaintenanceReport
+import com.example.fieldmaintenance.data.model.isGeneralInfoComplete
 import com.example.fieldmaintenance.ui.navigation.Screen
 import com.example.fieldmaintenance.ui.viewmodel.MaintenanceViewModel
 import com.example.fieldmaintenance.ui.viewmodel.MaintenanceViewModelFactory
@@ -224,7 +225,11 @@ fun HomeScreen(navController: NavController) {
                     MaintenanceReportCard(
                         report = report,
                         onClick = {
-                            navController.navigate(Screen.GeneralInfo.createRoute(report.id))
+                            if (report.isGeneralInfoComplete()) {
+                                navController.navigate(Screen.AssetSummary.createRoute(report.id))
+                            } else {
+                                navController.navigate(Screen.GeneralInfo.createRoute(report.id))
+                            }
                         },
                         onLongClick = { reportToDelete = report }
                     )
