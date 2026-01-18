@@ -409,23 +409,33 @@ private fun isWithinRange(value: Double, min: Double?, max: Double?): Boolean {
 
 private data class GeoParseResult(
     val point: GeoPoint?,
-    val hasGeoField: Boolean
+    val hasGeoField: Boolean,
+    val issue: String?,
+    val rawLatitude: Double?,
+    val rawLongitude: Double?
 )
 
 private fun parseGeoLocation(results: JSONObject?): GeoParseResult {
-    val geo = results?.optJSONObject("geoLocation") ?: return GeoParseResult(point = null, hasGeoField = false)
+    val geo = results?.optJSONObject("geoLocation")
+        ?: return GeoParseResult(point = null, hasGeoField = false, issue = "Georreferencia ausente", rawLatitude = null, rawLongitude = null)
     val lat = geo.optDouble("latitude", Double.NaN)
     val lon = geo.optDouble("longitude", Double.NaN)
     if (lat.isNaN() || lon.isNaN()) {
-        return GeoParseResult(point = null, hasGeoField = true)
+        return GeoParseResult(point = null, hasGeoField = true, issue = "Georreferencia inválida (valores vacíos)", rawLatitude = null, rawLongitude = null)
     }
     if (lat == 0.0 && lon == 0.0) {
-        return GeoParseResult(point = null, hasGeoField = true)
+        return GeoParseResult(point = null, hasGeoField = true, issue = "Georreferencia inválida (0,0)", rawLatitude = lat, rawLongitude = lon)
     }
     if (lat < -90.0 || lat > 90.0 || lon < -180.0 || lon > 180.0) {
-        return GeoParseResult(point = null, hasGeoField = true)
+        return GeoParseResult(point = null, hasGeoField = true, issue = "Georreferencia inválida (fuera de rango)", rawLatitude = lat, rawLongitude = lon)
     }
-    return GeoParseResult(point = GeoPoint(latitude = lat, longitude = lon), hasGeoField = true)
+    return GeoParseResult(
+        point = GeoPoint(latitude = lat, longitude = lon),
+        hasGeoField = true,
+        issue = null,
+        rawLatitude = lat,
+        rawLongitude = lon
+    )
 }
 
 private fun bucketKey(point: GeoPoint, cellMeters: Double): Pair<Int, Int> {
@@ -498,7 +508,8 @@ data class MeasurementVerificationSummary(
     val expectedChannel: Int,
     val result: MeasurementVerificationResult,
     val warnings: List<String>,
-    val geoLocation: GeoPoint?
+    val geoLocation: GeoPoint?,
+    val observationDetails: List<String>
 )
 
 suspend fun verifyMeasurementFiles(
@@ -537,6 +548,7 @@ suspend fun verifyMeasurementFiles(
     val validationIssueNames = linkedSetOf<String>()
     var geoMissingCount = 0
     var geoInvalidCount = 0
+    val geoIssueDetails = linkedSetOf<String>()
     val rules = loadMeasurementRules(context)
     val equipmentKey = equipmentKeyFor(asset)
     val amplifierTargets = if (assetType == AssetType.AMPLIFIER) {
@@ -586,6 +598,16 @@ suspend fun verifyMeasurementFiles(
 
     fun geoKey(point: GeoPoint?): String {
         return point?.let { "${it.latitude},${it.longitude}" } ?: "unknown"
+    }
+
+    fun rawGeoKey(result: GeoParseResult): String? {
+        val lat = result.rawLatitude
+        val lon = result.rawLongitude
+        return if (lat != null && lon != null) {
+            "${lat},${lon}"
+        } else {
+            null
+        }
     }
 
     fun hashId(type: String, testTime: String, testDurationMs: String, geoLocation: String): String {
@@ -660,9 +682,17 @@ suspend fun verifyMeasurementFiles(
                     if (geoResult.hasGeoField) {
                         if (geoResult.point == null) {
                             geoInvalidCount += 1
+                            val coords = rawGeoKey(geoResult)
+                            val detail = if (coords == null) {
+                                "${sourceLabel}: ${geoResult.issue ?: "Georreferencia inválida"}"
+                            } else {
+                                "${sourceLabel}: ${geoResult.issue ?: "Georreferencia inválida"} ($coords)"
+                            }
+                            geoIssueDetails.add(detail)
                         }
                     } else {
                         geoMissingCount += 1
+                        geoIssueDetails.add("${sourceLabel}: ${geoResult.issue ?: "Georreferencia ausente"}")
                     }
                 }
                 val testPointOffset = parseTestPointOffset(test)
@@ -993,6 +1023,10 @@ suspend fun verifyMeasurementFiles(
             addAll(geoWarnings)
         }
     }
+    val observationDetails = buildList {
+        addAll(validationIssueNames)
+        addAll(geoIssueDetails)
+    }
 
     return MeasurementVerificationSummary(
         expectedDocsis = expectedDocsis,
@@ -1014,6 +1048,7 @@ suspend fun verifyMeasurementFiles(
             validationIssueNames = validationIssueNames.toList()
         ),
         warnings = warnings,
-        geoLocation = representativeGeo
+        geoLocation = representativeGeo,
+        observationDetails = observationDetails
     )
 }
