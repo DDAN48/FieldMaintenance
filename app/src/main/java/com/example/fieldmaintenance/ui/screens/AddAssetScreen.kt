@@ -1956,6 +1956,16 @@ private fun AssetFileSection(
                     )
                 }
             }
+            val geoLocation = if (isNodeAsset) {
+                verificationSummaryModule?.geoLocation ?: verificationSummaryRx?.geoLocation
+            } else {
+                verificationSummaryRx?.geoLocation
+            }
+            Text(
+                "Georreferencia: ${geoLocation?.let { "${it.latitude}, ${it.longitude}" } ?: "—"}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
             if (isExpanded) {
                 @Composable
                 fun VerificationSummaryView(
@@ -2082,6 +2092,16 @@ private fun AssetFileSection(
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.error
                             )
+                        }
+                        if (summary.warnings.isNotEmpty()) {
+                            summary.warnings.forEach { warning ->
+                                Text(
+                                    warning,
+                                    style = smallTextStyle,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = warningColor
+                                )
+                            }
                         }
 
                         if (canRenderTables && docsisEntries.isNotEmpty() && assetForDisplay.type != AssetType.NODE) {

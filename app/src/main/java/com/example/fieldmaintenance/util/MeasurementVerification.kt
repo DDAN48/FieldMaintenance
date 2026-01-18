@@ -407,6 +407,35 @@ private fun isWithinRange(value: Double, min: Double?, max: Double?): Boolean {
     return true
 }
 
+private data class GeoParseResult(
+    val point: GeoPoint?,
+    val hasGeoField: Boolean
+)
+
+private fun parseGeoLocation(results: JSONObject?): GeoParseResult {
+    val geo = results?.optJSONObject("geoLocation") ?: return GeoParseResult(point = null, hasGeoField = false)
+    val lat = geo.optDouble("latitude", Double.NaN)
+    val lon = geo.optDouble("longitude", Double.NaN)
+    if (lat.isNaN() || lon.isNaN()) {
+        return GeoParseResult(point = null, hasGeoField = true)
+    }
+    if (lat == 0.0 && lon == 0.0) {
+        return GeoParseResult(point = null, hasGeoField = true)
+    }
+    if (lat < -90.0 || lat > 90.0 || lon < -180.0 || lon > 180.0) {
+        return GeoParseResult(point = null, hasGeoField = true)
+    }
+    return GeoParseResult(point = GeoPoint(latitude = lat, longitude = lon), hasGeoField = true)
+}
+
+private fun bucketKey(point: GeoPoint, cellMeters: Double): Pair<Int, Int> {
+    val latStep = cellMeters / 111_320.0
+    val latBucket = kotlin.math.floor(point.latitude / latStep).toInt()
+    val lonStep = cellMeters / (111_320.0 * kotlin.math.cos(Math.toRadians(point.latitude)).coerceAtLeast(0.0001))
+    val lonBucket = kotlin.math.floor(point.longitude / lonStep).toInt()
+    return latBucket to lonBucket
+}
+
 data class MeasurementVerificationResult(
     val docsisExpert: Int,
     val channelExpert: Int,
@@ -429,6 +458,7 @@ data class MeasurementEntry(
     val type: String,
     val fromZip: Boolean,
     val isDiscarded: Boolean,
+    val geoLocation: GeoPoint?,
     val docsisMeta: Map<Double, ChannelMeta>,
     val docsisLevels: Map<Double, Double>,
     val docsisLevelOk: Map<Double, Boolean>,
@@ -441,6 +471,11 @@ data class MeasurementEntry(
 data class ChannelMeta(
     val channel: Int?,
     val frequencyMHz: Double?
+)
+
+data class GeoPoint(
+    val latitude: Double,
+    val longitude: Double
 )
 
 data class DigitalChannelRow(
@@ -462,7 +497,8 @@ data class MeasurementVerificationSummary(
     val expectedDocsis: Int,
     val expectedChannel: Int,
     val result: MeasurementVerificationResult,
-    val warnings: List<String>
+    val warnings: List<String>,
+    val geoLocation: GeoPoint?
 )
 
 suspend fun verifyMeasurementFiles(
@@ -499,6 +535,8 @@ suspend fun verifyMeasurementFiles(
     var duplicateEntryCount = 0
     val duplicateEntryNames = linkedSetOf<String>()
     val validationIssueNames = linkedSetOf<String>()
+    var geoMissingCount = 0
+    var geoInvalidCount = 0
     val rules = loadMeasurementRules(context)
     val equipmentKey = equipmentKeyFor(asset)
     val amplifierTargets = if (assetType == AssetType.AMPLIFIER) {
@@ -546,6 +584,10 @@ suspend fun verifyMeasurementFiles(
         }
     }
 
+    fun geoKey(point: GeoPoint?): String {
+        return point?.let { "${it.latitude},${it.longitude}" } ?: "unknown"
+    }
+
     fun hashId(type: String, testTime: String, testDurationMs: String, geoLocation: String): String {
         val input = listOf(type, testTime, testDurationMs, geoLocation).joinToString("|")
         val digest = MessageDigest.getInstance("SHA-256").digest(input.toByteArray())
@@ -578,7 +620,8 @@ suspend fun verifyMeasurementFiles(
             val results = test.optJSONObject("results")
             val testTime = results?.optString("testTime").orEmpty()
             val testDurationMs = results?.optString("testDurationMs").orEmpty()
-            val geoLocation = results?.optString("geoLocation").orEmpty()
+            val geoResult = parseGeoLocation(results)
+            val geoLocation = geoKey(geoResult.point)
             val normalizedType = type.lowercase(Locale.getDefault())
             val id = hashId(type, testTime, testDurationMs, geoLocation)
             if (!seenIds.add(id)) {
@@ -613,6 +656,15 @@ suspend fun verifyMeasurementFiles(
                 }
             }
             if (normalizedType == "docsisexpert" || normalizedType == "channelexpert") {
+                if (!isDiscarded) {
+                    if (geoResult.hasGeoField) {
+                        if (geoResult.point == null) {
+                            geoInvalidCount += 1
+                        }
+                    } else {
+                        geoMissingCount += 1
+                    }
+                }
                 val testPointOffset = parseTestPointOffset(test)
                 val rows = collectChannelRows(results)
                 val docsisFrequencies = rows.mapNotNull { it.frequencyMHz }.distinct().sorted()
@@ -735,6 +787,7 @@ suspend fun verifyMeasurementFiles(
                         type = normalizedType,
                         fromZip = sourceFile == null,
                         isDiscarded = isDiscarded,
+                        geoLocation = geoResult.point,
                         docsisMeta = docsisMeta,
                         docsisLevels = docsisLevels,
                         docsisLevelOk = docsisOk,
@@ -875,6 +928,39 @@ suspend fun verifyMeasurementFiles(
         }
     }
 
+    val meetsMeasurementCounts = docsisCount >= expectedDocsis && channelCount >= expectedChannel
+    var representativeGeo: GeoPoint? = null
+    val geoWarnings = mutableListOf<String>()
+    if (meetsMeasurementCounts) {
+        if (geoMissingCount > 0) {
+            geoWarnings.add("Faltan georreferencias en $geoMissingCount medición(es).")
+        }
+        if (geoInvalidCount > 0) {
+            geoWarnings.add("Se detectaron $geoInvalidCount georreferencia(s) inválida(s).")
+        }
+        val geoPoints = measurementEntries
+            .filter { !it.isDiscarded && (it.type == "docsisexpert" || it.type == "channelexpert") }
+            .mapNotNull { it.geoLocation }
+        if (geoPoints.isEmpty()) {
+            geoWarnings.add("No se encontraron georreferencias válidas para las mediciones.")
+        } else {
+            val buckets = mutableMapOf<Pair<Int, Int>, MutableList<GeoPoint>>()
+            geoPoints.forEach { point ->
+                val key = bucketKey(point, cellMeters = 50.0)
+                buckets.getOrPut(key) { mutableListOf() }.add(point)
+            }
+            val bestBucket = buckets.entries.maxByOrNull { it.value.size }
+            if (buckets.size > 1) {
+                geoWarnings.add("Las georreferencias no concuerdan (se detectaron ${buckets.size} ubicaciones distintas).")
+            }
+            bestBucket?.value?.let { points ->
+                val avgLat = points.map { it.latitude }.average()
+                val avgLon = points.map { it.longitude }.average()
+                representativeGeo = GeoPoint(latitude = avgLat, longitude = avgLon)
+            }
+        }
+    }
+
     val warnings = buildList {
         if (expectedDocsis > 0) {
             if (docsisCount < expectedDocsis) {
@@ -903,6 +989,9 @@ suspend fun verifyMeasurementFiles(
         if (validationIssueNames.isNotEmpty()) {
             add("Se encontraron mediciones fuera de rango (${validationIssueNames.size}).")
         }
+        if (geoWarnings.isNotEmpty()) {
+            addAll(geoWarnings)
+        }
     }
 
     return MeasurementVerificationSummary(
@@ -924,6 +1013,7 @@ suspend fun verifyMeasurementFiles(
             duplicateEntryNames = duplicateEntryNames.toList(),
             validationIssueNames = validationIssueNames.toList()
         ),
-        warnings = warnings
+        warnings = warnings,
+        geoLocation = representativeGeo
     )
 }
