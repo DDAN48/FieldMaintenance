@@ -2140,24 +2140,6 @@ private fun AssetFileSection(
                             )
                         }
                         // Discarded entries are hidden from summary.
-                        if (summary.result.validationIssueNames.isNotEmpty()) {
-                            Text(
-                                "Validación de valores: ${summary.result.validationIssueNames.size} observaciones.",
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.error
-                            )
-                        }
-                        if (summary.warnings.isNotEmpty()) {
-                            summary.warnings.forEach { warning ->
-                                Text(
-                                    warning,
-                                    style = smallTextStyle,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = warningColor
-                                )
-                            }
-                        }
-
                         if (canRenderTables && docsisEntries.isNotEmpty() && assetForDisplay.type != AssetType.NODE) {
                             Text("DocsisExpert (niveles):", fontWeight = FontWeight.SemiBold)
                             if (docsisListEntries.size > required.maxDocsisTable) {

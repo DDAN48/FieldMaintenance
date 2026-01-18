@@ -1023,8 +1023,11 @@ suspend fun verifyMeasurementFiles(
             addAll(geoWarnings)
         }
     }
+    val observationTotal = validationIssueNames.size + geoIssueDetails.size
     val observationDetails = buildList {
-        addAll(validationIssueNames)
+        if (observationTotal > 0) {
+            add("Observaciones detectadas: $observationTotal")
+        }
         addAll(geoIssueDetails)
     }
 
