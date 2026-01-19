@@ -2,8 +2,6 @@
 
 package com.example.fieldmaintenance.ui.components
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,8 +16,6 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material.icons.filled.ExpandLess
-import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -65,24 +61,12 @@ fun AmplifierAdjustmentCard(
     amplifierMode: AmplifierMode?,
     initial: AmplifierAdjustment?,
     showRequiredErrors: Boolean,
-    collapseSignal: Int,
     onCurrentChange: (AmplifierAdjustment) -> Unit,
     onPersist: suspend (AmplifierAdjustment) -> Unit
 ) {
-    // Global collapse for the whole module (user can collapse everything)
-    var moduleExpanded by rememberSaveable(assetId) { mutableStateOf(true) }
-
-    // Individual section collapse states (all open by default)
-    var entradaExpanded by rememberSaveable(assetId) { mutableStateOf(true) }
-    var salidaPlanoExpanded by rememberSaveable(assetId) { mutableStateOf(true) }
-    var recoExpanded by rememberSaveable(assetId) { mutableStateOf(true) }
     var entradaAlert by remember(assetId) { mutableStateOf<EntradaAlert?>(null) }
 
     var dirty by rememberSaveable(assetId) { mutableStateOf(false) }
-
-    LaunchedEffect(collapseSignal) {
-        moduleExpanded = false
-    }
 
     fun parseDbmv(text: String): Double? =
         text.trim().takeIf { it.isNotBlank() }?.replace(',', '.')?.toDoubleOrNull()
@@ -223,42 +207,21 @@ fun AmplifierAdjustmentCard(
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.15f)),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            // Header row (collapses the whole module)
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { moduleExpanded = !moduleExpanded }
-                    .padding(horizontal = 14.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+        Column(
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(10.dp)
+        ) {
+            Text(
+                "Ajuste de Amplificador",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+            SectionCard(
+                titleBold = "Niveles ENTRADA",
+                titleLight = ""
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        "Ajuste de Amplificador",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-                Icon(
-                    imageVector = if (moduleExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                    contentDescription = null
-                )
-            }
-
-            AnimatedVisibility(visible = moduleExpanded) {
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(10.dp)
-                ) {
-                CollapsibleSection(
-                    titleBold = "Niveles ENTRADA",
-                    titleLight = "",
-                    expanded = entradaExpanded,
-                    onToggle = { entradaExpanded = !entradaExpanded }
-                ) {
                     Text(
                         "FWD IN PAD: ${pad?.let { CiscoHfcAmpCalculator.format1(it) } ?: "—"}",
                         style = MaterialTheme.typography.bodySmall,
@@ -324,14 +287,12 @@ fun AmplifierAdjustmentCard(
                             CalcRowData("CH158", "1000 MHz", entradaCalc?.get("CH158")),
                         )
                     )
-                }
+            }
 
-                CollapsibleSection(
-                    titleBold = "Niveles SALIDA",
-                    titleLight = "",
-                    expanded = salidaPlanoExpanded,
-                    onToggle = { salidaPlanoExpanded = !salidaPlanoExpanded }
-                ) {
+            SectionCard(
+                titleBold = "Niveles SALIDA",
+                titleLight = ""
+            ) {
                     Text(
                         "AGC IN PAD: ${agc?.let { CiscoHfcAmpCalculator.format1(it) } ?: "—"}",
                         style = MaterialTheme.typography.bodySmall,
@@ -344,7 +305,7 @@ fun AmplifierAdjustmentCard(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.error
                         )
-                        return@CollapsibleSection
+                        return@SectionCard
                     }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -464,21 +425,19 @@ fun AmplifierAdjustmentCard(
                         freqText = "1000 MHz",
                         calc = salidaCalc?.get("CH158")
                     )
-                }
+            }
 
-                CollapsibleSection(
-                    titleBold = "",
-                    titleLight = "FWD IN PAD/ EQ /AGC PAD a colocar",
-                    expanded = recoExpanded,
-                    onToggle = { recoExpanded = !recoExpanded }
-                ) {
+            SectionCard(
+                titleBold = "",
+                titleLight = "FWD IN PAD/ EQ /AGC PAD a colocar"
+            ) {
                     if (!entradaValid) {
                         Text(
                             "Complete mediciones de entrada válidas para continuar. La diferencia entre el nivel de entrada y medido aceptable es menor a 4. Nivel minimo de entrada permitido es 15 dBmV si esta indicado por plano.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.error
                         )
-                        return@CollapsibleSection
+                        return@SectionCard
                     }
                     RecommendationLine("FWD IN PAD", pad)
                     RecommendationLine(
@@ -486,8 +445,6 @@ fun AmplifierAdjustmentCard(
                         value = tilt
                     )
                     RecommendationLine("AGC IN PAD", agc)
-                }
-                }
             }
         }
     }
@@ -615,11 +572,9 @@ private fun FreqDropdown(
 private data class CalcRowData(val canal: String, val freqText: String, val calc: Double?)
 
 @Composable
-private fun CollapsibleSection(
+private fun SectionCard(
     titleBold: String,
     titleLight: String,
-    expanded: Boolean,
-    onToggle: () -> Unit,
     content: @Composable () -> Unit
 ) {
     Card(
@@ -627,27 +582,19 @@ private fun CollapsibleSection(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { onToggle() }
-                .padding(horizontal = 14.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
+        Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(titleBold, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleSmall)
-                Text(" $titleLight", style = MaterialTheme.typography.titleSmall)
+                if (titleBold.isNotBlank()) {
+                    Text(titleBold, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleSmall)
+                }
+                if (titleLight.isNotBlank()) {
+                    Text(" $titleLight", style = MaterialTheme.typography.titleSmall)
+                }
             }
-            Icon(
-                imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                contentDescription = null
-            )
-        }
-        AnimatedVisibility(visible = expanded) {
-            Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
-                content()
+            if (titleBold.isNotBlank() || titleLight.isNotBlank()) {
+                Spacer(Modifier.height(8.dp))
             }
+            content()
         }
     }
 }
