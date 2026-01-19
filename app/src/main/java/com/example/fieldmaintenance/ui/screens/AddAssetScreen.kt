@@ -1145,6 +1145,7 @@ private fun AdjustmentSummaryCard(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun FullScreenAdjustmentDialog(
     title: String,
