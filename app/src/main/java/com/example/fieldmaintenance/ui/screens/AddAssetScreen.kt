@@ -6,12 +6,17 @@ package com.example.fieldmaintenance.ui.screens
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -35,12 +40,16 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
 import android.net.Uri
 import android.widget.Toast
 import android.location.Geocoder
@@ -173,8 +182,12 @@ fun AddAssetScreen(
     var monitoringPhotoCount by remember { mutableStateOf(0) }
     var spectrumPhotoCount by remember { mutableStateOf(0) }
     var autoSaved by rememberSaveable(workingAssetId) { mutableStateOf(false) }
-    var collapseAdjustmentsSignal by rememberSaveable { mutableStateOf(0) }
-    val triggerAdjustmentsCollapse = { collapseAdjustmentsSignal += 1 }
+    var showIdentityDialog by rememberSaveable { mutableStateOf(false) }
+    var showPhotosDialog by rememberSaveable { mutableStateOf(false) }
+    var showMeasurementsDialog by rememberSaveable { mutableStateOf(false) }
+    var showNodeAdjustmentDialog by rememberSaveable { mutableStateOf(false) }
+    var showAmplifierAdjustmentDialog by rememberSaveable { mutableStateOf(false) }
+    var measurementsComplete by remember { mutableStateOf(false) }
 
     // Amplifier adjustment (persisted per asset)
     val amplifierAdjustment by repository.getAmplifierAdjustment(workingAssetId)
@@ -246,6 +259,26 @@ fun AddAssetScreen(
 
     val nodeAllowed = !(assetType == AssetType.NODE && hasNode && !isEdit)
     val autoSaveReady = autoBaseOk && autoNodeOk && autoAmplifierOk && autoAmplifierTablesOk && autoNodeAdjOk && nodeAllowed
+    val identityComplete = autoBaseOk && autoNodeOk && autoAmplifierOk
+    val modulePhotoRequired = if (assetType == AssetType.NODE && techNormalized == "rphy") 0 else 2
+    val opticsPhotoRequired = if (assetType == AssetType.NODE && (techNormalized == "rphy" || techNormalized == "vccap")) {
+        0
+    } else if (assetType == AssetType.NODE) {
+        1
+    } else {
+        0
+    }
+    val modulePhotosOk = modulePhotoRequired == 0 || modulePhotoCount >= modulePhotoRequired
+    val opticsPhotosOk = opticsPhotoRequired == 0 || opticsPhotoCount >= opticsPhotoRequired
+    val photosComplete = modulePhotosOk && opticsPhotosOk
+    val photoSupportText = buildList {
+        if (modulePhotoRequired > 0) {
+            add("Módulo: $modulePhotoCount/$modulePhotoRequired")
+        }
+        if (opticsPhotoRequired > 0) {
+            add("Ópticas: $opticsPhotoCount/$opticsPhotoRequired")
+        }
+    }.joinToString(" • ").ifBlank { "" }
     
     LaunchedEffect(Unit) {
         hasNode = viewModel.hasNode()
@@ -518,253 +551,239 @@ fun AddAssetScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            var identityExpanded by rememberSaveable { mutableStateOf(true) }
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-            ) {
-                Column(
-                    modifier = Modifier.padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+            AdjustmentSummaryCard(
+                title = "Identidad del activo",
+                status = if (identityComplete) "Completo" else "Pendiente",
+                actionLabel = if (identityComplete) "Editar" else "Completar",
+                isComplete = identityComplete,
+                onAction = { showIdentityDialog = true }
+            )
+
+            if (showIdentityDialog) {
+                FullScreenAdjustmentDialog(
+                    title = "Identidad del activo",
+                    onDismiss = { showIdentityDialog = false },
+                    onComplete = { showIdentityDialog = false }
                 ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { identityExpanded = !identityExpanded },
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(
-                            "Identidad del activo",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Icon(
-                            imageVector = if (identityExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                            contentDescription = null
-                        )
-                    }
-                    if (!identityExpanded) {
-                        return@Column
-                    }
-
-                    var expandedFreq by remember { mutableStateOf(false) }
-                    ExposedDropdownMenuBox(
-                        expanded = expandedFreq,
-                        onExpandedChange = { expandedFreq = !expandedFreq },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        OutlinedTextField(
-                            value = frequency?.let { "${it.mhz} MHz" } ?: "Seleccionar",
-                            onValueChange = {},
-                            readOnly = true,
-                            enabled = true,
-                            label = { Text("Frec módulo") },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .menuAnchor(),
-                            trailingIcon = {
-                                ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedFreq)
-                            },
-                            isError = attemptedSave && frequency == null,
-                            supportingText = {
-                                if (attemptedSave && frequency == null) Text("Obligatorio")
-                            }
-                        )
-                        ExposedDropdownMenu(
-                            expanded = expandedFreq,
-                            onDismissRequest = { expandedFreq = false }
-                        ) {
-                            listOf(Frequency.MHz_42, Frequency.MHz_85).forEach { freq ->
-                                DropdownMenuItem(
-                                    text = { Text("${freq.mhz} MHz") },
-                                    onClick = {
-                                        frequency = freq
-                                        expandedFreq = false
-                                    }
-                                )
-                            }
-                        }
-                    }
-
-                    if (assetType == AssetType.NODE) {
-                        var expandedTech by remember { mutableStateOf(false) }
-                        val techOptions = listOf("Legacy", "RPHY", "VCCAP")
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        var expandedFreq by remember { mutableStateOf(false) }
                         ExposedDropdownMenuBox(
-                            expanded = expandedTech,
-                            onExpandedChange = { expandedTech = !expandedTech },
+                            expanded = expandedFreq,
+                            onExpandedChange = { expandedFreq = !expandedFreq },
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             OutlinedTextField(
-                                value = technology ?: "Seleccionar",
+                                value = frequency?.let { "${it.mhz} MHz" } ?: "Seleccionar",
                                 onValueChange = {},
                                 readOnly = true,
                                 enabled = true,
-                                label = { Text("Tecnología") },
+                                label = { Text("Frec módulo") },
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .menuAnchor(),
                                 trailingIcon = {
-                                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedTech)
+                                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedFreq)
                                 },
-                                isError = attemptedSave && technology == null,
+                                isError = attemptedSave && frequency == null,
                                 supportingText = {
-                                    if (attemptedSave && technology == null) Text("Obligatorio")
+                                    if (attemptedSave && frequency == null) Text("Obligatorio")
                                 }
                             )
                             ExposedDropdownMenu(
-                                expanded = expandedTech,
-                                onDismissRequest = { expandedTech = false }
+                                expanded = expandedFreq,
+                                onDismissRequest = { expandedFreq = false }
                             ) {
-                                techOptions.forEach { tech ->
+                                listOf(Frequency.MHz_42, Frequency.MHz_85).forEach { freq ->
                                     DropdownMenuItem(
-                                        text = { Text(tech) },
+                                        text = { Text("${freq.mhz} MHz") },
                                         onClick = {
-                                            technology = tech
-                                            expandedTech = false
+                                            frequency = freq
+                                            expandedFreq = false
                                         }
                                     )
                                 }
                             }
                         }
-                    }
 
-                    if (assetType == AssetType.AMPLIFIER) {
-                        var expandedMode by remember { mutableStateOf(false) }
-                        ExposedDropdownMenuBox(
-                            expanded = expandedMode,
-                            onExpandedChange = { expandedMode = !expandedMode },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            OutlinedTextField(
-                                value = when (amplifierMode) {
-                                    AmplifierMode.HGD -> AmplifierMode.HGD.label
-                                    AmplifierMode.HGDT -> AmplifierMode.HGDT.label
-                                    AmplifierMode.LE -> AmplifierMode.LE.label
-                                    null -> "Seleccionar"
-                                },
-                                onValueChange = {},
-                                readOnly = true,
-                                enabled = true,
-                                label = { Text("Tipo") },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .menuAnchor(),
-                                trailingIcon = {
-                                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedMode)
-                                },
-                                isError = attemptedSave && amplifierMode == null,
-                                supportingText = {
-                                    if (attemptedSave && amplifierMode == null) Text("Obligatorio")
-                                }
-                            )
-                            ExposedDropdownMenu(
-                                expanded = expandedMode,
-                                onDismissRequest = { expandedMode = false }
+                        if (assetType == AssetType.NODE) {
+                            var expandedTech by remember { mutableStateOf(false) }
+                            val techOptions = listOf("Legacy", "RPHY", "VCCAP")
+                            ExposedDropdownMenuBox(
+                                expanded = expandedTech,
+                                onExpandedChange = { expandedTech = !expandedTech },
+                                modifier = Modifier.fillMaxWidth()
                             ) {
-                                DropdownMenuItem(
-                                    text = { Text("HGD") },
-                                    onClick = {
-                                        amplifierMode = AmplifierMode.HGD
-                                        expandedMode = false
+                                OutlinedTextField(
+                                    value = technology ?: "Seleccionar",
+                                    onValueChange = {},
+                                    readOnly = true,
+                                    enabled = true,
+                                    label = { Text("Tecnología") },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .menuAnchor(),
+                                    trailingIcon = {
+                                        ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedTech)
+                                    },
+                                    isError = attemptedSave && technology == null,
+                                    supportingText = {
+                                        if (attemptedSave && technology == null) Text("Obligatorio")
                                     }
                                 )
-                                DropdownMenuItem(
-                                    text = { Text("HGBT") },
-                                    onClick = {
-                                        amplifierMode = AmplifierMode.HGDT
-                                        expandedMode = false
+                                ExposedDropdownMenu(
+                                    expanded = expandedTech,
+                                    onDismissRequest = { expandedTech = false }
+                                ) {
+                                    techOptions.forEach { tech ->
+                                        DropdownMenuItem(
+                                            text = { Text(tech) },
+                                            onClick = {
+                                                technology = tech
+                                                expandedTech = false
+                                            }
+                                        )
                                     }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("LE") },
-                                    onClick = {
-                                        amplifierMode = AmplifierMode.LE
-                                        expandedMode = false
-                                    }
-                                )
+                                }
                             }
                         }
 
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            var expandedPort by remember { mutableStateOf(false) }
+                        if (assetType == AssetType.AMPLIFIER) {
+                            var expandedMode by remember { mutableStateOf(false) }
                             ExposedDropdownMenuBox(
-                                expanded = expandedPort,
-                                onExpandedChange = { expandedPort = !expandedPort },
-                                modifier = Modifier.weight(1f)
+                                expanded = expandedMode,
+                                onExpandedChange = { expandedMode = !expandedMode },
+                                modifier = Modifier.fillMaxWidth()
                             ) {
                                 OutlinedTextField(
-                                    value = port?.name ?: "Puerto",
+                                    value = when (amplifierMode) {
+                                        AmplifierMode.HGD -> AmplifierMode.HGD.label
+                                        AmplifierMode.HGDT -> AmplifierMode.HGDT.label
+                                        AmplifierMode.LE -> AmplifierMode.LE.label
+                                        null -> "Seleccionar"
+                                    },
                                     onValueChange = {},
                                     readOnly = true,
                                     enabled = true,
-                                    label = { Text("Puerto") },
+                                    label = { Text("Tipo") },
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .menuAnchor(),
                                     trailingIcon = {
-                                        ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedPort)
+                                        ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedMode)
                                     },
-                                    isError = attemptedSave && port == null,
+                                    isError = attemptedSave && amplifierMode == null,
                                     supportingText = {
-                                        if (attemptedSave && port == null) Text("Obligatorio")
+                                        if (attemptedSave && amplifierMode == null) Text("Obligatorio")
                                     }
                                 )
                                 ExposedDropdownMenu(
-                                    expanded = expandedPort,
-                                    onDismissRequest = { expandedPort = false }
+                                    expanded = expandedMode,
+                                    onDismissRequest = { expandedMode = false }
                                 ) {
-                                    Port.values().forEach { p ->
-                                        DropdownMenuItem(
-                                            text = { Text(p.name) },
-                                            onClick = {
-                                                port = p
-                                                expandedPort = false
-                                            }
-                                        )
-                                    }
+                                    DropdownMenuItem(
+                                        text = { Text("HGD") },
+                                        onClick = {
+                                            amplifierMode = AmplifierMode.HGD
+                                            expandedMode = false
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("HGBT") },
+                                        onClick = {
+                                            amplifierMode = AmplifierMode.HGDT
+                                            expandedMode = false
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("LE") },
+                                        onClick = {
+                                            amplifierMode = AmplifierMode.LE
+                                            expandedMode = false
+                                        }
+                                    )
                                 }
                             }
 
-                            var expandedIndex by remember { mutableStateOf(false) }
-                            ExposedDropdownMenuBox(
-                                expanded = expandedIndex,
-                                onExpandedChange = { expandedIndex = !expandedIndex },
-                                modifier = Modifier.width(120.dp)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
-                                val labelValue = portIndex?.let { String.format("%02d", it) } ?: "N°"
-                                OutlinedTextField(
-                                    value = labelValue,
-                                    onValueChange = {},
-                                    readOnly = true,
-                                    enabled = true,
-                                    label = { Text("N°") },
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .menuAnchor(),
-                                    trailingIcon = {
-                                        ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedIndex)
-                                    },
-                                    isError = attemptedSave && portIndex == null,
-                                    supportingText = {
-                                        if (attemptedSave && portIndex == null) Text("Obligatorio")
-                                    }
-                                )
-                                ExposedDropdownMenu(
-                                    expanded = expandedIndex,
-                                    onDismissRequest = { expandedIndex = false }
+                                var expandedPort by remember { mutableStateOf(false) }
+                                ExposedDropdownMenuBox(
+                                    expanded = expandedPort,
+                                    onExpandedChange = { expandedPort = !expandedPort },
+                                    modifier = Modifier.weight(1f)
                                 ) {
-                                    (1..4).forEach { idx ->
-                                        DropdownMenuItem(
-                                            text = { Text(String.format("%02d", idx)) },
-                                            onClick = {
-                                                portIndex = idx
-                                                expandedIndex = false
-                                            }
-                                        )
+                                    OutlinedTextField(
+                                        value = port?.name ?: "Puerto",
+                                        onValueChange = {},
+                                        readOnly = true,
+                                        enabled = true,
+                                        label = { Text("Puerto") },
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .menuAnchor(),
+                                        trailingIcon = {
+                                            ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedPort)
+                                        },
+                                        isError = attemptedSave && port == null,
+                                        supportingText = {
+                                            if (attemptedSave && port == null) Text("Obligatorio")
+                                        }
+                                    )
+                                    ExposedDropdownMenu(
+                                        expanded = expandedPort,
+                                        onDismissRequest = { expandedPort = false }
+                                    ) {
+                                        Port.values().forEach { p ->
+                                            DropdownMenuItem(
+                                                text = { Text(p.name) },
+                                                onClick = {
+                                                    port = p
+                                                    expandedPort = false
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
+
+                                var expandedIndex by remember { mutableStateOf(false) }
+                                ExposedDropdownMenuBox(
+                                    expanded = expandedIndex,
+                                    onExpandedChange = { expandedIndex = !expandedIndex },
+                                    modifier = Modifier.width(120.dp)
+                                ) {
+                                    val labelValue = portIndex?.let { String.format("%02d", it) } ?: "N°"
+                                    OutlinedTextField(
+                                        value = labelValue,
+                                        onValueChange = {},
+                                        readOnly = true,
+                                        enabled = true,
+                                        label = { Text("N°") },
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .menuAnchor(),
+                                        trailingIcon = {
+                                            ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedIndex)
+                                        },
+                                        isError = attemptedSave && portIndex == null,
+                                        supportingText = {
+                                            if (attemptedSave && portIndex == null) Text("Obligatorio")
+                                        }
+                                    )
+                                    ExposedDropdownMenu(
+                                        expanded = expandedIndex,
+                                        onDismissRequest = { expandedIndex = false }
+                                    ) {
+                                        (1..4).forEach { idx ->
+                                            DropdownMenuItem(
+                                                text = { Text(String.format("%02d", idx)) },
+                                                onClick = {
+                                                    portIndex = idx
+                                                    expandedIndex = false
+                                                }
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -775,210 +794,206 @@ fun AddAssetScreen(
 
             // Submódulo: Ajuste de Nodo (después de identidad)
             if (assetType == AssetType.NODE) {
-                NodeAdjustmentCard(
-                    assetId = workingAssetId,
-                    reportId = reportId,
-                    nodeName = reportNodeName,
-                    frequency = frequency,
-                    technology = technology,
-                    planRow = planRowForNode,
-                    adjustment = nodeAdjustment,
-                    showRequiredErrors = attemptedSave,
-                    collapseSignal = collapseAdjustmentsSignal,
-                    onPersist = { adj ->
-                        scope.launch { repository.upsertNodeAdjustment(adj) }
-                    }
+                val isNodeComplete = autoNodeAdjOk
+                AdjustmentSummaryCard(
+                    title = "Ajuste de Nodo",
+                    status = if (isNodeComplete) "Completo" else "Pendiente",
+                    actionLabel = if (isNodeComplete) "Editar" else "Completar",
+                    isComplete = isNodeComplete,
+                    onAction = { showNodeAdjustmentDialog = true }
                 )
             }
             
             // Submódulo: Ajuste de Amplificador (antes de Fotos)
             if (assetType == AssetType.AMPLIFIER) {
-                if (frequency == null || amplifierMode == null) {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        border = if (attemptedSave) androidx.compose.foundation.BorderStroke(
-                            1.dp,
-                            MaterialTheme.colorScheme.error
-                        ) else null,
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-                    ) {
-                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text("Ajuste de Amplificador", fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
-                            Text(
-                                "Selecciona Frecuencia y Tipo (HGBT/HGD/LE) para habilitar el ajuste.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f)
-                            )
-                        }
-                    }
+                val isAmpReady = frequency != null && amplifierMode != null
+                val isAmpComplete = autoAmplifierTablesOk
+                val ampSupport = if (!isAmpReady) {
+                    "Selecciona Frecuencia y Tipo (HGBT/HGD/LE) para habilitar el ajuste."
                 } else {
+                    null
+                }
+                AdjustmentSummaryCard(
+                    title = "Ajuste de Amplificador",
+                    status = if (isAmpComplete) "Completo" else "Pendiente",
+                    actionLabel = if (isAmpComplete) "Editar" else "Completar",
+                    isComplete = isAmpComplete,
+                    supportingText = ampSupport,
+                    actionEnabled = isAmpReady,
+                    onAction = { showAmplifierAdjustmentDialog = true }
+                )
+            }
+
+            if (showNodeAdjustmentDialog && assetType == AssetType.NODE) {
+                FullScreenAdjustmentDialog(
+                    title = "Ajuste de Nodo",
+                    onDismiss = { showNodeAdjustmentDialog = false },
+                    onComplete = { showNodeAdjustmentDialog = false }
+                ) {
+                    NodeAdjustmentCard(
+                        assetId = workingAssetId,
+                        reportId = reportId,
+                        nodeName = reportNodeName,
+                        frequency = frequency,
+                        technology = technology,
+                        planRow = planRowForNode,
+                        adjustment = nodeAdjustment,
+                        showRequiredErrors = attemptedSave,
+                        onPersist = { adj ->
+                            scope.launch { repository.upsertNodeAdjustment(adj) }
+                        }
+                    )
+                }
+            }
+
+            if (showAmplifierAdjustmentDialog && assetType == AssetType.AMPLIFIER && frequency != null && amplifierMode != null) {
+                FullScreenAdjustmentDialog(
+                    title = "Ajuste de Amplificador",
+                    onDismiss = { showAmplifierAdjustmentDialog = false },
+                    onComplete = { showAmplifierAdjustmentDialog = false }
+                ) {
                     AmplifierAdjustmentCard(
                         assetId = workingAssetId,
                         bandwidth = frequency,
                         amplifierMode = amplifierMode,
                         initial = amplifierAdjustment,
                         showRequiredErrors = attemptedSave,
-                        collapseSignal = collapseAdjustmentsSignal,
                         onCurrentChange = { currentAmplifierAdjustment = it },
                         onPersist = { adj -> repository.upsertAmplifierAdjustment(adj.copy(assetId = workingAssetId)) }
                     )
                 }
             }
             
-            // Fotos
-            Spacer(modifier = Modifier.height(8.dp))
-            var photosExpanded by rememberSaveable { mutableStateOf(true) }
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-            ) {
-                Column(modifier = Modifier.padding(12.dp)) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { photosExpanded = !photosExpanded },
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(
-                            "Fotos",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Icon(
-                            imageVector = if (photosExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                            contentDescription = null
-                        )
-                    }
-                    if (!photosExpanded) {
-                        return@Column
-                    }
+            AdjustmentSummaryCard(
+                title = "Fotos",
+                status = if (photosComplete) "Completo" else "Pendiente",
+                actionLabel = if (photosComplete) "Editar" else "Completar",
+                isComplete = photosComplete,
+                supportingText = photoSupportText.takeIf { it.isNotBlank() },
+                onAction = { showPhotosDialog = true }
+            )
 
-            val assetDisplayName = remember(reportNodeName, assetType, port, portIndex) {
-                val baseNodeName = reportNodeName.ifBlank { "Nodo" }
-                if (assetType == AssetType.NODE) {
-                    baseNodeName
-                } else {
-                    val code = if (port != null && portIndex != null) {
-                        "${port?.name}${String.format("%02d", portIndex)}"
-                    } else {
-                        "SIN-COD"
-                    }
-                    "$baseNodeName $code".trim()
-                }
-            }
-            val eventName = remember(report?.eventName) {
-                report?.eventName?.trim().orEmpty().ifBlank { "Sin evento" }
-            }
-            
-            // Foto del Módulo (no para RPHY)
-            if (assetType != AssetType.NODE || technology != "RPHY") {
-                PhotoSection(
-                    title = "Foto del Módulo y Tapa",
-                    reportId = reportId,
-                    assetId = workingAssetId,
-                    photoType = PhotoType.MODULE,
-                    assetLabel = assetDisplayName,
-                    eventName = eventName,
-                    repository = repository,
-                    minRequired = if (assetType == AssetType.NODE && technology != "RPHY") 2 else 0,
-                    showRequiredError = attemptedSave && (assetType != AssetType.NODE || technology != "RPHY"),
-                    maxAllowed = 2,
-                    onCountChange = {
-                        if (it > modulePhotoCount) {
-                            triggerAdjustmentsCollapse()
-                        }
-                        modulePhotoCount = it
-                    }
-                )
-            }
-            
-            // Fotos adicionales según tipo
-            // Foto TX y RX con pads (no para RPHY ni VCCAP)
-            if (assetType == AssetType.NODE && technology != "RPHY" && technology != "VCCAP") {
-                PhotoSection(
-                    title = "Foto TX  y RX con pads",
-                    reportId = reportId,
-                    assetId = workingAssetId,
-                    photoType = PhotoType.OPTICS,
-                    assetLabel = assetDisplayName,
-                    eventName = eventName,
-                    repository = repository,
-                    minRequired = 1,
-                    showRequiredError = attemptedSave,
-                    maxAllowed = 2,
-                    onCountChange = {
-                        if (it > opticsPhotoCount) {
-                            triggerAdjustmentsCollapse()
-                        }
-                        opticsPhotoCount = it
-                    }
-                )
-            }
-
-            if (assetType == AssetType.NODE) {
-                PhotoSection(
-                    title = "Foto de monitoria de PO directa y retorno",
-                    reportId = reportId,
-                    assetId = workingAssetId,
-                    photoType = PhotoType.MONITORING,
-                    assetLabel = assetDisplayName,
-                    eventName = eventName,
-                    repository = repository,
-                    minRequired = 0,
-                    showRequiredError = false,
-                    maxAllowed = 2,
-                    onCountChange = {
-                        if (it > monitoringPhotoCount) {
-                            triggerAdjustmentsCollapse()
-                        }
-                        monitoringPhotoCount = it
-                    }
-                )
-            }
-            
-            // Fotos de Inyección de portadoras (no para RPHY)
-            if (assetType != AssetType.NODE || technology != "RPHY") {
-                // Para NODO con Legacy o VCCAP: 4 fotos, para otros: 3 fotos
-                val maxSpectrumPhotos = if (assetType == AssetType.NODE && (technology == "Legacy" || technology == "VCCAP")) 4 else 3
-                PhotoSection(
-                    title = "Fotos de Inyección de portadoras por puerto",
-                    reportId = reportId,
-                    assetId = workingAssetId,
-                    photoType = PhotoType.SPECTRUM,
-                    assetLabel = assetDisplayName,
-                    eventName = eventName,
-                    repository = repository,
-                    minRequired = 0,
-                    showRequiredError = false,
-                    maxAllowed = maxSpectrumPhotos,
-                    onCountChange = {
-                        if (it > spectrumPhotoCount) {
-                            triggerAdjustmentsCollapse()
-                        }
-                        spectrumPhotoCount = it
-                    }
-                )
-            }
-            
-            if (assetType == AssetType.NODE) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+            if (showPhotosDialog) {
+                FullScreenAdjustmentDialog(
+                    title = "Fotos",
+                    onDismiss = { showPhotosDialog = false },
+                    onComplete = { showPhotosDialog = false }
                 ) {
-                    Icon(
-                        Icons.Default.CameraAlt,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                    Text(
-                        "Solo se permite un nodo por zona.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                }
-            }
+                    val assetDisplayName = remember(reportNodeName, assetType, port, portIndex) {
+                        val baseNodeName = reportNodeName.ifBlank { "Nodo" }
+                        if (assetType == AssetType.NODE) {
+                            baseNodeName
+                        } else {
+                            val code = if (port != null && portIndex != null) {
+                                "${port?.name}${String.format("%02d", portIndex)}"
+                            } else {
+                                "SIN-COD"
+                            }
+                            "$baseNodeName $code".trim()
+                        }
+                    }
+                    val eventName = remember(report?.eventName) {
+                        report?.eventName?.trim().orEmpty().ifBlank { "Sin evento" }
+                    }
+
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        // Foto del Módulo (no para RPHY)
+                        if (assetType != AssetType.NODE || technology != "RPHY") {
+                            PhotoSection(
+                                title = "Foto del Módulo y Tapa",
+                                reportId = reportId,
+                                assetId = workingAssetId,
+                                photoType = PhotoType.MODULE,
+                                assetLabel = assetDisplayName,
+                                eventName = eventName,
+                                repository = repository,
+                                minRequired = if (assetType == AssetType.NODE && technology != "RPHY") 2 else 0,
+                                showRequiredError = attemptedSave && (assetType != AssetType.NODE || technology != "RPHY"),
+                                maxAllowed = 2,
+                                onCountChange = {
+                                    modulePhotoCount = it
+                                }
+                            )
+                        }
+
+                        // Fotos adicionales según tipo
+                        // Foto TX y RX con pads (no para RPHY ni VCCAP)
+                        if (assetType == AssetType.NODE && technology != "RPHY" && technology != "VCCAP") {
+                            PhotoSection(
+                                title = "Foto TX  y RX con pads",
+                                reportId = reportId,
+                                assetId = workingAssetId,
+                                photoType = PhotoType.OPTICS,
+                                assetLabel = assetDisplayName,
+                                eventName = eventName,
+                                repository = repository,
+                                minRequired = 1,
+                                showRequiredError = attemptedSave,
+                                maxAllowed = 2,
+                                onCountChange = {
+                                    opticsPhotoCount = it
+                                }
+                            )
+                        }
+
+                        if (assetType == AssetType.NODE) {
+                            PhotoSection(
+                                title = "Foto de monitoria de PO directa y retorno",
+                                reportId = reportId,
+                                assetId = workingAssetId,
+                                photoType = PhotoType.MONITORING,
+                                assetLabel = assetDisplayName,
+                                eventName = eventName,
+                                repository = repository,
+                                minRequired = 0,
+                                showRequiredError = false,
+                                maxAllowed = 2,
+                                onCountChange = {
+                                    monitoringPhotoCount = it
+                                }
+                            )
+                        }
+
+                        // Fotos de Inyección de portadoras (no para RPHY)
+                        if (assetType != AssetType.NODE || technology != "RPHY") {
+                            // Para NODO con Legacy o VCCAP: 4 fotos, para otros: 3 fotos
+                            val maxSpectrumPhotos = if (assetType == AssetType.NODE && (technology == "Legacy" || technology == "VCCAP")) 4 else 3
+                            PhotoSection(
+                                title = "Fotos de Inyección de portadoras por puerto",
+                                reportId = reportId,
+                                assetId = workingAssetId,
+                                photoType = PhotoType.SPECTRUM,
+                                assetLabel = assetDisplayName,
+                                eventName = eventName,
+                                repository = repository,
+                                minRequired = 0,
+                                showRequiredError = false,
+                                maxAllowed = maxSpectrumPhotos,
+                                onCountChange = {
+                                    spectrumPhotoCount = it
+                                }
+                            )
+                        }
+
+                        if (assetType == AssetType.NODE) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.CameraAlt,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                                Text(
+                                    "Solo se permite un nodo por zona.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                    }
                 }
             }
 
@@ -986,31 +1001,48 @@ fun AddAssetScreen(
             val isRphyNode = assetType == AssetType.NODE && techNormalized == "rphy"
 
             if (autoSaved && !isRphyNode) {
-                Spacer(modifier = Modifier.height(8.dp))
-                if (assetType == AssetType.AMPLIFIER && !ampEntradaOk) {
-                    Text(
-                        "Complete mediciones de entrada válidas para continuar. La diferencia entre el nivel de entrada y medido aceptable es menor a 4. Nivel minimo de entrada permitido es 15 dBmV si esta indicado por plano.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error
-                    )
-                } else {
-                    AssetFileSection(
-                        context = context,
-                        navController = navController,
-                        repository = repository,
-                        reportFolder = MaintenanceStorage.reportFolderName(report?.eventName, reportId),
-                        onInteraction = triggerAdjustmentsCollapse,
-                        asset = Asset(
-                            id = workingAssetId,
-                            reportId = reportId,
-                            type = assetType,
-                            frequencyMHz = frequency?.mhz ?: 0,
-                            amplifierMode = amplifierMode,
-                            port = port,
-                            portIndex = portIndex,
-                            technology = if (assetType == AssetType.NODE) technology else null
-                        )
-                    )
+                AdjustmentSummaryCard(
+                    title = "Carga de Mediciones",
+                    status = if (measurementsComplete) "Completo" else "Pendiente",
+                    actionLabel = if (measurementsComplete) "Editar" else "Completar",
+                    isComplete = measurementsComplete,
+                    onAction = { showMeasurementsDialog = true }
+                )
+
+                if (showMeasurementsDialog) {
+                    FullScreenAdjustmentDialog(
+                        title = "Carga de Mediciones",
+                        onDismiss = { showMeasurementsDialog = false },
+                        onComplete = { showMeasurementsDialog = false }
+                    ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            if (assetType == AssetType.AMPLIFIER && !ampEntradaOk) {
+                                Text(
+                                    "Complete mediciones de entrada válidas para continuar. La diferencia entre el nivel de entrada y medido aceptable es menor a 4. Nivel minimo de entrada permitido es 15 dBmV si esta indicado por plano.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            }
+                            AssetFileSection(
+                                context = context,
+                                navController = navController,
+                                repository = repository,
+                                reportFolder = MaintenanceStorage.reportFolderName(report?.eventName, reportId),
+                                onInteraction = {},
+                                onCompletionChange = { measurementsComplete = it },
+                                asset = Asset(
+                                    id = workingAssetId,
+                                    reportId = reportId,
+                                    type = assetType,
+                                    frequencyMHz = frequency?.mhz ?: 0,
+                                    amplifierMode = amplifierMode,
+                                    port = port,
+                                    portIndex = portIndex,
+                                    technology = if (assetType == AssetType.NODE) technology else null
+                                )
+                            )
+                        }
+                    }
                 }
             }
             
@@ -1088,6 +1120,101 @@ fun AddAssetScreen(
             },
             showMissingWarning = hasMissingAssets
         )
+    }
+}
+
+@Composable
+private fun AdjustmentSummaryCard(
+    title: String,
+    status: String,
+    actionLabel: String,
+    isComplete: Boolean,
+    supportingText: String? = null,
+    actionEnabled: Boolean = true,
+    onAction: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.15f)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(title, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                Icon(
+                    imageVector = if (isComplete) Icons.Default.CheckCircle else Icons.Default.Warning,
+                    contentDescription = null,
+                    tint = if (isComplete) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                )
+            }
+            Text(
+                status,
+                style = MaterialTheme.typography.bodySmall,
+                color = if (isComplete) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f)
+            )
+            if (!supportingText.isNullOrBlank()) {
+                Text(
+                    supportingText,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f)
+                )
+            }
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                Button(onClick = onAction, enabled = actionEnabled) {
+                    Text(actionLabel)
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun FullScreenAdjustmentDialog(
+    title: String,
+    onDismiss: () -> Unit,
+    onComplete: () -> Unit,
+    content: @Composable () -> Unit
+) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(modifier = Modifier.fillMaxSize()) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                TopAppBar(
+                    title = { Text(title) },
+                    navigationIcon = {
+                        IconButton(onClick = onDismiss) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Volver"
+                            )
+                        }
+                    },
+                    actions = {
+                        TextButton(onClick = onComplete) {
+                            Text("Completar")
+                        }
+                        IconButton(onClick = onDismiss) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Cerrar"
+                            )
+                        }
+                    }
+                )
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .verticalScroll(rememberScrollState())
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    content()
+                }
+            }
+        }
     }
 }
 
@@ -1675,6 +1802,7 @@ private fun AssetFileSection(
     repository: com.example.fieldmaintenance.data.repository.MaintenanceRepository,
     reportFolder: String,
     onInteraction: () -> Unit,
+    onCompletionChange: (Boolean) -> Unit = {},
     asset: Asset
 ) {
     val isNodeAsset = asset.type == AssetType.NODE
@@ -1891,6 +2019,9 @@ private fun AssetFileSection(
             } else {
                 meetsRequired(verificationSummaryRx, rxRequired)
             }
+            LaunchedEffect(canRefresh, asset.id) {
+                onCompletionChange(canRefresh)
+            }
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
@@ -2055,54 +2186,6 @@ private fun AssetFileSection(
                     val channelTableEntries = channelListEntries.take(required.maxChannelTable)
 
                     @Composable
-                    fun MeasurementHeaderCell(entry: MeasurementEntry, index: Int) {
-                        val modifier = if (entry.fromZip) {
-                            Modifier
-                                .weight(1f)
-                                .clickable { onToggleDiscard(entry) }
-                        } else {
-                            Modifier.weight(1f)
-                        }
-                        Column(modifier = modifier) {
-                            Text(
-                                "M${index + 1}",
-                                style = smallTextStyle,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
-                    }
-
-                    @Composable
-                    fun MeasurementValueCell(value: String, ok: Boolean, discarded: Boolean) {
-                        val textColor = if (ok || discarded) mutedColor else warningColor
-                        val fontWeight = if (!ok && !discarded) FontWeight.SemiBold else FontWeight.Normal
-                        Text(
-                            value,
-                            modifier = Modifier
-                                .weight(1f)
-                                .padding(vertical = 2.dp),
-                            style = smallTextStyle,
-                            color = textColor,
-                            fontWeight = fontWeight
-                        )
-                    }
-
-                    fun docsisChannel(freq: Double): String {
-                        val channel = docsisTableEntries.mapNotNull { it.docsisMeta[freq]?.channel }.firstOrNull()
-                        return channel?.toString() ?: "—"
-                    }
-
-                    fun docsisFrequency(freq: Double): String {
-                        val frequency = docsisTableEntries.mapNotNull { it.docsisMeta[freq]?.frequencyMHz }.firstOrNull()
-                        return formatMHz(frequency ?: freq)
-                    }
-
-                    fun pilotFrequency(channel: Int): String {
-                        val frequency = channelTableEntries.mapNotNull { it.pilotMeta[channel]?.frequencyMHz }.firstOrNull()
-                        return formatMHz(frequency)
-                    }
-
-                    @Composable
                     fun MeasurementStatusTitle(label: String, isComplete: Boolean) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(label, fontWeight = FontWeight.SemiBold)
@@ -2146,155 +2229,260 @@ private fun AssetFileSection(
                             )
                         }
                         // Discarded entries are hidden from summary.
-                        if (canRenderTables && docsisEntries.isNotEmpty() && assetForDisplay.type != AssetType.NODE) {
-                            Text("DocsisExpert (niveles):", fontWeight = FontWeight.SemiBold)
-                            if (docsisListEntries.size > required.maxDocsisTable) {
-                                Text(
-                                    "Solo se muestran ${required.maxDocsisTable} mediciones (M1 a M${required.maxDocsisTable}).",
-                                    style = smallTextStyle,
-                                    color = mutedColor
-                                )
-                            }
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Text("Canal", modifier = Modifier.weight(1f), style = smallTextStyle, fontWeight = FontWeight.SemiBold)
-                                Text("Freq", modifier = Modifier.weight(1f), style = smallTextStyle, fontWeight = FontWeight.SemiBold)
-                                docsisTableEntries.forEachIndexed { index, entry ->
-                                    MeasurementHeaderCell(entry, index)
-                                }
-                            }
-                            val docsisFrequencies = docsisTableEntries
-                                .flatMap { it.docsisLevels.keys }
-                                .distinct()
-                                .sorted()
-                            docsisFrequencies.forEach { freq ->
-                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Text(docsisChannel(freq), modifier = Modifier.weight(1f), style = smallTextStyle)
-                                    Text("${docsisFrequency(freq)} MHz", modifier = Modifier.weight(1f), style = smallTextStyle)
-                                    docsisTableEntries.forEach { entry ->
-                                        val value = entry.docsisLevels[freq]
-                                        val ok = entry.docsisLevelOk[freq] ?: true
-                                        MeasurementValueCell(
-                                            value = formatDbmv(value),
-                                            ok = ok,
-                                            discarded = entry.isDiscarded
-                                        )
-                                    }
-                                }
-                            }
-                        }
+                        if (canRenderTables) {
+                            val cardColor = Color(0xFF141823)
+                            val strokeColor = Color(0xFF2A3142)
+                            val accentColor = Color(0xFF1E88E5)
+                            val errorColor = Color(0xFFD32F2F)
+                            val tableTextPrimary = Color(0xFFE7EAF0)
+                            val tableTextSecondary = Color(0xFFB0B7C3)
 
-                        if (canRenderTables && channelEntries.isNotEmpty()) {
-                            Text("Canales piloto (ChannelExpert):", fontWeight = FontWeight.SemiBold)
-                            if (channelListEntries.size > required.maxChannelTable) {
-                                Text(
-                                    "Solo se muestran ${required.maxChannelTable} mediciones (M1 a M${required.maxChannelTable}).",
-                                    style = smallTextStyle,
-                                    color = mutedColor
-                                )
-                            }
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Text("Canal", modifier = Modifier.weight(1f), style = smallTextStyle, fontWeight = FontWeight.SemiBold)
-                                Text("Freq", modifier = Modifier.weight(1f), style = smallTextStyle, fontWeight = FontWeight.SemiBold)
-                                channelTableEntries.forEachIndexed { index, entry ->
-                                    MeasurementHeaderCell(entry, index)
-                                }
-                            }
-                            val pilotChannels = listOf(50, 70, 110, 116, 136)
-                            pilotChannels.forEach { channel ->
-                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Text("$channel", modifier = Modifier.weight(1f), style = smallTextStyle)
-                                    Text("${pilotFrequency(channel)} MHz", modifier = Modifier.weight(1f), style = smallTextStyle)
-                                    channelTableEntries.forEach { entry ->
-                                        val value = entry.pilotLevels[channel]
-                                        val ok = entry.pilotLevelOk[channel] ?: true
-                                        MeasurementValueCell(
-                                            value = formatDbmv(value),
-                                            ok = ok,
-                                            discarded = entry.isDiscarded
-                                        )
-                                    }
-                                }
-                            }
-                        }
+                            data class MeasurementTab(
+                                val label: String,
+                                val entry: MeasurementEntry,
+                                val hasError: Boolean
+                            )
 
-                        if (canRenderTables && channelEntries.isNotEmpty()) {
-                            Text("ChannelExpert (canales digitales):", fontWeight = FontWeight.SemiBold)
-                            channelTableEntries.forEachIndexed { index, entry ->
-                                val label = "M${index + 1}"
-                                val hasIssues = entry.digitalRows.any { row ->
+                            fun docsisHasError(entry: MeasurementEntry): Boolean {
+                                return entry.docsisLevelOk.values.any { !it }
+                            }
+
+                            fun channelHasError(entry: MeasurementEntry): Boolean {
+                                val pilotError = entry.pilotLevelOk.values.any { !it }
+                                val digitalError = entry.digitalRows.any { row ->
                                     (row.levelOk == false) ||
                                         (row.merOk == false) ||
                                         (row.berPreOk == false) ||
                                         (row.berPostOk == false) ||
                                         (row.icfrOk == false)
                                 }
-                                var expanded by remember(entry.label) { mutableStateOf(false) }
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable { expanded = !expanded }
-                                        .padding(vertical = 4.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    if (hasIssues) {
-                                        Icon(
-                                            Icons.Default.Warning,
-                                            contentDescription = null,
-                                            tint = pendingColor
-                                        )
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                    }
-                                    Text("$label - ${displayLabel(entry)}", style = smallTextStyle, modifier = Modifier.weight(1f))
-                                    Icon(
-                                        if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                                        contentDescription = null
-                                    )
+                                return pilotError || digitalError
+                            }
+
+                            @Composable
+                            fun MeasurementTabChip(
+                                label: String,
+                                isSelected: Boolean,
+                                hasError: Boolean,
+                                onClick: () -> Unit
+                            ) {
+                                val bg = when {
+                                    isSelected && hasError -> errorColor
+                                    isSelected -> accentColor
+                                    hasError -> Color.Transparent
+                                    else -> Color.Transparent
                                 }
-                                if (expanded) {
+                                val borderColor = if (hasError) errorColor else strokeColor
+                                val textColor = if (isSelected) Color.White else tableTextPrimary
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(34.dp)
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(bg)
+                                        .border(1.dp, borderColor, RoundedCornerShape(10.dp))
+                                        .clickable { onClick() },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(text = label, color = textColor, fontSize = 13.sp)
+                                }
+                            }
+
+                            @Composable
+                            fun MeasurementTabsWithPagerCard(
+                                tabs: List<MeasurementTab>,
+                                footerProvider: (MeasurementEntry, String) -> String,
+                                tableContent: @Composable (MeasurementEntry) -> Unit
+                            ) {
+                                if (tabs.isEmpty()) return
+                                val pagerState = rememberPagerState(pageCount = { tabs.size })
+                                val scope = rememberCoroutineScope()
+                                val selectedTab = tabs.getOrNull(pagerState.currentPage)
+                                Column(
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(14.dp))
+                                        .background(cardColor)
+                                        .border(1.dp, strokeColor, RoundedCornerShape(14.dp))
+                                        .padding(10.dp)
+                                ) {
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
-                                        Text("Canal", modifier = Modifier.weight(1f), style = smallTextStyle, fontWeight = FontWeight.SemiBold)
-                                        Text("Freq", modifier = Modifier.weight(1f), style = smallTextStyle, fontWeight = FontWeight.SemiBold)
-                                        Text("Nivel", modifier = Modifier.weight(1f), style = smallTextStyle, fontWeight = FontWeight.SemiBold)
-                                        Text("MER", modifier = Modifier.weight(1f), style = smallTextStyle, fontWeight = FontWeight.SemiBold)
-                                        Text("BER pre", modifier = Modifier.weight(1f), style = smallTextStyle, fontWeight = FontWeight.SemiBold)
-                                        Text("BER post", modifier = Modifier.weight(1f), style = smallTextStyle, fontWeight = FontWeight.SemiBold)
-                                        Text("ICFR", modifier = Modifier.weight(1f), style = smallTextStyle, fontWeight = FontWeight.SemiBold)
+                                        tabs.forEachIndexed { index, tab ->
+                                            MeasurementTabChip(
+                                                label = tab.label,
+                                                isSelected = pagerState.currentPage == index,
+                                                hasError = tab.hasError,
+                                                onClick = { scope.launch { pagerState.animateScrollToPage(index) } }
+                                            )
+                                        }
                                     }
-                                    entry.digitalRows.forEach { row ->
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+
+                                    Spacer(Modifier.height(10.dp))
+
+                                    HorizontalPager(
+                                        state = pagerState,
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) { page ->
+                                        val entry = tabs[page].entry
+                                        tableContent(entry)
+                                    }
+
+                                    Spacer(Modifier.height(8.dp))
+
+                                    selectedTab?.let { tab ->
+                                        Text(
+                                            text = footerProvider(tab.entry, tab.label),
+                                            color = tableTextSecondary,
+                                            fontSize = 11.sp,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+                                    }
+                                }
+                            }
+
+                            @Composable
+                            fun TableCard(
+                                title: String,
+                                headers: List<String>,
+                                content: @Composable () -> Unit
+                            ) {
+                                Column(
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .border(1.dp, strokeColor, RoundedCornerShape(12.dp))
+                                        .padding(10.dp)
+                                ) {
+                                    Text(title, color = tableTextPrimary, fontSize = 14.sp)
+                                    Spacer(Modifier.height(8.dp))
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 6.dp)
+                                    ) {
+                                        headers.forEach { header ->
+                                            Text(
+                                                text = header,
+                                                color = tableTextSecondary,
+                                                fontSize = 11.sp,
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                        }
+                                    }
+                                    HorizontalDivider(color = strokeColor, thickness = 1.dp)
+                                    content()
+                                }
+                            }
+
+                            @Composable
+                            fun TableRow(cells: List<String>) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 8.dp)
+                                ) {
+                                    cells.forEach { cell ->
+                                        Text(
+                                            text = cell,
+                                            color = tableTextPrimary,
+                                            fontSize = 12.sp,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                    }
+                                }
+                                HorizontalDivider(color = strokeColor, thickness = 1.dp)
+                            }
+
+                            if (docsisEntries.isNotEmpty() && assetForDisplay.type != AssetType.NODE) {
+                                Text("DOCSIS Expert", color = tableTextPrimary, fontSize = 18.sp)
+                                Spacer(Modifier.height(8.dp))
+                                val docsisTabs = docsisTableEntries.mapIndexed { index, entry ->
+                                    MeasurementTab(
+                                        label = "M${index + 1}",
+                                        entry = entry,
+                                        hasError = docsisHasError(entry)
+                                    )
+                                }
+                                MeasurementTabsWithPagerCard(
+                                    tabs = docsisTabs,
+                                    footerProvider = { entry, label ->
+                                        "$label = ${displayLabel(entry)}"
+                                    }
+                                ) { entry ->
+                                    val rows = entry.docsisLevels.keys.sorted().map { freq ->
+                                        val channel = entry.docsisMeta[freq]?.channel?.toString() ?: "—"
+                                        val frequency = entry.docsisMeta[freq]?.frequencyMHz ?: freq
+                                        val level = formatDbmv(entry.docsisLevels[freq])
+                                        listOf(channel, formatMHz(frequency), level, "—")
+                                    }
+                                    TableCard(
+                                        title = "Upstream Channels",
+                                        headers = listOf("UCD", "Frecuencia (MHz)", "Nivel (dBmV)", "ICFR (dB)")
+                                    ) {
+                                        rows.forEach { row -> TableRow(row) }
+                                    }
+                                }
+                            }
+
+                            if (channelEntries.isNotEmpty()) {
+                                Spacer(Modifier.height(14.dp))
+                                Text("Channel Expert", color = tableTextPrimary, fontSize = 18.sp)
+                                Spacer(Modifier.height(8.dp))
+                                val channelTabs = channelTableEntries.mapIndexed { index, entry ->
+                                    MeasurementTab(
+                                        label = "M${index + 1}",
+                                        entry = entry,
+                                        hasError = channelHasError(entry)
+                                    )
+                                }
+                                MeasurementTabsWithPagerCard(
+                                    tabs = channelTabs,
+                                    footerProvider = { entry, label ->
+                                        "$label = ${displayLabel(entry)}"
+                                    }
+                                ) { entry ->
+                                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                        TableCard(
+                                            title = "Downstream Digital Channels",
+                                            headers = listOf("Canal", "Freq (MHz)", "MER", "BER pre", "BER post", "ICFR")
                                         ) {
-                                            Text("${row.channel}", modifier = Modifier.weight(1f), style = smallTextStyle)
-                                            Text(formatDbmv(row.frequencyMHz), modifier = Modifier.weight(1f), style = smallTextStyle)
-                                            MeasurementValueCell(
-                                                value = formatDbmv(row.levelDbmv),
-                                                ok = row.levelOk != false,
-                                                discarded = entry.isDiscarded
-                                            )
-                                            MeasurementValueCell(
-                                                value = formatDbmv(row.mer),
-                                                ok = row.merOk != false,
-                                                discarded = entry.isDiscarded
-                                            )
-                                            MeasurementValueCell(
-                                                value = row.berPre?.toString() ?: "—",
-                                                ok = row.berPreOk != false,
-                                                discarded = entry.isDiscarded
-                                            )
-                                            MeasurementValueCell(
-                                                value = row.berPost?.toString() ?: "—",
-                                                ok = row.berPostOk != false,
-                                                discarded = entry.isDiscarded
-                                            )
-                                            MeasurementValueCell(
-                                                value = formatDbmv(row.icfr),
-                                                ok = row.icfrOk != false,
-                                                discarded = entry.isDiscarded
-                                            )
+                                            entry.digitalRows.forEach { row ->
+                                                TableRow(
+                                                    listOf(
+                                                        row.channel.toString(),
+                                                        formatMHz(row.frequencyMHz),
+                                                        formatDbmv(row.mer),
+                                                        row.berPre?.toString() ?: "—",
+                                                        row.berPost?.toString() ?: "—",
+                                                        formatDbmv(row.icfr)
+                                                    )
+                                                )
+                                            }
+                                        }
+                                        TableCard(
+                                            title = "Downstream Analogic Channels",
+                                            headers = listOf("Canal", "Freq (MHz)", "M1", "M2")
+                                        ) {
+                                            val pilotChannels = listOf(50, 70, 110, 116, 136)
+                                            pilotChannels.forEach { channel ->
+                                                val frequency = entry.pilotMeta[channel]?.frequencyMHz
+                                                val level = entry.pilotLevels[channel]
+                                                TableRow(
+                                                    listOf(
+                                                        channel.toString(),
+                                                        formatMHz(frequency),
+                                                        formatDbmv(level),
+                                                        "—"
+                                                    )
+                                                )
+                                            }
                                         }
                                     }
                                 }

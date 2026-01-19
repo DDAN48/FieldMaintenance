@@ -1,7 +1,6 @@
 @file:OptIn(ExperimentalMaterial3Api::class)
 package com.example.fieldmaintenance.ui.components
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -13,8 +12,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.ExpandLess
-import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -43,14 +40,8 @@ fun NodeAdjustmentCard(
     planRow: PlanRow?,
     adjustment: NodeAdjustment?,
     showRequiredErrors: Boolean,
-    collapseSignal: Int,
     onPersist: (NodeAdjustment) -> Unit
 ) {
-    var expanded by remember(assetId) { mutableStateOf(true) }
-    LaunchedEffect(collapseSignal) {
-        expanded = false
-    }
-
     // Determine if we have plan data
     val hasPlanData = planRow != null
     // Use technology from asset, fallback to plan, default to Legacy
@@ -146,13 +137,6 @@ fun NodeAdjustmentCard(
                     contentDescription = null,
                     tint = if (completeNow) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                 )
-                Spacer(Modifier.width(6.dp))
-                IconButton(onClick = { expanded = !expanded }) {
-                    Icon(
-                        if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                        contentDescription = if (expanded) "Colapsar" else "Expandir"
-                    )
-                }
             }
 
             // Plan values (only visible if plan data is available)
@@ -196,8 +180,7 @@ fun NodeAdjustmentCard(
                 }
             }
 
-            AnimatedVisibility(visible = expanded) {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     when {
                         isRphy -> {
                             // RPHY: SFP + PO Directa + PO Retorno
@@ -549,7 +532,6 @@ fun NodeAdjustmentCard(
                         )
                         }
                     }
-                }
             }
         }
     }
