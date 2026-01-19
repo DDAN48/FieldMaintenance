@@ -6,6 +6,7 @@ package com.example.fieldmaintenance.ui.screens
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.background
@@ -38,6 +39,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.font.FontWeight
@@ -173,8 +175,8 @@ fun AddAssetScreen(
     var monitoringPhotoCount by remember { mutableStateOf(0) }
     var spectrumPhotoCount by remember { mutableStateOf(0) }
     var autoSaved by rememberSaveable(workingAssetId) { mutableStateOf(false) }
-    var collapseAdjustmentsSignal by rememberSaveable { mutableStateOf(0) }
-    val triggerAdjustmentsCollapse = { collapseAdjustmentsSignal += 1 }
+    var showNodeAdjustmentDialog by rememberSaveable { mutableStateOf(false) }
+    var showAmplifierAdjustmentDialog by rememberSaveable { mutableStateOf(false) }
 
     // Amplifier adjustment (persisted per asset)
     val amplifierAdjustment by repository.getAmplifierAdjustment(workingAssetId)
@@ -775,50 +777,70 @@ fun AddAssetScreen(
 
             // Submódulo: Ajuste de Nodo (después de identidad)
             if (assetType == AssetType.NODE) {
-                NodeAdjustmentCard(
-                    assetId = workingAssetId,
-                    reportId = reportId,
-                    nodeName = reportNodeName,
-                    frequency = frequency,
-                    technology = technology,
-                    planRow = planRowForNode,
-                    adjustment = nodeAdjustment,
-                    showRequiredErrors = attemptedSave,
-                    collapseSignal = collapseAdjustmentsSignal,
-                    onPersist = { adj ->
-                        scope.launch { repository.upsertNodeAdjustment(adj) }
-                    }
+                val isNodeComplete = autoNodeAdjOk
+                AdjustmentSummaryCard(
+                    title = "Ajuste de Nodo",
+                    status = if (isNodeComplete) "Completo" else "Pendiente",
+                    actionLabel = if (isNodeComplete) "Editar" else "Completar",
+                    isComplete = isNodeComplete,
+                    onAction = { showNodeAdjustmentDialog = true }
                 )
             }
             
             // Submódulo: Ajuste de Amplificador (antes de Fotos)
             if (assetType == AssetType.AMPLIFIER) {
-                if (frequency == null || amplifierMode == null) {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        border = if (attemptedSave) androidx.compose.foundation.BorderStroke(
-                            1.dp,
-                            MaterialTheme.colorScheme.error
-                        ) else null,
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-                    ) {
-                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text("Ajuste de Amplificador", fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
-                            Text(
-                                "Selecciona Frecuencia y Tipo (HGBT/HGD/LE) para habilitar el ajuste.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f)
-                            )
-                        }
-                    }
+                val isAmpReady = frequency != null && amplifierMode != null
+                val isAmpComplete = autoAmplifierTablesOk
+                val ampSupport = if (!isAmpReady) {
+                    "Selecciona Frecuencia y Tipo (HGBT/HGD/LE) para habilitar el ajuste."
                 } else {
+                    null
+                }
+                AdjustmentSummaryCard(
+                    title = "Ajuste de Amplificador",
+                    status = if (isAmpComplete) "Completo" else "Pendiente",
+                    actionLabel = if (isAmpComplete) "Editar" else "Completar",
+                    isComplete = isAmpComplete,
+                    supportingText = ampSupport,
+                    actionEnabled = isAmpReady,
+                    onAction = { showAmplifierAdjustmentDialog = true }
+                )
+            }
+
+            if (showNodeAdjustmentDialog && assetType == AssetType.NODE) {
+                FullScreenAdjustmentDialog(
+                    title = "Ajuste de Nodo",
+                    onDismiss = { showNodeAdjustmentDialog = false },
+                    onComplete = { showNodeAdjustmentDialog = false }
+                ) {
+                    NodeAdjustmentCard(
+                        assetId = workingAssetId,
+                        reportId = reportId,
+                        nodeName = reportNodeName,
+                        frequency = frequency,
+                        technology = technology,
+                        planRow = planRowForNode,
+                        adjustment = nodeAdjustment,
+                        showRequiredErrors = attemptedSave,
+                        onPersist = { adj ->
+                            scope.launch { repository.upsertNodeAdjustment(adj) }
+                        }
+                    )
+                }
+            }
+
+            if (showAmplifierAdjustmentDialog && assetType == AssetType.AMPLIFIER && frequency != null && amplifierMode != null) {
+                FullScreenAdjustmentDialog(
+                    title = "Ajuste de Amplificador",
+                    onDismiss = { showAmplifierAdjustmentDialog = false },
+                    onComplete = { showAmplifierAdjustmentDialog = false }
+                ) {
                     AmplifierAdjustmentCard(
                         assetId = workingAssetId,
                         bandwidth = frequency,
                         amplifierMode = amplifierMode,
                         initial = amplifierAdjustment,
                         showRequiredErrors = attemptedSave,
-                        collapseSignal = collapseAdjustmentsSignal,
                         onCurrentChange = { currentAmplifierAdjustment = it },
                         onPersist = { adj -> repository.upsertAmplifierAdjustment(adj.copy(assetId = workingAssetId)) }
                     )
@@ -885,9 +907,6 @@ fun AddAssetScreen(
                     showRequiredError = attemptedSave && (assetType != AssetType.NODE || technology != "RPHY"),
                     maxAllowed = 2,
                     onCountChange = {
-                        if (it > modulePhotoCount) {
-                            triggerAdjustmentsCollapse()
-                        }
                         modulePhotoCount = it
                     }
                 )
@@ -908,9 +927,6 @@ fun AddAssetScreen(
                     showRequiredError = attemptedSave,
                     maxAllowed = 2,
                     onCountChange = {
-                        if (it > opticsPhotoCount) {
-                            triggerAdjustmentsCollapse()
-                        }
                         opticsPhotoCount = it
                     }
                 )
@@ -929,9 +945,6 @@ fun AddAssetScreen(
                     showRequiredError = false,
                     maxAllowed = 2,
                     onCountChange = {
-                        if (it > monitoringPhotoCount) {
-                            triggerAdjustmentsCollapse()
-                        }
                         monitoringPhotoCount = it
                     }
                 )
@@ -953,9 +966,6 @@ fun AddAssetScreen(
                     showRequiredError = false,
                     maxAllowed = maxSpectrumPhotos,
                     onCountChange = {
-                        if (it > spectrumPhotoCount) {
-                            triggerAdjustmentsCollapse()
-                        }
                         spectrumPhotoCount = it
                     }
                 )
@@ -993,25 +1003,24 @@ fun AddAssetScreen(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error
                     )
-                } else {
-                    AssetFileSection(
+                }
+                AssetFileSection(
                         context = context,
                         navController = navController,
                         repository = repository,
                         reportFolder = MaintenanceStorage.reportFolderName(report?.eventName, reportId),
-                        onInteraction = triggerAdjustmentsCollapse,
+                        onInteraction = {},
                         asset = Asset(
-                            id = workingAssetId,
-                            reportId = reportId,
-                            type = assetType,
-                            frequencyMHz = frequency?.mhz ?: 0,
-                            amplifierMode = amplifierMode,
-                            port = port,
-                            portIndex = portIndex,
-                            technology = if (assetType == AssetType.NODE) technology else null
-                        )
+                        id = workingAssetId,
+                        reportId = reportId,
+                        type = assetType,
+                        frequencyMHz = frequency?.mhz ?: 0,
+                        amplifierMode = amplifierMode,
+                        port = port,
+                        portIndex = portIndex,
+                        technology = if (assetType == AssetType.NODE) technology else null
                     )
-                }
+                )
             }
             
             Spacer(modifier = Modifier.height(16.dp))
@@ -1088,6 +1097,106 @@ fun AddAssetScreen(
             },
             showMissingWarning = hasMissingAssets
         )
+    }
+}
+
+@Composable
+private fun AdjustmentSummaryCard(
+    title: String,
+    status: String,
+    actionLabel: String,
+    isComplete: Boolean,
+    supportingText: String? = null,
+    actionEnabled: Boolean = true,
+    onAction: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.15f)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(title, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                Icon(
+                    imageVector = if (isComplete) Icons.Default.CheckCircle else Icons.Default.Warning,
+                    contentDescription = null,
+                    tint = if (isComplete) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                )
+            }
+            Text(
+                status,
+                style = MaterialTheme.typography.bodySmall,
+                color = if (isComplete) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f)
+            )
+            if (!supportingText.isNullOrBlank()) {
+                Text(
+                    supportingText,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f)
+                )
+            }
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                Button(onClick = onAction, enabled = actionEnabled) {
+                    Text(actionLabel)
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun FullScreenAdjustmentDialog(
+    title: String,
+    onDismiss: () -> Unit,
+    onComplete: () -> Unit,
+    content: @Composable () -> Unit
+) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(modifier = Modifier.fillMaxSize()) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                TopAppBar(
+                    title = { Text(title) },
+                    navigationIcon = {
+                        IconButton(onClick = onDismiss) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Volver"
+                            )
+                        }
+                    },
+                    actions = {
+                        IconButton(onClick = onDismiss) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Cerrar"
+                            )
+                        }
+                    }
+                )
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .verticalScroll(rememberScrollState())
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    content()
+                }
+                Button(
+                    onClick = onComplete,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                ) {
+                    Text("Completar")
+                }
+            }
+        }
     }
 }
 
