@@ -2313,7 +2313,6 @@ private fun AssetFileSection(
                                     }
                                 }
                             }
-                        }
 
                         @Composable
                         fun TableCard(
