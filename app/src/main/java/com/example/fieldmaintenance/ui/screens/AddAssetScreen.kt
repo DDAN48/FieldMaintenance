@@ -993,25 +993,24 @@ fun AddAssetScreen(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error
                     )
-                } else {
-                    AssetFileSection(
-                        context = context,
-                        navController = navController,
-                        repository = repository,
-                        reportFolder = MaintenanceStorage.reportFolderName(report?.eventName, reportId),
-                        onInteraction = triggerAdjustmentsCollapse,
-                        asset = Asset(
-                            id = workingAssetId,
-                            reportId = reportId,
-                            type = assetType,
-                            frequencyMHz = frequency?.mhz ?: 0,
-                            amplifierMode = amplifierMode,
-                            port = port,
-                            portIndex = portIndex,
-                            technology = if (assetType == AssetType.NODE) technology else null
-                        )
-                    )
                 }
+                AssetFileSection(
+                    context = context,
+                    navController = navController,
+                    repository = repository,
+                    reportFolder = MaintenanceStorage.reportFolderName(report?.eventName, reportId),
+                    onInteraction = triggerAdjustmentsCollapse,
+                    asset = Asset(
+                        id = workingAssetId,
+                        reportId = reportId,
+                        type = assetType,
+                        frequencyMHz = frequency?.mhz ?: 0,
+                        amplifierMode = amplifierMode,
+                        port = port,
+                        portIndex = portIndex,
+                        technology = if (assetType == AssetType.NODE) technology else null
+                    )
+                )
             }
             
             Spacer(modifier = Modifier.height(16.dp))
