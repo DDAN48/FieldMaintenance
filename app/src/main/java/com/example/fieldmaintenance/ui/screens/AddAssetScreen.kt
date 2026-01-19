@@ -16,8 +16,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Description
-import androidx.compose.material.icons.filled.ExpandLess
-import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Download
@@ -27,7 +26,6 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -51,15 +49,12 @@ import com.example.fieldmaintenance.ui.viewmodel.ReportViewModelFactory
 import com.example.fieldmaintenance.util.DatabaseProvider
 import com.example.fieldmaintenance.util.ImageStore
 import com.example.fieldmaintenance.util.PhotoManager
-import com.example.fieldmaintenance.util.SettingsStore
-import com.example.fieldmaintenance.util.AppSettings
 import com.example.fieldmaintenance.util.MaintenanceStorage
 import com.example.fieldmaintenance.util.PlanCache
 import com.example.fieldmaintenance.util.PlanRepository
 import com.example.fieldmaintenance.util.hasIncompleteAssets
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
@@ -67,6 +62,13 @@ import kotlinx.coroutines.launch
 import java.io.File
 import java.net.URLConnection
 import java.util.UUID
+
+private enum class AddAssetSection(val title: String, val subtitle: String) {
+    IDENTITY("Identidad del activo", "Tipo, frecuencia y tecnología."),
+    ADJUSTMENT("Ajuste del activo", "Parámetros de nodo o amplificador."),
+    PHOTOS("Fotos", "Evidencia fotográfica del activo."),
+    MEASUREMENTS("Carga de mediciones", "Archivos del equipo de medición.")
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -108,6 +110,7 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
     var monitoringPhotoCount by remember { mutableStateOf(0) }
     var spectrumPhotoCount by remember { mutableStateOf(0) }
     var autoSaved by rememberSaveable(workingAssetId) { mutableStateOf(false) }
+    var activeSection by rememberSaveable { mutableStateOf<AddAssetSection?>(null) }
 
     // Amplifier adjustment (persisted per asset)
     val amplifierAdjustment by repository.getAmplifierAdjustment(workingAssetId)
@@ -296,6 +299,49 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
         return ok
     }
 
+    suspend fun persistAsset(navigateToSummary: Boolean) {
+        if (!validateAndShowErrors()) {
+            snackbarHostState.showSnackbar("Completa los datos del activo")
+            return
+        }
+        if (assetType == AssetType.AMPLIFIER) {
+            val existing = repository.listAssetsByReportId(reportId)
+            val dup = existing.any {
+                it.type == AssetType.AMPLIFIER &&
+                    it.id != workingAssetId &&
+                    it.port == port &&
+                    it.portIndex == portIndex
+            }
+            if (dup) {
+                snackbarHostState.showSnackbar("Activo ya existe: ${port?.name}${String.format("%02d", portIndex)}")
+                return
+            }
+        }
+        val asset = Asset(
+            id = workingAssetId,
+            reportId = reportId,
+            type = assetType,
+            frequencyMHz = frequency!!.mhz,
+            amplifierMode = amplifierMode,
+            port = port,
+            portIndex = portIndex,
+            technology = if (assetType == AssetType.NODE) technology else null
+        )
+        if (isEdit) viewModel.updateAsset(asset) else viewModel.addAsset(asset)
+        withContext(Dispatchers.IO) {
+            val reportFolder = MaintenanceStorage.reportFolderName(
+                report?.eventName,
+                reportId
+            )
+            MaintenanceStorage.ensureAssetDir(context, reportFolder, asset)
+        }
+        if (navigateToSummary) {
+            navController.navigate(Screen.AssetSummary.createRoute(reportId))
+        } else {
+            snackbarHostState.showSnackbar("Guardado")
+        }
+    }
+
     LaunchedEffect(
         autoSaveReady,
         assetType,
@@ -352,41 +398,7 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
                     }
                     IconButton(onClick = {
                         scope.launch {
-                            if (validateAndShowErrors()) {
-                                if (assetType == AssetType.AMPLIFIER) {
-                                    val existing = repository.listAssetsByReportId(reportId)
-                                    val dup = existing.any {
-                                        it.type == AssetType.AMPLIFIER &&
-                                            it.id != workingAssetId &&
-                                            it.port == port &&
-                                            it.portIndex == portIndex
-                                    }
-                                    if (dup) {
-                                        snackbarHostState.showSnackbar("Activo ya existe: ${port?.name}${String.format("%02d", portIndex)}")
-                                        return@launch
-                                    }
-                                }
-                                val asset = Asset(
-                                    id = workingAssetId,
-                                    reportId = reportId,
-                                    type = assetType,
-                                    frequencyMHz = frequency!!.mhz,
-                                    amplifierMode = amplifierMode,
-                                    port = port,
-                                    portIndex = portIndex
-                                )
-                                if (isEdit) viewModel.updateAsset(asset) else viewModel.addAsset(asset)
-                                withContext(Dispatchers.IO) {
-                                    val reportFolder = MaintenanceStorage.reportFolderName(
-                                        report?.eventName,
-                                        reportId
-                                    )
-                                    MaintenanceStorage.ensureAssetDir(context, reportFolder, asset)
-                                }
-                                snackbarHostState.showSnackbar("Guardado")
-                            } else {
-                                snackbarHostState.showSnackbar("Completa los datos del activo")
-                            }
+                            persistAsset(navigateToSummary = false)
                         }
                     }) {
                         Icon(Icons.Default.Save, contentDescription = "Guardar")
@@ -407,487 +419,482 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Tipo de Activo + Frecuencia en la misma línea (desplegables)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                // Tipo de Activo
-                var expandedType by remember { mutableStateOf(false) }
-                ExposedDropdownMenuBox(
-                    expanded = expandedType,
-                    onExpandedChange = { expandedType = !expandedType },
-                    modifier = Modifier.weight(1f)
-                ) {
-                    OutlinedTextField(
-                        value = if (assetType == AssetType.NODE) "Nodo" else "Amplificador",
-                        onValueChange = {},
-                        readOnly = true,
-                        enabled = true,
-                        label = { Text("Tipo de Activo") },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .menuAnchor(),
-                        trailingIcon = {
-                            ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedType)
-                        }
+            when (activeSection) {
+                null -> {
+                    SectionPickerCard(
+                        title = AddAssetSection.IDENTITY.title,
+                        subtitle = AddAssetSection.IDENTITY.subtitle,
+                        onClick = { activeSection = AddAssetSection.IDENTITY }
                     )
-                    ExposedDropdownMenu(
-                        expanded = expandedType,
-                        onDismissRequest = { expandedType = false }
-                    ) {
-                        if (!hasNode) {
-                            DropdownMenuItem(
-                                text = { Text("Nodo") },
-                                onClick = {
-                                    assetType = AssetType.NODE
-                                    expandedType = false
-                                }
-                            )
-                        }
-                        DropdownMenuItem(
-                            text = { Text("Amplificador") },
-                            onClick = {
-                                assetType = AssetType.AMPLIFIER
-                                expandedType = false
-                            }
-                        )
-                    }
-                }
-
-                // Frecuencia
-                var expandedFreq by remember { mutableStateOf(false) }
-                ExposedDropdownMenuBox(
-                    expanded = expandedFreq,
-                    onExpandedChange = { expandedFreq = !expandedFreq },
-                    modifier = Modifier.width(130.dp)
-                ) {
-                    OutlinedTextField(
-                        value = frequency?.let { "${it.mhz} MHz" } ?: "Seleccionar",
-                        onValueChange = {},
-                        readOnly = true,
-                        enabled = true,
-                        label = { Text("Frec módulo") },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .menuAnchor(),
-                        trailingIcon = {
-                            ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedFreq)
-                        },
-                        isError = attemptedSave && frequency == null,
-                        supportingText = {
-                            if (attemptedSave && frequency == null) Text("Obligatorio")
-                        }
+                    SectionPickerCard(
+                        title = AddAssetSection.ADJUSTMENT.title,
+                        subtitle = AddAssetSection.ADJUSTMENT.subtitle,
+                        onClick = { activeSection = AddAssetSection.ADJUSTMENT }
                     )
-                    ExposedDropdownMenu(
-                        expanded = expandedFreq,
-                        onDismissRequest = { expandedFreq = false }
-                    ) {
-                        listOf(Frequency.MHz_42, Frequency.MHz_85).forEach { freq ->
-                            DropdownMenuItem(
-                                text = { Text("${freq.mhz} MHz") },
-                                onClick = {
-                                    frequency = freq
-                                    expandedFreq = false
-                                }
-                            )
-                        }
-                    }
-                }
-            }
-
-            // Tecnología (solo para Nodo)
-            if (assetType == AssetType.NODE) {
-                var expandedTech by remember { mutableStateOf(false) }
-                val techOptions = listOf("Legacy", "RPHY", "VCCAP")
-                ExposedDropdownMenuBox(
-                    expanded = expandedTech,
-                    onExpandedChange = { expandedTech = !expandedTech },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    OutlinedTextField(
-                        value = technology ?: "Seleccionar",
-                        onValueChange = {},
-                        readOnly = true,
-                        enabled = true,
-                        label = { Text("Tecnología") },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .menuAnchor(),
-                        trailingIcon = {
-                            ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedTech)
-                        },
-                        isError = attemptedSave && technology == null,
-                        supportingText = {
-                            if (attemptedSave && technology == null) Text("Obligatorio")
-                        }
+                    SectionPickerCard(
+                        title = AddAssetSection.PHOTOS.title,
+                        subtitle = AddAssetSection.PHOTOS.subtitle,
+                        onClick = { activeSection = AddAssetSection.PHOTOS }
                     )
-                    ExposedDropdownMenu(
-                        expanded = expandedTech,
-                        onDismissRequest = { expandedTech = false }
-                    ) {
-                        techOptions.forEach { tech ->
-                            DropdownMenuItem(
-                                text = { Text(tech) },
-                                onClick = {
-                                    technology = tech
-                                    expandedTech = false
-                                }
-                            )
-                        }
-                    }
-                }
-            }
-
-            // Submódulo: Ajuste de Nodo (después de Tipo + Frecuencia + Tecnología)
-            if (assetType == AssetType.NODE) {
-                NodeAdjustmentCard(
-                    assetId = workingAssetId,
-                    reportId = reportId,
-                    nodeName = reportNodeName,
-                    frequency = frequency,
-                    technology = technology,
-                    planRow = planRowForNode,
-                    adjustment = nodeAdjustment,
-                    showRequiredErrors = attemptedSave,
-                    onPersist = { adj ->
-                        scope.launch { repository.upsertNodeAdjustment(adj) }
-                    }
-                )
-            }
-            
-            // Amplificador: 2da línea = Tipo (HGD/HGBT/LE), 3ra línea = Puerto + N°
-            if (assetType == AssetType.AMPLIFIER) {
-                // 2da línea: Tipo
-                var expandedMode by remember { mutableStateOf(false) }
-                ExposedDropdownMenuBox(
-                    expanded = expandedMode,
-                    onExpandedChange = { expandedMode = !expandedMode },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    OutlinedTextField(
-                        value = when (amplifierMode) {
-                            AmplifierMode.HGD -> AmplifierMode.HGD.label
-                            AmplifierMode.HGDT -> AmplifierMode.HGDT.label
-                            AmplifierMode.LE -> AmplifierMode.LE.label
-                            null -> "Seleccionar"
-                        },
-                        onValueChange = {},
-                        readOnly = true,
-                        enabled = true,
-                        label = { Text("Tipo") },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .menuAnchor(),
-                        trailingIcon = {
-                            ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedMode)
-                        },
-                        isError = attemptedSave && amplifierMode == null,
-                        supportingText = {
-                            if (attemptedSave && amplifierMode == null) Text("Obligatorio")
-                        }
+                    SectionPickerCard(
+                        title = AddAssetSection.MEASUREMENTS.title,
+                        subtitle = AddAssetSection.MEASUREMENTS.subtitle,
+                        onClick = { activeSection = AddAssetSection.MEASUREMENTS }
                     )
-                    ExposedDropdownMenu(
-                        expanded = expandedMode,
-                        onDismissRequest = { expandedMode = false }
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text("HGD") },
-                            onClick = {
-                                amplifierMode = AmplifierMode.HGD
-                                expandedMode = false
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("HGBT") },
-                            onClick = {
-                                amplifierMode = AmplifierMode.HGDT
-                                expandedMode = false
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("LE") },
-                            onClick = {
-                                amplifierMode = AmplifierMode.LE
-                                expandedMode = false
-                            }
-                        )
-                    }
                 }
-
-                // 3ra línea: Puerto + N°
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    var expandedPort by remember { mutableStateOf(false) }
-                    ExposedDropdownMenuBox(
-                        expanded = expandedPort,
-                        onExpandedChange = { expandedPort = !expandedPort },
-                        modifier = Modifier.weight(1f)
+                AddAssetSection.IDENTITY -> {
+                    SectionDetailCard(
+                        title = AddAssetSection.IDENTITY.title,
+                        onBack = { activeSection = null },
+                        onClose = { navController.popBackStack() },
+                        onSave = { scope.launch { persistAsset(navigateToSummary = true) } }
                     ) {
-                        OutlinedTextField(
-                            value = port?.name ?: "Puerto",
-                            onValueChange = {},
-                            readOnly = true,
-                            enabled = true,
-                            label = { Text("Puerto") },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .menuAnchor(),
-                            trailingIcon = {
-                                ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedPort)
-                            },
-                            isError = attemptedSave && port == null,
-                            supportingText = {
-                                if (attemptedSave && port == null) Text("Obligatorio")
-                            }
-                        )
-                        ExposedDropdownMenu(
-                            expanded = expandedPort,
-                            onDismissRequest = { expandedPort = false }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            Port.values().forEach { p ->
-                                DropdownMenuItem(
-                                    text = { Text(p.name) },
-                                    onClick = {
-                                        port = p
-                                        expandedPort = false
+                                var expandedType by remember { mutableStateOf(false) }
+                                ExposedDropdownMenuBox(
+                                    expanded = expandedType,
+                                    onExpandedChange = { expandedType = !expandedType },
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    OutlinedTextField(
+                                        value = if (assetType == AssetType.NODE) "Nodo" else "Amplificador",
+                                        onValueChange = {},
+                                        readOnly = true,
+                                        enabled = true,
+                                        label = { Text("Tipo de Activo") },
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .menuAnchor(),
+                                        trailingIcon = {
+                                            ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedType)
+                                        }
+                                    )
+                                    ExposedDropdownMenu(
+                                        expanded = expandedType,
+                                        onDismissRequest = { expandedType = false }
+                                    ) {
+                                        if (!hasNode) {
+                                            DropdownMenuItem(
+                                                text = { Text("Nodo") },
+                                                onClick = {
+                                                    assetType = AssetType.NODE
+                                                    expandedType = false
+                                                }
+                                            )
+                                        }
+                                        DropdownMenuItem(
+                                            text = { Text("Amplificador") },
+                                            onClick = {
+                                                assetType = AssetType.AMPLIFIER
+                                                expandedType = false
+                                            }
+                                        )
                                     }
-                                )
-                            }
-                        }
-                    }
+                                }
 
-                    var expandedIndex by remember { mutableStateOf(false) }
-                    ExposedDropdownMenuBox(
-                        expanded = expandedIndex,
-                        onExpandedChange = { expandedIndex = !expandedIndex },
-                        modifier = Modifier.width(120.dp)
-                    ) {
-                        val labelValue = portIndex?.let { String.format("%02d", it) } ?: "N°"
-                        OutlinedTextField(
-                            value = labelValue,
-                            onValueChange = {},
-                            readOnly = true,
-                            enabled = true,
-                            label = { Text("N°") },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .menuAnchor(),
-                            trailingIcon = {
-                                ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedIndex)
-                            },
-                            isError = attemptedSave && portIndex == null,
-                            supportingText = {
-                                if (attemptedSave && portIndex == null) Text("Obligatorio")
-                            }
-                        )
-                        ExposedDropdownMenu(
-                            expanded = expandedIndex,
-                            onDismissRequest = { expandedIndex = false }
-                        ) {
-                            (1..4).forEach { idx ->
-                                DropdownMenuItem(
-                                    text = { Text(String.format("%02d", idx)) },
-                                    onClick = {
-                                        portIndex = idx
-                                        expandedIndex = false
+                                var expandedFreq by remember { mutableStateOf(false) }
+                                ExposedDropdownMenuBox(
+                                    expanded = expandedFreq,
+                                    onExpandedChange = { expandedFreq = !expandedFreq },
+                                    modifier = Modifier.width(130.dp)
+                                ) {
+                                    OutlinedTextField(
+                                        value = frequency?.let { "${it.mhz} MHz" } ?: "Seleccionar",
+                                        onValueChange = {},
+                                        readOnly = true,
+                                        enabled = true,
+                                        label = { Text("Frec módulo") },
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .menuAnchor(),
+                                        trailingIcon = {
+                                            ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedFreq)
+                                        },
+                                        isError = attemptedSave && frequency == null,
+                                        supportingText = {
+                                            if (attemptedSave && frequency == null) Text("Obligatorio")
+                                        }
+                                    )
+                                    ExposedDropdownMenu(
+                                        expanded = expandedFreq,
+                                        onDismissRequest = { expandedFreq = false }
+                                    ) {
+                                        listOf(Frequency.MHz_42, Frequency.MHz_85).forEach { freq ->
+                                            DropdownMenuItem(
+                                                text = { Text("${freq.mhz} MHz") },
+                                                onClick = {
+                                                    frequency = freq
+                                                    expandedFreq = false
+                                                }
+                                            )
+                                        }
                                     }
-                                )
+                                }
                             }
-                        }
-                    }
-                }
-            }
 
-            // Submódulo: Ajuste de Amplificador (antes de Fotos)
-            if (assetType == AssetType.AMPLIFIER) {
-                if (frequency == null || amplifierMode == null) {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        border = if (attemptedSave) androidx.compose.foundation.BorderStroke(
-                            1.dp,
-                            MaterialTheme.colorScheme.error
-                        ) else null,
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-                    ) {
-                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text("Ajuste de Amplificador", fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
-                            Text(
-                                "Selecciona Frecuencia y Tipo (HGBT/HGD/LE) para habilitar el ajuste.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f)
-                            )
-                        }
-                    }
-                } else {
-                    AmplifierAdjustmentCard(
-                        assetId = workingAssetId,
-                        bandwidth = frequency,
-                        amplifierMode = amplifierMode,
-                        initial = amplifierAdjustment,
-                        showRequiredErrors = attemptedSave,
-                        onCurrentChange = { currentAmplifierAdjustment = it },
-                        onPersist = { adj -> repository.upsertAmplifierAdjustment(adj.copy(assetId = workingAssetId)) }
-                    )
-                }
-            }
-            
-            // Fotos
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                "Fotos",
-                style = MaterialTheme.typography.titleMedium
-            )
-            
-            // Foto del Módulo (no para RPHY)
-            if (assetType != AssetType.NODE || technology != "RPHY") {
-                PhotoSection(
-                    title = "Foto del Módulo y Tapa",
-                    reportId = reportId,
-                    assetId = workingAssetId,
-                    photoType = PhotoType.MODULE,
-                    repository = repository,
-                    minRequired = if (assetType == AssetType.NODE && technology != "RPHY") 2 else 0,
-                    showRequiredError = attemptedSave && (assetType != AssetType.NODE || technology != "RPHY"),
-                    maxAllowed = 2,
-                    onCountChange = { modulePhotoCount = it }
-                )
-            }
-            
-            // Fotos adicionales según tipo
-            // Foto TX y RX con pads (no para RPHY ni VCCAP)
-            if (assetType == AssetType.NODE && technology != "RPHY" && technology != "VCCAP") {
-                PhotoSection(
-                    title = "Foto TX  y RX con pads",
-                    reportId = reportId,
-                    assetId = workingAssetId,
-                    photoType = PhotoType.OPTICS,
-                    repository = repository,
-                    minRequired = 1,
-                    showRequiredError = attemptedSave,
-                    maxAllowed = 2,
-                    onCountChange = { opticsPhotoCount = it }
-                )
-            }
+                            if (assetType == AssetType.NODE) {
+                                var expandedTech by remember { mutableStateOf(false) }
+                                val techOptions = listOf("Legacy", "RPHY", "VCCAP")
+                                ExposedDropdownMenuBox(
+                                    expanded = expandedTech,
+                                    onExpandedChange = { expandedTech = !expandedTech },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    OutlinedTextField(
+                                        value = technology ?: "Seleccionar",
+                                        onValueChange = {},
+                                        readOnly = true,
+                                        enabled = true,
+                                        label = { Text("Tecnología") },
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .menuAnchor(),
+                                        trailingIcon = {
+                                            ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedTech)
+                                        },
+                                        isError = attemptedSave && technology == null,
+                                        supportingText = {
+                                            if (attemptedSave && technology == null) Text("Obligatorio")
+                                        }
+                                    )
+                                    ExposedDropdownMenu(
+                                        expanded = expandedTech,
+                                        onDismissRequest = { expandedTech = false }
+                                    ) {
+                                        techOptions.forEach { tech ->
+                                            DropdownMenuItem(
+                                                text = { Text(tech) },
+                                                onClick = {
+                                                    technology = tech
+                                                    expandedTech = false
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
+                            }
 
-            if (assetType == AssetType.NODE) {
-                PhotoSection(
-                    title = "Foto de monitoria de PO directa y retorno",
-                    reportId = reportId,
-                    assetId = workingAssetId,
-                    photoType = PhotoType.MONITORING,
-                    repository = repository,
-                    minRequired = 0,
-                    showRequiredError = false,
-                    maxAllowed = 2,
-                    onCountChange = { monitoringPhotoCount = it }
-                )
-            }
-            
-            // Fotos de Inyección de portadoras (no para RPHY)
-            if (assetType != AssetType.NODE || technology != "RPHY") {
-                // Para NODO con Legacy o VCCAP: 4 fotos, para otros: 3 fotos
-                val maxSpectrumPhotos = if (assetType == AssetType.NODE && (technology == "Legacy" || technology == "VCCAP")) 4 else 3
-                PhotoSection(
-                    title = "Fotos de Inyección de portadoras por puerto",
-                    reportId = reportId,
-                    assetId = workingAssetId,
-                    photoType = PhotoType.SPECTRUM,
-                    repository = repository,
-                    minRequired = 0,
-                    showRequiredError = false,
-                    maxAllowed = maxSpectrumPhotos,
-                    onCountChange = { spectrumPhotoCount = it }
-                )
-            }
-            
-            if (assetType == AssetType.NODE) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Icon(
-                        Icons.Default.CameraAlt,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                    Text(
-                        "Solo se permite un nodo por zona.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                }
-            }
-
-            if (autoSaved) {
-                Spacer(modifier = Modifier.height(8.dp))
-                AssetFileSection(
-                    context = context,
-                    reportFolder = MaintenanceStorage.reportFolderName(report?.eventName, reportId),
-                    asset = Asset(
-                        id = workingAssetId,
-                        reportId = reportId,
-                        type = assetType,
-                        frequencyMHz = frequency?.mhz ?: 0,
-                        amplifierMode = amplifierMode,
-                        port = port,
-                        portIndex = portIndex,
-                        technology = if (assetType == AssetType.NODE) technology else null
-                    )
-                )
-            }
-            
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            Button(
-                onClick = {
-                    scope.launch {
-                        val asset = Asset(
-                            id = workingAssetId,
-                            reportId = reportId,
-                            type = assetType,
-                            frequencyMHz = (frequency?.mhz ?: 0),
-                            technology = if (assetType == AssetType.NODE) technology else null,
-                            amplifierMode = amplifierMode,
-                            port = port,
-                            portIndex = portIndex
-                        )
-                        if (validateAndShowErrors()) {
                             if (assetType == AssetType.AMPLIFIER) {
-                                val existing = repository.listAssetsByReportId(reportId)
-                                val dup = existing.any {
-                                    it.type == AssetType.AMPLIFIER &&
-                                        it.id != workingAssetId &&
-                                        it.port == port &&
-                                        it.portIndex == portIndex
+                                var expandedMode by remember { mutableStateOf(false) }
+                                ExposedDropdownMenuBox(
+                                    expanded = expandedMode,
+                                    onExpandedChange = { expandedMode = !expandedMode },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    OutlinedTextField(
+                                        value = when (amplifierMode) {
+                                            AmplifierMode.HGD -> AmplifierMode.HGD.label
+                                            AmplifierMode.HGDT -> AmplifierMode.HGDT.label
+                                            AmplifierMode.LE -> AmplifierMode.LE.label
+                                            null -> "Seleccionar"
+                                        },
+                                        onValueChange = {},
+                                        readOnly = true,
+                                        enabled = true,
+                                        label = { Text("Tipo") },
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .menuAnchor(),
+                                        trailingIcon = {
+                                            ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedMode)
+                                        },
+                                        isError = attemptedSave && amplifierMode == null,
+                                        supportingText = {
+                                            if (attemptedSave && amplifierMode == null) Text("Obligatorio")
+                                        }
+                                    )
+                                    ExposedDropdownMenu(
+                                        expanded = expandedMode,
+                                        onDismissRequest = { expandedMode = false }
+                                    ) {
+                                        DropdownMenuItem(
+                                            text = { Text("HGD") },
+                                            onClick = {
+                                                amplifierMode = AmplifierMode.HGD
+                                                expandedMode = false
+                                            }
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text("HGBT") },
+                                            onClick = {
+                                                amplifierMode = AmplifierMode.HGDT
+                                                expandedMode = false
+                                            }
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text("LE") },
+                                            onClick = {
+                                                amplifierMode = AmplifierMode.LE
+                                                expandedMode = false
+                                            }
+                                        )
+                                    }
                                 }
-                                if (dup) {
-                                    snackbarHostState.showSnackbar("Activo ya existe: ${port?.name}${String.format("%02d", portIndex)}")
-                                    return@launch
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    var expandedPort by remember { mutableStateOf(false) }
+                                    ExposedDropdownMenuBox(
+                                        expanded = expandedPort,
+                                        onExpandedChange = { expandedPort = !expandedPort },
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        OutlinedTextField(
+                                            value = port?.name ?: "Puerto",
+                                            onValueChange = {},
+                                            readOnly = true,
+                                            enabled = true,
+                                            label = { Text("Puerto") },
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .menuAnchor(),
+                                            trailingIcon = {
+                                                ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedPort)
+                                            },
+                                            isError = attemptedSave && port == null,
+                                            supportingText = {
+                                                if (attemptedSave && port == null) Text("Obligatorio")
+                                            }
+                                        )
+                                        ExposedDropdownMenu(
+                                            expanded = expandedPort,
+                                            onDismissRequest = { expandedPort = false }
+                                        ) {
+                                            Port.values().forEach { p ->
+                                                DropdownMenuItem(
+                                                    text = { Text(p.name) },
+                                                    onClick = {
+                                                        port = p
+                                                        expandedPort = false
+                                                    }
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    var expandedIndex by remember { mutableStateOf(false) }
+                                    ExposedDropdownMenuBox(
+                                        expanded = expandedIndex,
+                                        onExpandedChange = { expandedIndex = !expandedIndex },
+                                        modifier = Modifier.width(120.dp)
+                                    ) {
+                                        val labelValue = portIndex?.let { String.format("%02d", it) } ?: "N°"
+                                        OutlinedTextField(
+                                            value = labelValue,
+                                            onValueChange = {},
+                                            readOnly = true,
+                                            enabled = true,
+                                            label = { Text("N°") },
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .menuAnchor(),
+                                            trailingIcon = {
+                                                ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedIndex)
+                                            },
+                                            isError = attemptedSave && portIndex == null,
+                                            supportingText = {
+                                                if (attemptedSave && portIndex == null) Text("Obligatorio")
+                                            }
+                                        )
+                                        ExposedDropdownMenu(
+                                            expanded = expandedIndex,
+                                            onDismissRequest = { expandedIndex = false }
+                                        ) {
+                                            (1..4).forEach { idx ->
+                                                DropdownMenuItem(
+                                                    text = { Text(String.format("%02d", idx)) },
+                                                    onClick = {
+                                                        portIndex = idx
+                                                        expandedIndex = false
+                                                    }
+                                                )
+                                            }
+                                        }
+                                    }
                                 }
                             }
-                            val fixedAsset = asset.copy(frequencyMHz = frequency!!.mhz)
-                            if (isEdit) viewModel.updateAsset(asset) else viewModel.addAsset(asset)
-                            navController.navigate(Screen.AssetSummary.createRoute(reportId))
-                        } else {
-                            snackbarHostState.showSnackbar("Completa los datos del activo")
+
+                            if (assetType == AssetType.NODE) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.CameraAlt,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                    Text(
+                                        "Solo se permite un nodo por zona.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+                    }
+                }
+                AddAssetSection.ADJUSTMENT -> {
+                    SectionDetailCard(
+                        title = AddAssetSection.ADJUSTMENT.title,
+                        onBack = { activeSection = null },
+                        onClose = { navController.popBackStack() },
+                        onSave = { scope.launch { persistAsset(navigateToSummary = true) } }
+                    ) {
+                        if (assetType == AssetType.NODE) {
+                            NodeAdjustmentCard(
+                                assetId = workingAssetId,
+                                reportId = reportId,
+                                nodeName = reportNodeName,
+                                frequency = frequency,
+                                technology = technology,
+                                planRow = planRowForNode,
+                                adjustment = nodeAdjustment,
+                                showRequiredErrors = attemptedSave,
+                                onPersist = { adj ->
+                                    scope.launch { repository.upsertNodeAdjustment(adj) }
+                                }
+                            )
+                        }
+
+                        if (assetType == AssetType.AMPLIFIER) {
+                            if (frequency == null || amplifierMode == null) {
+                                Card(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    border = if (attemptedSave) androidx.compose.foundation.BorderStroke(
+                                        1.dp,
+                                        MaterialTheme.colorScheme.error
+                                    ) else null,
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                                ) {
+                                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        Text("Ajuste de Amplificador", fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
+                                        Text(
+                                            "Selecciona Frecuencia y Tipo (HGBT/HGD/LE) para habilitar el ajuste.",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f)
+                                        )
+                                    }
+                                }
+                            } else {
+                                AmplifierAdjustmentCard(
+                                    assetId = workingAssetId,
+                                    bandwidth = frequency,
+                                    amplifierMode = amplifierMode,
+                                    initial = amplifierAdjustment,
+                                    showRequiredErrors = attemptedSave,
+                                    onCurrentChange = { currentAmplifierAdjustment = it },
+                                    onPersist = { adj -> repository.upsertAmplifierAdjustment(adj.copy(assetId = workingAssetId)) }
+                                )
+                            }
                         }
                     }
-                },
-                modifier = Modifier.fillMaxWidth(),
-                enabled = if (assetType == AssetType.AMPLIFIER) {
-                    amplifierMode != null && port != null && portIndex != null
-                } else {
-                    true
-                },
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primary
-                )
-            ) {
-                Text(if (assetType == AssetType.NODE) "Agregar Nodo" else "+ Agregar Activo")
+                }
+                AddAssetSection.PHOTOS -> {
+                    SectionDetailCard(
+                        title = AddAssetSection.PHOTOS.title,
+                        onBack = { activeSection = null },
+                        onClose = { navController.popBackStack() },
+                        onSave = { scope.launch { persistAsset(navigateToSummary = true) } }
+                    ) {
+                        if (assetType != AssetType.NODE || technology != "RPHY") {
+                            PhotoSection(
+                                title = "Foto del Módulo y Tapa",
+                                reportId = reportId,
+                                assetId = workingAssetId,
+                                photoType = PhotoType.MODULE,
+                                repository = repository,
+                                minRequired = if (assetType == AssetType.NODE && technology != "RPHY") 2 else 0,
+                                showRequiredError = attemptedSave && (assetType != AssetType.NODE || technology != "RPHY"),
+                                maxAllowed = 2,
+                                onCountChange = { modulePhotoCount = it }
+                            )
+                        }
+
+                        if (assetType == AssetType.NODE && technology != "RPHY" && technology != "VCCAP") {
+                            PhotoSection(
+                                title = "Foto TX  y RX con pads",
+                                reportId = reportId,
+                                assetId = workingAssetId,
+                                photoType = PhotoType.OPTICS,
+                                repository = repository,
+                                minRequired = 1,
+                                showRequiredError = attemptedSave,
+                                maxAllowed = 2,
+                                onCountChange = { opticsPhotoCount = it }
+                            )
+                        }
+
+                        if (assetType == AssetType.NODE) {
+                            PhotoSection(
+                                title = "Foto de monitoria de PO directa y retorno",
+                                reportId = reportId,
+                                assetId = workingAssetId,
+                                photoType = PhotoType.MONITORING,
+                                repository = repository,
+                                minRequired = 0,
+                                showRequiredError = false,
+                                maxAllowed = 2,
+                                onCountChange = { monitoringPhotoCount = it }
+                            )
+                        }
+
+                        if (assetType != AssetType.NODE || technology != "RPHY") {
+                            val maxSpectrumPhotos = if (assetType == AssetType.NODE && (technology == "Legacy" || technology == "VCCAP")) {
+                                4
+                            } else {
+                                3
+                            }
+                            PhotoSection(
+                                title = "Fotos de Inyección de portadoras por puerto",
+                                reportId = reportId,
+                                assetId = workingAssetId,
+                                photoType = PhotoType.SPECTRUM,
+                                repository = repository,
+                                minRequired = 0,
+                                showRequiredError = false,
+                                maxAllowed = maxSpectrumPhotos,
+                                onCountChange = { spectrumPhotoCount = it }
+                            )
+                        }
+                    }
+                }
+                AddAssetSection.MEASUREMENTS -> {
+                    SectionDetailCard(
+                        title = AddAssetSection.MEASUREMENTS.title,
+                        onBack = { activeSection = null },
+                        onClose = { navController.popBackStack() },
+                        onSave = { scope.launch { persistAsset(navigateToSummary = true) } }
+                    ) {
+                        if (autoSaved) {
+                            AssetFileSection(
+                                context = context,
+                                reportFolder = MaintenanceStorage.reportFolderName(report?.eventName, reportId),
+                                asset = Asset(
+                                    id = workingAssetId,
+                                    reportId = reportId,
+                                    type = assetType,
+                                    frequencyMHz = frequency?.mhz ?: 0,
+                                    amplifierMode = amplifierMode,
+                                    port = port,
+                                    portIndex = portIndex,
+                                    technology = if (assetType == AssetType.NODE) technology else null
+                                )
+                            )
+                        } else {
+                            Text(
+                                "Guarda la identidad del activo para habilitar la carga de mediciones.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                            )
+                        }
+                    }
+                }
             }
         }
     }
@@ -926,6 +933,84 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
             },
             showMissingWarning = hasMissingAssets
         )
+    }
+}
+
+@Composable
+private fun SectionPickerCard(
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            Text(
+                subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+            )
+            TextButton(onClick = onClick) {
+                Text("Abrir")
+            }
+        }
+    }
+}
+
+@Composable
+private fun SectionDetailCard(
+    title: String,
+    onBack: () -> Unit,
+    onClose: () -> Unit,
+    onSave: () -> Unit,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = onBack) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Atrás")
+                }
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.weight(1f)
+                )
+                IconButton(onClick = onClose) {
+                    Icon(Icons.Default.Close, contentDescription = "Cerrar")
+                }
+            }
+            content()
+            Spacer(modifier = Modifier.height(8.dp))
+            Button(
+                onClick = onSave,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+            ) {
+                Text("Guardar")
+            }
+        }
     }
 }
 
@@ -1122,33 +1207,33 @@ fun PhotoSection(
             }
             
             if (photos.isNotEmpty()) {
-            Text(
-                text = "${photos.size} foto(s) seleccionada(s)",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.primary
-            )
-            LazyRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                items(photos) { photo ->
-                    Card(
-                        modifier = Modifier
-                            .size(72.dp)
-                            .combinedClickable(
-                                onClick = {},
-                                onLongClick = { photoToDelete = photo }
-                            ),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-                    ) {
-                        androidx.compose.foundation.Image(
-                            painter = rememberAsyncImagePainter(File(photo.filePath)),
-                            contentDescription = null,
-                            modifier = Modifier.fillMaxSize()
-                        )
+                Text(
+                    text = "${photos.size} foto(s) seleccionada(s)",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                LazyRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(photos) { photo ->
+                        Card(
+                            modifier = Modifier
+                                .size(72.dp)
+                                .combinedClickable(
+                                    onClick = {},
+                                    onLongClick = { photoToDelete = photo }
+                                ),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                        ) {
+                            androidx.compose.foundation.Image(
+                                painter = rememberAsyncImagePainter(File(photo.filePath)),
+                                contentDescription = null,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
                     }
                 }
-            }
             }
         }
     }
@@ -1191,8 +1276,6 @@ private fun AssetFileSection(
         context.packageManager.getLaunchIntentForPackage("com.viavisolutions.mobiletech")
     }
 
-    var isExpanded by remember { mutableStateOf(true) }
-
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
@@ -1203,83 +1286,69 @@ private fun AssetFileSection(
                 .padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { isExpanded = !isExpanded },
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("Archivos de Mediciones", style = MaterialTheme.typography.titleMedium)
-                Icon(
-                    if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                    contentDescription = null
-                )
-            }
-            if (isExpanded) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = {
-                        if (viaviIntent != null) {
-                            runCatching { context.startActivity(viaviIntent) }
-                                .onFailure {
-                                    Toast.makeText(
-                                        context,
-                                        "No se pudo abrir Viavi",
-                                        Toast.LENGTH_SHORT
-                                    ).show()
-                                }
-                        } else {
-                            Toast.makeText(
-                                context,
-                                "Viavi (mobiletech) no está instalada",
-                                Toast.LENGTH_SHORT
-                            ).show()
-                        }
-                    }) {
-                        Icon(Icons.Default.Description, contentDescription = null)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Agregar Mediciones")
-                    }
-                }
-
-                if (files.isEmpty()) {
-                    Text("No hay archivos adjuntos.")
-                } else {
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        files.forEach { file ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .combinedClickable(
-                                        onClick = {
-                                            val uri = FileProvider.getUriForFile(
-                                                context,
-                                                "${context.packageName}.fileprovider",
-                                                file
-                                            )
-                                            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
-                                                setDataAndType(uri, URLConnection.guessContentTypeFromName(file.name) ?: "*/*")
-                                                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                            }
-                                            runCatching { context.startActivity(intent) }
-                                                .onFailure {
-                                                    Toast.makeText(
-                                                        context,
-                                                        "No se pudo abrir el archivo",
-                                                        Toast.LENGTH_SHORT
-                                                    ).show()
-                                                }
-                                        },
-                                        onLongClick = { fileToDelete = file }
-                                    )
-                                    .padding(vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = file.name,
-                                    modifier = Modifier.weight(1f)
-                                )
+            Text("Archivos de Mediciones", style = MaterialTheme.typography.titleMedium)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = {
+                    if (viaviIntent != null) {
+                        runCatching { context.startActivity(viaviIntent) }
+                            .onFailure {
+                                Toast.makeText(
+                                    context,
+                                    "No se pudo abrir Viavi",
+                                    Toast.LENGTH_SHORT
+                                ).show()
                             }
+                    } else {
+                        Toast.makeText(
+                            context,
+                            "Viavi (mobiletech) no está instalada",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                }) {
+                    Icon(Icons.Default.Description, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Agregar Mediciones")
+                }
+            }
+
+            if (files.isEmpty()) {
+                Text("No hay archivos adjuntos.")
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    files.forEach { file ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .combinedClickable(
+                                    onClick = {
+                                        val uri = FileProvider.getUriForFile(
+                                            context,
+                                            "${context.packageName}.fileprovider",
+                                            file
+                                        )
+                                        val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                                            setDataAndType(uri, URLConnection.guessContentTypeFromName(file.name) ?: "*/*")
+                                            addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                        }
+                                        runCatching { context.startActivity(intent) }
+                                            .onFailure {
+                                                Toast.makeText(
+                                                    context,
+                                                    "No se pudo abrir el archivo",
+                                                    Toast.LENGTH_SHORT
+                                                ).show()
+                                            }
+                                    },
+                                    onLongClick = { fileToDelete = file }
+                                )
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = file.name,
+                                modifier = Modifier.weight(1f)
+                            )
                         }
                     }
                 }
