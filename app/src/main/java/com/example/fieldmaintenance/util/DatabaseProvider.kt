@@ -16,6 +16,7 @@ object DatabaseProvider {
                 AppDatabase::class.java,
                 "maintenance_database"
             )
+                .fallbackToDestructiveMigrationOnDowngrade()
                 .addMigrations(AppDatabase.MIGRATION_1_2)
                 .addMigrations(AppDatabase.MIGRATION_2_3)
                 .addMigrations(AppDatabase.MIGRATION_3_4)
@@ -26,6 +27,8 @@ object DatabaseProvider {
                 .addMigrations(AppDatabase.MIGRATION_8_9)
                 .addMigrations(AppDatabase.MIGRATION_9_10)
                 .addMigrations(AppDatabase.MIGRATION_10_11)
+                .addMigrations(AppDatabase.MIGRATION_11_12)
+                .addMigrations(AppDatabase.MIGRATION_12_13)
                 .build()
             
             repository = MaintenanceRepository(
@@ -44,4 +47,3 @@ object DatabaseProvider {
         return repository ?: throw IllegalStateException("Database not initialized")
     }
 }
-
