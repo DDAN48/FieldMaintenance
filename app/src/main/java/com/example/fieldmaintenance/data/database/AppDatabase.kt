@@ -21,7 +21,7 @@ import com.example.fieldmaintenance.data.model.ReportPhoto
 
 @Database(
     entities = [MaintenanceReport::class, Asset::class, Photo::class, AmplifierAdjustment::class, PassiveItem::class, ReportPhoto::class, NodeAdjustment::class],
-    version = 11,
+    version = 13,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -193,6 +193,35 @@ abstract class AppDatabase : RoomDatabase() {
                 }
             }
         }
+
+        val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                try {
+                    db.execSQL("ALTER TABLE photos ADD COLUMN latitude REAL")
+                } catch (e: Exception) {
+                    // La columna ya existe, continuar
+                }
+                try {
+                    db.execSQL("ALTER TABLE photos ADD COLUMN longitude REAL")
+                } catch (e: Exception) {
+                    // La columna ya existe, continuar
+                }
+            }
+        }
+
+        val MIGRATION_12_13 = object : Migration(12, 13) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                try {
+                    db.execSQL("ALTER TABLE amplifier_adjustments ADD COLUMN inputPlanCh50Dbmv REAL")
+                } catch (e: Exception) {
+                    // La columna ya existe, continuar
+                }
+                try {
+                    db.execSQL("ALTER TABLE amplifier_adjustments ADD COLUMN inputPlanHighDbmv REAL")
+                } catch (e: Exception) {
+                    // La columna ya existe, continuar
+                }
+            }
+        }
     }
 }
-

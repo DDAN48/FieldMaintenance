@@ -43,9 +43,13 @@ fun NodeAdjustmentCard(
     planRow: PlanRow?,
     adjustment: NodeAdjustment?,
     showRequiredErrors: Boolean,
+    collapseSignal: Int,
     onPersist: (NodeAdjustment) -> Unit
 ) {
     var expanded by remember(assetId) { mutableStateOf(true) }
+    LaunchedEffect(collapseSignal) {
+        expanded = false
+    }
 
     // Determine if we have plan data
     val hasPlanData = planRow != null
@@ -235,7 +239,9 @@ fun NodeAdjustmentCard(
                             Spacer(Modifier.height(4.dp))
                             Text("PO Directa (llegando a Nodo)", fontWeight = FontWeight.Medium)
                             val poDirectaVal = planRow?.let { parsePo(it.poDirecta) }
-                            val poDirectaInRange = isPoInRange(poDirectaVal, currentSfp)
+                            val poDirectaInRange = if (currentSfp != null && poDirectaVal != null) {
+                                isPoInRange(poDirectaVal, currentSfp)
+                            } else null
                             planRow?.let {
                                 Text(
                                     "PO Directa (Plan): ${it.poDirecta.ifBlank { "N/A" }}",
@@ -244,13 +250,15 @@ fun NodeAdjustmentCard(
                                 )
                             }
                             Text(
-                                if (currentSfp != null) {
-                                    if (poDirectaInRange) "Rango esperado: ${getPoRangeText(currentSfp)}"
-                                    else "Fuera de rango (${getPoRangeText(currentSfp)}): confirme si fue reparado."
-                                } else "Selecciona SFP para ver rango esperado",
+                                when {
+                                    currentSfp == null -> "Selecciona SFP para ver rango esperado"
+                                    poDirectaInRange == null -> "Rango esperado: ${getPoRangeText(currentSfp)}"
+                                    poDirectaInRange -> "Rango esperado: ${getPoRangeText(currentSfp)}"
+                                    else -> "Fuera de rango (${getPoRangeText(currentSfp)}): confirme si fue reparado."
+                                },
                                 style = MaterialTheme.typography.bodySmall,
-                                color = if (currentSfp != null && !poDirectaInRange) MaterialTheme.colorScheme.error 
-                                        else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f)
+                                color = if (poDirectaInRange == false) MaterialTheme.colorScheme.error
+                                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f)
                             )
                             ConfirmRow(
                                 text = "Confirmo PO Directa",
@@ -261,7 +269,9 @@ fun NodeAdjustmentCard(
                             Spacer(Modifier.height(4.dp))
                             Text("PO Retorno (llegando a HUB)", fontWeight = FontWeight.Medium)
                             val poRetornoVal = planRow?.let { parsePo(it.poRetorno) }
-                            val poRetornoInRange = isPoInRange(poRetornoVal, currentSfp)
+                            val poRetornoInRange = if (currentSfp != null && poRetornoVal != null) {
+                                isPoInRange(poRetornoVal, currentSfp)
+                            } else null
                             planRow?.let {
                                 Text(
                                     "PO Retorno (Plan): ${it.poRetorno.ifBlank { "N/A" }}",
@@ -270,13 +280,15 @@ fun NodeAdjustmentCard(
                                 )
                             }
                             Text(
-                                if (currentSfp != null) {
-                                    if (poRetornoInRange) "Rango esperado: ${getPoRangeText(currentSfp)}"
-                                    else "Fuera de rango (${getPoRangeText(currentSfp)}): confirme si fue reparado."
-                                } else "Selecciona SFP para ver rango esperado",
+                                when {
+                                    currentSfp == null -> "Selecciona SFP para ver rango esperado"
+                                    poRetornoInRange == null -> "Rango esperado: ${getPoRangeText(currentSfp)}"
+                                    poRetornoInRange -> "Rango esperado: ${getPoRangeText(currentSfp)}"
+                                    else -> "Fuera de rango (${getPoRangeText(currentSfp)}): confirme si fue reparado."
+                                },
                                 style = MaterialTheme.typography.bodySmall,
-                                color = if (currentSfp != null && !poRetornoInRange) MaterialTheme.colorScheme.error 
-                                        else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f)
+                                color = if (poRetornoInRange == false) MaterialTheme.colorScheme.error
+                                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f)
                             )
                             ConfirmRow(
                                 text = "Confirmo PO Retorno",
@@ -324,7 +336,9 @@ fun NodeAdjustmentCard(
                             Spacer(Modifier.height(4.dp))
                             Text("PO Directa (llegando a Nodo)", fontWeight = FontWeight.Medium)
                             val poDirectaVal = planRow?.let { parsePo(it.poDirecta) }
-                            val poDirectaInRange = isPoInRange(poDirectaVal, currentSfp)
+                            val poDirectaInRange = if (currentSfp != null && poDirectaVal != null) {
+                                isPoInRange(poDirectaVal, currentSfp)
+                            } else null
                             planRow?.let {
                                 Text(
                                     "PO Directa (Plan): ${it.poDirecta.ifBlank { "N/A" }}",
@@ -333,13 +347,15 @@ fun NodeAdjustmentCard(
                                 )
                             }
                             Text(
-                                if (currentSfp != null) {
-                                    if (poDirectaInRange) "Rango esperado: ${getPoRangeText(currentSfp)}"
-                                    else "Fuera de rango (${getPoRangeText(currentSfp)}): confirme si fue reparado."
-                                } else "Selecciona SFP para ver rango esperado",
+                                when {
+                                    currentSfp == null -> "Selecciona SFP para ver rango esperado"
+                                    poDirectaInRange == null -> "Rango esperado: ${getPoRangeText(currentSfp)}"
+                                    poDirectaInRange -> "Rango esperado: ${getPoRangeText(currentSfp)}"
+                                    else -> "Fuera de rango (${getPoRangeText(currentSfp)}): confirme si fue reparado."
+                                },
                                 style = MaterialTheme.typography.bodySmall,
-                                color = if (currentSfp != null && !poDirectaInRange) MaterialTheme.colorScheme.error 
-                                        else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f)
+                                color = if (poDirectaInRange == false) MaterialTheme.colorScheme.error
+                                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f)
                             )
                             ConfirmRow(
                                 text = "Confirmo PO Directa",
@@ -350,7 +366,9 @@ fun NodeAdjustmentCard(
                             Spacer(Modifier.height(4.dp))
                             Text("PO Retorno (llegando a HUB)", fontWeight = FontWeight.Medium)
                             val poRetornoVal = planRow?.let { parsePo(it.poRetorno) }
-                            val poRetornoInRange = isPoInRange(poRetornoVal, currentSfp)
+                            val poRetornoInRange = if (currentSfp != null && poRetornoVal != null) {
+                                isPoInRange(poRetornoVal, currentSfp)
+                            } else null
                             planRow?.let {
                                 Text(
                                     "PO Retorno (Plan): ${it.poRetorno.ifBlank { "N/A" }}",
@@ -359,13 +377,15 @@ fun NodeAdjustmentCard(
                                 )
                             }
                             Text(
-                                if (currentSfp != null) {
-                                    if (poRetornoInRange) "Rango esperado: ${getPoRangeText(currentSfp)}"
-                                    else "Fuera de rango (${getPoRangeText(currentSfp)}): confirme si fue reparado."
-                                } else "Selecciona SFP para ver rango esperado",
+                                when {
+                                    currentSfp == null -> "Selecciona SFP para ver rango esperado"
+                                    poRetornoInRange == null -> "Rango esperado: ${getPoRangeText(currentSfp)}"
+                                    poRetornoInRange -> "Rango esperado: ${getPoRangeText(currentSfp)}"
+                                    else -> "Fuera de rango (${getPoRangeText(currentSfp)}): confirme si fue reparado."
+                                },
                                 style = MaterialTheme.typography.bodySmall,
-                                color = if (currentSfp != null && !poRetornoInRange) MaterialTheme.colorScheme.error 
-                                        else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f)
+                                color = if (poRetornoInRange == false) MaterialTheme.colorScheme.error
+                                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f)
                             )
                             ConfirmRow(
                                 text = "Confirmo PO Retorno",
@@ -556,7 +576,17 @@ private fun ConfirmRow(
             onClick = onToggle,
             enabled = enabled
         ) {
-            Text(if (confirmed) "Confirmado" else "Confirmar")
+            if (confirmed) {
+                Icon(
+                    imageVector = Icons.Default.CheckCircle,
+                    contentDescription = "Confirmado",
+                    tint = Color(0xFF2E7D32)
+                )
+                Spacer(Modifier.width(6.dp))
+                Text("Confirmado", color = Color(0xFF2E7D32))
+            } else {
+                Text("Confirmar")
+            }
         }
     }
 }
@@ -589,5 +619,3 @@ private fun RxOptionRow(
         }
     }
 }
-
-

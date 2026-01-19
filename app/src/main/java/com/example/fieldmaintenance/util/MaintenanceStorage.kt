@@ -7,10 +7,13 @@ import android.os.Environment
 import android.provider.OpenableColumns
 import com.example.fieldmaintenance.data.model.Asset
 import com.example.fieldmaintenance.data.model.AssetType
+import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.text.Normalizer
 import java.util.Locale
+import java.util.zip.GZIPInputStream
+import java.util.zip.ZipInputStream
 
 object MaintenanceStorage {
     private const val BASE_FOLDER = "FieldMaintenance"
@@ -67,6 +70,31 @@ object MaintenanceStorage {
         return targetFile
     }
 
+    fun importMeasurementFileToDir(
+        context: Context,
+        uri: Uri,
+        targetDir: File
+    ): List<File> {
+        targetDir.mkdirs()
+        val displayName = queryDisplayName(context, uri)
+        val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return emptyList()
+        val lowerName = displayName?.lowercase(Locale.ROOT).orEmpty()
+        return when {
+            lowerName.endsWith(".zip") || isZipBytes(bytes) -> {
+                extractZipBytes(bytes, targetDir)
+            }
+            lowerName.endsWith(".gz") || isGzipBytes(bytes) -> {
+                extractGzipBytes(bytes, displayName, targetDir)
+            }
+            else -> {
+                val fileName = sanitizeName(displayName ?: "shared_${System.currentTimeMillis()}")
+                val targetFile = uniqueFile(targetDir, fileName)
+                FileOutputStream(targetFile).use { output -> output.write(bytes) }
+                listOf(targetFile)
+            }
+        }
+    }
+
     fun moveMeasurementFileToTrash(context: Context, source: File): File? {
         val base = baseDir(context)
         val trashRoot = measurementTrashDir(context)
@@ -106,7 +134,7 @@ object MaintenanceStorage {
             .toList()
     }
 
-    private fun assetFolderName(asset: Asset): String {
+    fun assetFolderName(asset: Asset): String {
         return when (asset.type) {
             AssetType.NODE -> "NODE"
             AssetType.AMPLIFIER -> {
@@ -150,6 +178,48 @@ object MaintenanceStorage {
             index++
         }
         return candidate
+    }
+
+    private fun isZipBytes(bytes: ByteArray): Boolean {
+        return bytes.size >= 4 && bytes[0] == 0x50.toByte() && bytes[1] == 0x4b.toByte()
+    }
+
+    private fun isGzipBytes(bytes: ByteArray): Boolean {
+        return bytes.size >= 2 && bytes[0] == 0x1f.toByte() && bytes[1] == 0x8b.toByte()
+    }
+
+    private fun extractZipBytes(bytes: ByteArray, targetDir: File): List<File> {
+        val extracted = mutableListOf<File>()
+        ZipInputStream(ByteArrayInputStream(bytes)).use { zip ->
+            var entry = zip.nextEntry
+            while (entry != null) {
+                if (!entry.isDirectory) {
+                    val entryName = entry.name.substringAfterLast('/').ifBlank { entry.name }
+                    if (entryName.isNotBlank()) {
+                        val targetFile = uniqueFile(targetDir, entryName)
+                        FileOutputStream(targetFile).use { output ->
+                            zip.copyTo(output)
+                        }
+                        extracted.add(targetFile)
+                    }
+                }
+                entry = zip.nextEntry
+            }
+        }
+        return extracted
+    }
+
+    private fun extractGzipBytes(bytes: ByteArray, displayName: String?, targetDir: File): List<File> {
+        val decompressed = GZIPInputStream(ByteArrayInputStream(bytes)).use { it.readBytes() }
+        return if (isZipBytes(decompressed)) {
+            extractZipBytes(decompressed, targetDir)
+        } else {
+            val name = displayName?.removeSuffix(".gz") ?: "shared_${System.currentTimeMillis()}"
+            val fileName = sanitizeName(name)
+            val targetFile = uniqueFile(targetDir, fileName)
+            FileOutputStream(targetFile).use { output -> output.write(decompressed) }
+            listOf(targetFile)
+        }
     }
 
     private fun sanitizeName(name: String): String {

@@ -180,27 +180,15 @@ fun PassivesScreen(navController: NavController, reportId: String) {
     if (showFinalizeDialog && report != null) {
         FinalizeReportDialog(
             onDismiss = { showFinalizeDialog = false },
-            onSendEmailPdf = {
+            onSendEmailPackage = {
                 scope.launch {
-                    val pdfFile = exportManager.exportToPDF(report!!)
-                    EmailManager.sendEmail(context, report!!.eventName, listOf(pdfFile))
+                    val bundleFile = exportManager.exportToBundleZip(report!!)
+                    EmailManager.sendEmail(context, report!!.eventName, listOf(bundleFile))
                 }
             },
-            onSendEmailJson = {
+            onExportPackage = {
                 scope.launch {
-                    val zipFile = exportManager.exportToZIP(report!!)
-                    EmailManager.sendEmail(context, report!!.eventName, listOf(zipFile))
-                }
-            },
-            onExportPDF = {
-                scope.launch {
-                    exportManager.exportPdfToDownloads(report!!)
-                    snackbarHostState.showSnackbar("PDF guardado en Descargas/FieldMaintenance")
-                }
-            },
-            onExportJSON = {
-                scope.launch {
-                    exportManager.exportZipToDownloads(report!!)
+                    exportManager.exportBundleToDownloads(report!!)
                     snackbarHostState.showSnackbar("ZIP guardado en Descargas/FieldMaintenance")
                 }
             },
@@ -332,4 +320,3 @@ private fun PassiveEditorDialog(
         }
     )
 }
-

@@ -38,8 +38,16 @@ import com.example.fieldmaintenance.util.DatabaseProvider
 import com.example.fieldmaintenance.util.EmailManager
 import com.example.fieldmaintenance.util.ExportManager
 import com.example.fieldmaintenance.util.MaintenanceStorage
+import com.example.fieldmaintenance.util.loadDiscardedLabels
+import com.example.fieldmaintenance.util.meetsRequired
+import com.example.fieldmaintenance.util.requiredCounts
+import com.example.fieldmaintenance.util.verifyMeasurementFiles
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.saveable.rememberSaveable
+import java.io.File
+import kotlin.math.abs
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -107,17 +115,56 @@ fun AssetSummaryScreen(navController: NavController, reportId: String) {
                     val nodeAdjustment by repository.getNodeAdjustment(asset.id).collectAsState(initial = null)
                     val amplifierAdjustment by repository.getAmplifierAdjustment(asset.id).collectAsState(initial = null)
                     val reportFolder = MaintenanceStorage.reportFolderName(report?.eventName, reportId)
-                    val measurementCount = remember(asset, reportFolder) {
-                        MaintenanceStorage.ensureAssetDir(context, reportFolder, asset)
-                            .listFiles()
-                            ?.count { it.isFile } ?: 0
+                    val measurementsOk by produceState(initialValue = true, asset, reportFolder) {
+                        val rxAssetDir = MaintenanceStorage.ensureAssetDir(context, reportFolder, asset)
+                        val rxFiles = rxAssetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
+                        val rxDiscardedFile = File(rxAssetDir, ".discarded_measurements.txt")
+                        val rxDiscardedLabels = loadDiscardedLabels(rxDiscardedFile)
+                        val rxRequired = requiredCounts(asset.type, isModule = false)
+                        val rxSummary = withContext(Dispatchers.IO) {
+                            verifyMeasurementFiles(
+                                context,
+                                rxFiles,
+                                asset,
+                                repository,
+                                rxDiscardedLabels,
+                                expectedDocsisOverride = rxRequired.expectedDocsis,
+                                expectedChannelOverride = rxRequired.expectedChannel
+                            )
+                        }
+                        val rxOk = meetsRequired(rxSummary, rxRequired)
+
+                        val moduleOk = if (asset.type == AssetType.NODE) {
+                            val moduleAsset = asset.copy(type = AssetType.AMPLIFIER)
+                            val moduleAssetDir = MaintenanceStorage.ensureAssetDir(context, reportFolder, moduleAsset)
+                            val moduleFiles = moduleAssetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
+                            val moduleDiscardedFile = File(moduleAssetDir, ".discarded_measurements.txt")
+                            val moduleDiscardedLabels = loadDiscardedLabels(moduleDiscardedFile)
+                            val moduleRequired = requiredCounts(moduleAsset.type, isModule = true)
+                            val moduleSummary = withContext(Dispatchers.IO) {
+                                verifyMeasurementFiles(
+                                    context,
+                                    moduleFiles,
+                                    moduleAsset,
+                                    repository,
+                                    moduleDiscardedLabels,
+                                    expectedDocsisOverride = moduleRequired.expectedDocsis,
+                                    expectedChannelOverride = moduleRequired.expectedChannel
+                                )
+                            }
+                            meetsRequired(moduleSummary, moduleRequired)
+                        } else {
+                            true
+                        }
+
+                        value = rxOk && moduleOk
                     }
                     val hasMissingData = remember(
                         asset,
                         photos,
                         nodeAdjustment,
                         amplifierAdjustment,
-                        measurementCount
+                        measurementsOk
                     ) {
                         val techNormalized = asset.technology?.trim()?.lowercase() ?: ""
                         val moduleCount = photos.count { it.photoType == PhotoType.MODULE }
@@ -151,10 +198,28 @@ fun AssetSummaryScreen(navController: NavController, reportId: String) {
 
                         val ampAdjOk = if (asset.type != AssetType.AMPLIFIER) true else {
                             val adj = amplifierAdjustment
+                            val entradaValid = adj?.let {
+                                val ch50Med = it.inputCh50Dbmv
+                                val ch50Plan = it.inputPlanCh50Dbmv
+                                val highMed = it.inputCh116Dbmv
+                                val highPlan = it.inputPlanHighDbmv
+                                val ch50Ok = ch50Med != null &&
+                                    ch50Plan != null &&
+                                    ch50Med >= 15.0 &&
+                                    abs(ch50Med - ch50Plan) < 4.0
+                                val highOk = highMed != null &&
+                                    highPlan != null &&
+                                    highMed >= 15.0 &&
+                                    abs(highMed - highPlan) < 4.0
+                                ch50Ok && highOk
+                            } ?: false
                             adj != null &&
                                 adj.inputCh50Dbmv != null &&
                                 adj.inputCh116Dbmv != null &&
                                 (adj.inputHighFreqMHz == 750 || adj.inputHighFreqMHz == 870) &&
+                                adj.inputPlanCh50Dbmv != null &&
+                                adj.inputPlanHighDbmv != null &&
+                                entradaValid &&
                                 adj.planLowDbmv != null &&
                                 adj.planHighDbmv != null &&
                                 adj.outCh50Dbmv != null &&
@@ -164,7 +229,6 @@ fun AssetSummaryScreen(navController: NavController, reportId: String) {
                                 adj.outCh136Dbmv != null
                         }
 
-                        val measurementsOk = measurementCount > 0
                         !(moduleOk && opticsOk && nodeAdjOk && ampAdjOk && measurementsOk)
                     }
 
@@ -186,7 +250,14 @@ fun AssetSummaryScreen(navController: NavController, reportId: String) {
             
             if (!hasNode) {
                 OutlinedButton(
-                    onClick = { navController.navigate(Screen.AddAsset.createRoute(reportId)) },
+                    onClick = {
+                        navController.navigate(
+                            Screen.AddAsset.createRoute(
+                                reportId,
+                                assetType = AssetType.NODE
+                            )
+                        )
+                    },
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Icon(Icons.Default.Add, contentDescription = null)
@@ -196,7 +267,14 @@ fun AssetSummaryScreen(navController: NavController, reportId: String) {
             }
 
             OutlinedButton(
-                onClick = { navController.navigate(Screen.AddAsset.createRoute(reportId)) },
+                onClick = {
+                    navController.navigate(
+                        Screen.AddAsset.createRoute(
+                            reportId,
+                            assetType = AssetType.AMPLIFIER
+                        )
+                    )
+                },
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Icon(Icons.Default.Add, contentDescription = null)
@@ -209,27 +287,15 @@ fun AssetSummaryScreen(navController: NavController, reportId: String) {
     if (showFinalizeDialog && report != null) {
         FinalizeReportDialog(
             onDismiss = { showFinalizeDialog = false },
-            onSendEmailPdf = {
+            onSendEmailPackage = {
                 scope.launch {
-                    val pdfFile = exportManager.exportToPDF(report!!)
-                    EmailManager.sendEmail(context, report!!.eventName, listOf(pdfFile))
+                    val bundleFile = exportManager.exportToBundleZip(report!!)
+                    EmailManager.sendEmail(context, report!!.eventName, listOf(bundleFile))
                 }
             },
-            onSendEmailJson = {
+            onExportPackage = {
                 scope.launch {
-                    val zipFile = exportManager.exportToZIP(report!!)
-                    EmailManager.sendEmail(context, report!!.eventName, listOf(zipFile))
-                }
-            },
-            onExportPDF = {
-                scope.launch {
-                    exportManager.exportPdfToDownloads(report!!)
-                    snackbarHostState.showSnackbar("PDF guardado en Descargas/FieldMaintenance")
-                }
-            },
-            onExportJSON = {
-                scope.launch {
-                    exportManager.exportZipToDownloads(report!!)
+                    exportManager.exportBundleToDownloads(report!!)
                     snackbarHostState.showSnackbar("ZIP guardado en Descargas/FieldMaintenance")
                 }
             },
@@ -275,7 +341,7 @@ fun AssetSummaryCard(
             ),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         colors = if (hasMissingData) {
-            CardDefaults.cardColors(containerColor = Color(0xFFDE3C2A))
+            CardDefaults.cardColors(containerColor = Color(0xA6CD9D10))
         } else {
             CardDefaults.cardColors()
         }
@@ -316,11 +382,23 @@ fun AssetSummaryCard(
                     color = if (hasMissingData) Color.White else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                 )
             }
-            Icon(
-                if (hasMissingData) Icons.Default.Warning else Icons.Default.CheckCircle,
-                contentDescription = null,
-                tint = if (hasMissingData) Color.White else MaterialTheme.colorScheme.primary
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (hasMissingData) {
+                    Text(
+                        text = "Pendiente",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFFEB3C38),
+                        modifier = Modifier.padding(end = 8.dp)
+                    )
+                }
+                Icon(
+                    if (hasMissingData) Icons.Default.Warning else Icons.Default.CheckCircle,
+                    contentDescription = null,
+                    tint = if (hasMissingData) Color.White else MaterialTheme.colorScheme.primary
+                )
+            }
         }
     }
 }
@@ -328,14 +406,11 @@ fun AssetSummaryCard(
 @Composable
 fun FinalizeReportDialog(
     onDismiss: () -> Unit,
-    onSendEmailPdf: () -> Unit,
-    onSendEmailJson: () -> Unit,
-    onExportPDF: () -> Unit,
-    onExportJSON: () -> Unit,
+    onSendEmailPackage: () -> Unit,
+    onExportPackage: () -> Unit,
     onGoHome: () -> Unit,
     showMissingWarning: Boolean
 ) {
-    var showEmailChoice by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -347,34 +422,24 @@ fun FinalizeReportDialog(
                 TextButton(
                     onClick = {
                         if (!showMissingWarning) {
-                            showEmailChoice = true
-                        }
-                    },
-                    enabled = !showMissingWarning
-                ) {
-                    Text("📧 Enviar por correo")
-                }
-                TextButton(
-                    onClick = {
-                        if (!showMissingWarning) {
-                            onExportPDF()
+                            onExportPackage()
                             onDismiss()
                         }
                     },
                     enabled = !showMissingWarning
                 ) {
-                    Text("📄 Exportar PDF")
+                    Text("📦 Exportar reporte (ZIP)")
                 }
                 TextButton(
                     onClick = {
                         if (!showMissingWarning) {
-                            onExportJSON()
+                            onSendEmailPackage()
                             onDismiss()
                         }
                     },
                     enabled = !showMissingWarning
                 ) {
-                    Text("📦 Exportar editable (JSON)")
+                    Text("✉️ Enviar reporte (ZIP)")
                 }
                 TextButton(onClick = {
                     onGoHome()
@@ -400,25 +465,4 @@ fun FinalizeReportDialog(
         }
     )
 
-    if (showEmailChoice) {
-        AlertDialog(
-            onDismissRequest = { showEmailChoice = false },
-            title = { Text("Enviar por correo") },
-            text = { Text("¿En qué formato deseas enviar?") },
-            confirmButton = {
-                TextButton(onClick = {
-                    showEmailChoice = false
-                    onSendEmailPdf()
-                    onDismiss()
-                }) { Text("PDF") }
-            },
-            dismissButton = {
-                TextButton(onClick = {
-                    showEmailChoice = false
-                    onSendEmailJson()
-                    onDismiss()
-                }) { Text("JSON") }
-            }
-        )
-    }
 }
