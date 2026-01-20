@@ -44,6 +44,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.Dialog
@@ -74,7 +77,6 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.core.content.ContextCompat
-import androidx.core.content.FileProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import coil.compose.rememberAsyncImagePainter
@@ -91,7 +93,6 @@ import com.example.fieldmaintenance.ui.viewmodel.ReportViewModelFactory
 import com.example.fieldmaintenance.util.DatabaseProvider
 import com.example.fieldmaintenance.util.ImageStore
 import com.example.fieldmaintenance.util.PhotoManager
-import com.example.fieldmaintenance.util.SettingsStore
 import com.example.fieldmaintenance.util.AppSettings
 import com.example.fieldmaintenance.util.MaintenanceStorage
 import com.example.fieldmaintenance.util.PlanCache
@@ -122,6 +123,8 @@ import kotlinx.coroutines.launch
 import java.io.File
 import java.net.URLConnection
 import java.util.UUID
+
+private val anomalyColor = Color(0xFFE57373)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -1280,18 +1283,20 @@ private fun MeasurementTableRow(
     textPrimary: Color,
     errorColor: Color,
     strokeColor: Color
-) {
+    ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 8.dp)
     ) {
         cells.forEachIndexed { index, cell ->
-            val cellColor = if (invalidCells.contains(index)) errorColor else textPrimary
+            val isInvalid = invalidCells.contains(index)
+            val cellColor = if (isInvalid) errorColor else textPrimary
             Text(
                 text = cell,
                 color = cellColor,
                 fontSize = 12.sp,
+                fontWeight = if (isInvalid) FontWeight.Bold else FontWeight.Normal,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f)
@@ -2121,7 +2126,7 @@ private fun AssetFileSection(
                         imageVector = Icons.Default.RemoveRedEye,
                         contentDescription = "Observaciones",
                         tint = if (observationSummary.third > 0) {
-                            MaterialTheme.colorScheme.error
+                            anomalyColor
                         } else {
                             MaterialTheme.colorScheme.primary
                         }
@@ -2261,7 +2266,7 @@ private fun AssetFileSection(
                         val cardColor = Color(0xFF141823)
                         val strokeColor = Color(0xFF2A3142)
                         val accentColor = Color(0xFF1E88E5)
-                        val errorColor = Color(0xFFD32F2F)
+                        val errorColor = anomalyColor
                         val tableTextPrimary = Color(0xFFE7EAF0)
                         val tableTextSecondary = Color(0xFFB0B7C3)
 
@@ -2440,12 +2445,13 @@ private fun AssetFileSection(
                                     val channel = entry.docsisMeta[freq]?.channel?.toString() ?: "—"
                                     val frequency = entry.docsisMeta[freq]?.frequencyMHz ?: freq
                                     val level = formatDbmv(entry.docsisLevels[freq])
+                                    val icfr = formatDbmv(entry.docsisIcfr[freq])
                                     val invalidCells = if (entry.docsisLevelOk[freq] == false) setOf(2) else emptySet()
                                     listOf(
                                         channel,
                                         formatMHz(frequency),
                                         level,
-                                        "—"
+                                        icfr
                                     ) to invalidCells
                                 }
                                 MeasurementTableCard(
@@ -2732,7 +2738,18 @@ private fun AssetFileSection(
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     duplicateNotice.forEach { name ->
                         Text(
-                            "No se agregó la medición $name por estar duplicada.",
+                            buildAnnotatedString {
+                                append("No se agregó la medición ")
+                                withStyle(
+                                    SpanStyle(
+                                        color = anomalyColor,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                ) {
+                                    append(name)
+                                }
+                                append(" por estar duplicada.")
+                            },
                             style = MaterialTheme.typography.bodySmall
                         )
                     }
@@ -2779,6 +2796,8 @@ private fun AssetFileSection(
                             Text(
                                 name,
                                 style = MaterialTheme.typography.bodySmall,
+                                color = anomalyColor,
+                                fontWeight = FontWeight.Bold,
                                 modifier = Modifier.weight(1f)
                             )
                         }
