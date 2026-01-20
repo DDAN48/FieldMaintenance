@@ -42,6 +42,7 @@ import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
@@ -173,14 +174,16 @@ private fun UpstreamLevelsChart(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(96.dp)
+                    .clipToBounds()
             ) {
                 val leftPadding = 28.dp.toPx()
                 val rightPadding = 8.dp.toPx()
                 val topPadding = 6.dp.toPx()
-                val bottomPadding = 18.dp.toPx()
+                val bottomPadding = 26.dp.toPx()
                 val plotWidth = size.width - leftPadding - rightPadding
                 val plotHeight = size.height - topPadding - bottomPadding
                 val baselineY = topPadding + plotHeight
+                val xLabelY = size.height - 4.dp.toPx()
 
                 val gridSteps = 3
                 val yLabelPaint = Paint().apply {
@@ -240,7 +243,7 @@ private fun UpstreamLevelsChart(
                     drawContext.canvas.nativeCanvas.drawText(
                         String.format(Locale.getDefault(), "%.1f", point.frequencyMHz),
                         labelX,
-                        baselineY + 12.dp.toPx(),
+                        xLabelY,
                         xLabelPaint
                     )
                 }
@@ -2629,6 +2632,7 @@ private fun AssetFileSection(
                                         gridColor = strokeColor,
                                         modifier = Modifier.padding(bottom = 10.dp)
                                     )
+                                    Spacer(Modifier.height(6.dp))
                                     rows.forEach { (cells, invalid) ->
                                         MeasurementTableRow(
                                             cells = cells,
