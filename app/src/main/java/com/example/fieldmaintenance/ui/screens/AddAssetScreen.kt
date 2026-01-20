@@ -1302,6 +1302,101 @@ private fun MeasurementTableRow(
 }
 
 @Composable
+private fun AdjustmentSummaryCard(
+    title: String,
+    status: String,
+    actionLabel: String,
+    isComplete: Boolean,
+    supportingText: String? = null,
+    actionEnabled: Boolean = true,
+    onAction: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.15f)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(title, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                Icon(
+                    imageVector = if (isComplete) Icons.Default.CheckCircle else Icons.Default.Warning,
+                    contentDescription = null,
+                    tint = if (isComplete) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                )
+            }
+            Text(
+                status,
+                style = MaterialTheme.typography.bodySmall,
+                color = if (isComplete) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f)
+            )
+            if (!supportingText.isNullOrBlank()) {
+                Text(
+                    supportingText,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f)
+                )
+            }
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                Button(onClick = onAction, enabled = actionEnabled) {
+                    Text(actionLabel)
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun FullScreenAdjustmentDialog(
+    title: String,
+    onDismiss: () -> Unit,
+    onComplete: () -> Unit,
+    content: @Composable () -> Unit
+) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(modifier = Modifier.fillMaxSize()) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                TopAppBar(
+                    title = { Text(title) },
+                    navigationIcon = {
+                        IconButton(onClick = onDismiss) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Volver"
+                            )
+                        }
+                    },
+                    actions = {
+                        TextButton(onClick = onComplete) {
+                            Text("Completar")
+                        }
+                        IconButton(onClick = onDismiss) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Cerrar"
+                            )
+                        }
+                    }
+                )
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .verticalScroll(rememberScrollState())
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    content()
+                }
+            }
+        }
+    }
+}
+
+@Composable
 fun PhotoSection(
     title: String,
     reportId: String,
@@ -2410,6 +2505,26 @@ private fun AssetFileSection(
                                             )
                                         }
                                     }
+                                    Text(text = label, color = textColor, fontSize = 13.sp)
+                                }
+                                if (expanded) {
+                                    Spacer(Modifier.height(8.dp))
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 6.dp)
+                                    ) {
+                                        headers.forEach { header ->
+                                            Text(
+                                                text = header,
+                                                color = tableTextSecondary,
+                                                fontSize = 11.sp,
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                        }
+                                    }
+                                    HorizontalDivider(color = strokeColor, thickness = 1.dp)
+                                    content()
                                 }
                             }
                         }
@@ -2459,6 +2574,13 @@ private fun AssetFileSection(
                                             errorColor = errorColor,
                                             strokeColor = strokeColor
                                         )
+                                        IconButton(onClick = { onDelete(tab.entry) }) {
+                                            Icon(
+                                                imageVector = Icons.Default.Delete,
+                                                contentDescription = "Eliminar medición",
+                                                tint = tableTextSecondary
+                                            )
+                                        }
                                     }
                                 }
                             }
