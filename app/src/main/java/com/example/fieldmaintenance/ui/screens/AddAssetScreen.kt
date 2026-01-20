@@ -46,6 +46,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.Dialog
@@ -76,7 +77,6 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.core.content.ContextCompat
-import androidx.core.content.FileProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import coil.compose.rememberAsyncImagePainter
@@ -93,7 +93,6 @@ import com.example.fieldmaintenance.ui.viewmodel.ReportViewModelFactory
 import com.example.fieldmaintenance.util.DatabaseProvider
 import com.example.fieldmaintenance.util.ImageStore
 import com.example.fieldmaintenance.util.PhotoManager
-import com.example.fieldmaintenance.util.SettingsStore
 import com.example.fieldmaintenance.util.AppSettings
 import com.example.fieldmaintenance.util.MaintenanceStorage
 import com.example.fieldmaintenance.util.PlanCache
@@ -124,6 +123,8 @@ import kotlinx.coroutines.launch
 import java.io.File
 import java.net.URLConnection
 import java.util.UUID
+
+private val anomalyColor = Color(0xFFE57373)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
