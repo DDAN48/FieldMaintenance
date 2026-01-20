@@ -2298,7 +2298,7 @@ private fun AssetFileSection(
                             onClick: () -> Unit
                         ) {
                             val bg = if (isSelected) accentColor else Color.Transparent
-                            val borderColor = if (hasError) errorColor else strokeColor
+                            val borderColor = strokeColor
                             val textColor = if (hasError) errorColor else if (isSelected) Color.White else tableTextPrimary
                             Box(
                                 modifier = Modifier
@@ -2324,6 +2324,7 @@ private fun AssetFileSection(
                             val pagerState = rememberPagerState(pageCount = { tabs.size })
                             val scope = rememberCoroutineScope()
                             val selectedTab = tabs.getOrNull(pagerState.currentPage)
+                            var isExpanded by remember(tabs) { mutableStateOf(false) }
                             Column(
                                 Modifier
                                     .fillMaxWidth()
@@ -2342,7 +2343,10 @@ private fun AssetFileSection(
                                                 label = tab.label,
                                                 isSelected = pagerState.currentPage == index,
                                                 hasError = tab.hasError,
-                                                onClick = { scope.launch { pagerState.animateScrollToPage(index) } }
+                                                onClick = {
+                                                    isExpanded = true
+                                                    scope.launch { pagerState.animateScrollToPage(index) }
+                                                }
                                             )
                                         }
                                     }
@@ -2350,7 +2354,7 @@ private fun AssetFileSection(
 
                                 Spacer(Modifier.height(10.dp))
 
-                                if (tabs.isNotEmpty()) {
+                                if (tabs.isNotEmpty() && isExpanded) {
                                     HorizontalPager(
                                         state = pagerState,
                                         modifier = Modifier.fillMaxWidth()
@@ -2358,6 +2362,12 @@ private fun AssetFileSection(
                                         val entry = tabs[page].entry
                                         tableContent(entry)
                                     }
+                                } else if (tabs.isNotEmpty()) {
+                                    Text(
+                                        "Seleccione una medición para desplegar la tabla.",
+                                        color = tableTextSecondary,
+                                        fontSize = 12.sp
+                                    )
                                 } else {
                                     Text(
                                         "Sin mediciones cargadas.",
@@ -2366,31 +2376,33 @@ private fun AssetFileSection(
                                     )
                                 }
 
-                                Spacer(Modifier.height(8.dp))
+                                if (tabs.isNotEmpty() && isExpanded) {
+                                    Spacer(Modifier.height(8.dp))
 
-                                selectedTab?.let { tab ->
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(
-                                            text = footerProvider(tab.entry, tab.label),
-                                            color = if (tab.hasError) errorColor else tableTextSecondary,
-                                            fontSize = 11.sp,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                            modifier = Modifier.weight(1f)
-                                        )
-                                        IconButton(onClick = { onDelete(tab.entry) }) {
-                                            Icon(
-                                                imageVector = Icons.Default.Delete,
-                                                contentDescription = "Eliminar medición",
-                                                tint = tableTextSecondary
+                                    selectedTab?.let { tab ->
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = footerProvider(tab.entry, tab.label),
+                                                color = if (tab.hasError) errorColor else tableTextSecondary,
+                                                fontSize = 11.sp,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                modifier = Modifier.weight(1f)
                                             )
+                                            IconButton(onClick = { onDelete(tab.entry) }) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Delete,
+                                                    contentDescription = "Eliminar medición",
+                                                    tint = tableTextSecondary
+                                                )
+                                            }
                                         }
+                                        HorizontalDivider(color = strokeColor, thickness = 1.dp)
+                                        content()
                                     }
-                                    HorizontalDivider(color = strokeColor, thickness = 1.dp)
-                                    content()
                                 }
                             }
                         }
@@ -2471,6 +2483,33 @@ private fun AssetFileSection(
                         ) { entry ->
                             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                 MeasurementTableCard(
+                                    title = "Downstream Analogic Channels",
+                                    headers = listOf("Canal", "Freq (MHz)", "M1", "M2")
+                                    ,
+                                    strokeColor = strokeColor,
+                                    textPrimary = tableTextPrimary,
+                                    textSecondary = tableTextSecondary
+                                ) {
+                                    val pilotChannels = listOf(50, 70, 110, 116, 136)
+                                    pilotChannels.forEach { channel ->
+                                        val frequency = entry.pilotMeta[channel]?.frequencyMHz
+                                        val level = entry.pilotLevels[channel]
+                                        val invalidCells = if (entry.pilotLevelOk[channel] == false) setOf(2) else emptySet()
+                                        MeasurementTableRow(
+                                            cells = listOf(
+                                                channel.toString(),
+                                                formatMHz(frequency),
+                                                formatDbmv(level),
+                                                "—"
+                                            ),
+                                            invalidCells = invalidCells,
+                                            textPrimary = tableTextPrimary,
+                                            errorColor = errorColor,
+                                            strokeColor = strokeColor
+                                        )
+                                    }
+                                }
+                                MeasurementTableCard(
                                     title = "Downstream Digital Channels",
                                     headers = listOf("Canal", "Freq (MHz)", "Nivel (dBmV)", "MER", "BER pre", "BER post", "ICFR")
                                     ,
@@ -2495,33 +2534,6 @@ private fun AssetFileSection(
                                                 row.berPre?.toString() ?: "—",
                                                 row.berPost?.toString() ?: "—",
                                                 formatDbmv(row.icfr)
-                                            ),
-                                            invalidCells = invalidCells,
-                                            textPrimary = tableTextPrimary,
-                                            errorColor = errorColor,
-                                            strokeColor = strokeColor
-                                        )
-                                    }
-                                }
-                                MeasurementTableCard(
-                                    title = "Downstream Analogic Channels",
-                                    headers = listOf("Canal", "Freq (MHz)", "M1", "M2")
-                                    ,
-                                    strokeColor = strokeColor,
-                                    textPrimary = tableTextPrimary,
-                                    textSecondary = tableTextSecondary
-                                ) {
-                                    val pilotChannels = listOf(50, 70, 110, 116, 136)
-                                    pilotChannels.forEach { channel ->
-                                        val frequency = entry.pilotMeta[channel]?.frequencyMHz
-                                        val level = entry.pilotLevels[channel]
-                                        val invalidCells = if (entry.pilotLevelOk[channel] == false) setOf(2) else emptySet()
-                                        MeasurementTableRow(
-                                            cells = listOf(
-                                                channel.toString(),
-                                                formatMHz(frequency),
-                                                formatDbmv(level),
-                                                "—"
                                             ),
                                             invalidCells = invalidCells,
                                             textPrimary = tableTextPrimary,
