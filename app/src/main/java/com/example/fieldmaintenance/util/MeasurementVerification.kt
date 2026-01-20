@@ -284,6 +284,26 @@ private fun parseTestPointOffset(test: JSONObject): Double {
     return if (tpcValue == null || tpcValue != 20.0) 20.0 else 0.0
 }
 
+private fun docsisRange(ruleTable: JSONObject?): Pair<Double?, Double?> {
+    if (ruleTable == null) return null to null
+    val directMin = ruleTable.optDouble("min", Double.NaN).takeIf { !it.isNaN() }
+    val directMax = ruleTable.optDouble("max", Double.NaN).takeIf { !it.isNaN() }
+    if (directMin != null || directMax != null) {
+        return directMin to directMax
+    }
+    val keys = ruleTable.keys()
+    while (keys.hasNext()) {
+        val key = keys.next()
+        val child = ruleTable.optJSONObject(key) ?: continue
+        val childMin = child.optDouble("min", Double.NaN).takeIf { !it.isNaN() }
+        val childMax = child.optDouble("max", Double.NaN).takeIf { !it.isNaN() }
+        if (childMin != null || childMax != null) {
+            return childMin to childMax
+        }
+    }
+    return null to null
+}
+
 private fun validateMeasurementValues(
     rules: JSONObject?,
     test: JSONObject,
@@ -318,8 +338,7 @@ private fun validateMeasurementValues(
         if (ruleTable == null) {
             return listOf("No hay reglas de DOCSIS para $assetKey/$equipmentKey.")
         }
-        val min = ruleTable.optDouble("min", Double.NaN).takeIf { !it.isNaN() }
-        val max = ruleTable.optDouble("max", Double.NaN).takeIf { !it.isNaN() }
+        val (min, max) = docsisRange(ruleTable)
         rows.forEach { row ->
             val level = row.levelDbmv ?: return@forEach
             val adjusted = level + testPointOffset
@@ -743,8 +762,7 @@ suspend fun verifyMeasurementFiles(
                     val docsisRules = rules.optJSONObject("docsisexpert")
                         ?.optJSONObject(assetKey)
                         ?.optJSONObject(equipmentKey)
-                    val min = docsisRules?.optDouble("min", Double.NaN)?.takeIf { !it.isNaN() }
-                    val max = docsisRules?.optDouble("max", Double.NaN)?.takeIf { !it.isNaN() }
+                    val (min, max) = docsisRange(docsisRules)
                     docsisLevels.forEach { (freq, level) ->
                         val adjusted = level + testPointOffset
                         docsisOk[freq] = isWithinRange(adjusted, min, max)

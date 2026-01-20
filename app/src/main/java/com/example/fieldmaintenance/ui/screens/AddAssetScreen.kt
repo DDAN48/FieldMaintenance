@@ -2215,7 +2215,7 @@ private fun AssetFileSection(
                             onClick: () -> Unit
                         ) {
                             val bg = if (isSelected) accentColor else Color.Transparent
-                            val borderColor = strokeColor
+                            val borderColor = if (hasError) errorColor else strokeColor
                             val textColor = if (hasError) errorColor else if (isSelected) Color.White else tableTextPrimary
                             Box(
                                 modifier = Modifier
@@ -2441,19 +2441,21 @@ private fun AssetFileSection(
                             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                 TableCard(
                                     title = "Downstream Digital Channels",
-                                    headers = listOf("Canal", "Freq (MHz)", "MER", "BER pre", "BER post", "ICFR")
+                                    headers = listOf("Canal", "Freq (MHz)", "Nivel (dBmV)", "MER", "BER pre", "BER post", "ICFR")
                                 ) {
                                     entry.digitalRows.forEach { row ->
                                         val invalidCells = buildSet {
-                                            if (row.merOk == false) add(2)
-                                            if (row.berPreOk == false) add(3)
-                                            if (row.berPostOk == false) add(4)
-                                            if (row.icfrOk == false) add(5)
+                                            if (row.levelOk == false) add(2)
+                                            if (row.merOk == false) add(3)
+                                            if (row.berPreOk == false) add(4)
+                                            if (row.berPostOk == false) add(5)
+                                            if (row.icfrOk == false) add(6)
                                         }
                                         TableRow(
                                             listOf(
                                                 row.channel.toString(),
                                                 formatMHz(row.frequencyMHz),
+                                                formatDbmv(row.levelDbmv),
                                                 formatDbmv(row.mer),
                                                 row.berPre?.toString() ?: "—",
                                                 row.berPost?.toString() ?: "—",
