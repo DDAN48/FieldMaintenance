@@ -84,7 +84,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.Stroke
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
