@@ -228,7 +228,7 @@ private fun UpstreamLevelsChart(
                 )
 
                 val slotWidth = plotWidth / data.size
-                val barWidth = slotWidth * 0.6f
+                val barWidth = slotWidth * 0.4f
                 data.forEachIndexed { index, point ->
                     val normalized = ((point.levelDbmv - minLevel) / range).toFloat()
                     val barHeight = normalized * plotHeight
@@ -2596,7 +2596,7 @@ private fun AssetFileSection(
                                         UpstreamLevelsChart(
                                             data = chartData,
                                             barColor = accentColor,
-                                            errorColor = errorColor,
+                                            errorColor = anomalyColor,
                                             textColor = tableTextPrimary,
                                             gridColor = strokeColor,
                                             modifier = Modifier.fillMaxSize()
