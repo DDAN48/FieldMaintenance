@@ -2250,6 +2250,25 @@ private fun AssetFileSection(
                                     }
                                     Text(text = label, color = textColor, fontSize = 13.sp)
                                 }
+                                if (expanded) {
+                                    Spacer(Modifier.height(8.dp))
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 6.dp)
+                                    ) {
+                                        headers.forEach { header ->
+                                            Text(
+                                                text = header,
+                                                color = tableTextSecondary,
+                                                fontSize = 11.sp,
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                        }
+                                    }
+                                    HorizontalDivider(color = strokeColor, thickness = 1.dp)
+                                    content()
+                                }
                             }
                         }
 
