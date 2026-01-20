@@ -152,6 +152,10 @@ private fun UpstreamLevelsChart(
     val minLevel = data.minOf { it.levelDbmv }
     val maxLevel = data.maxOf { it.levelDbmv }
     val range = (maxLevel - minLevel).coerceAtLeast(1.0)
+    val tickPadding = range * 0.1
+    val chartMin = minLevel - tickPadding
+    val chartMax = maxLevel + tickPadding
+    val chartRange = (chartMax - chartMin).coerceAtLeast(1.0)
     val labelColor = textColor.toArgb()
     Row(modifier = modifier) {
         Text(
@@ -164,7 +168,7 @@ private fun UpstreamLevelsChart(
         )
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = "Niveles canal ascendente",
+                text = "Upstream Channels Chart",
                 color = textColor,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.SemiBold,
@@ -206,7 +210,7 @@ private fun UpstreamLevelsChart(
                         end = Offset(leftPadding + plotWidth, y),
                         strokeWidth = 1.dp.toPx()
                     )
-                    val labelValue = maxLevel - (range * index / gridSteps.toDouble())
+                    val labelValue = chartMax - (chartRange * index / gridSteps.toDouble())
                     drawContext.canvas.nativeCanvas.drawText(
                         String.format(Locale.getDefault(), "%.1f", labelValue),
                         leftPadding - 6.dp.toPx(),
@@ -230,7 +234,7 @@ private fun UpstreamLevelsChart(
                 val slotWidth = plotWidth / data.size
                 val barWidth = slotWidth * 0.4f
                 data.forEachIndexed { index, point ->
-                    val normalized = ((point.levelDbmv - minLevel) / range).toFloat()
+                    val normalized = ((point.levelDbmv - chartMin) / chartRange).toFloat()
                     val barHeight = normalized * plotHeight
                     val barLeft = leftPadding + slotWidth * index + (slotWidth - barWidth) / 2f
                     val barTop = baselineY - barHeight
@@ -2602,6 +2606,7 @@ private fun AssetFileSection(
                                             modifier = Modifier.fillMaxSize()
                                         )
                                     }
+                                    Spacer(Modifier.height(12.dp))
                                     val rows = entry.docsisLevels.keys.sorted().map { freq ->
                                         val channel = entry.docsisMeta[freq]?.channel?.toString() ?: "—"
                                         val frequency = entry.docsisMeta[freq]?.frequencyMHz ?: freq
