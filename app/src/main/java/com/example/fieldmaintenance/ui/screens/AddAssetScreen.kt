@@ -2576,44 +2576,7 @@ private fun AssetFileSection(
                                 },
                                 onDelete = onRequestDelete
                             ) { entry ->
-                                val chartData = entry.docsisLevels.keys.sorted().mapNotNull { freq ->
-                                    val level = entry.docsisLevels[freq] ?: return@mapNotNull null
-                                    val frequency = entry.docsisMeta[freq]?.frequencyMHz ?: freq
-                                    val isValid = entry.docsisLevelOk[freq] != false
-                                    UpstreamChartPoint(
-                                        frequencyMHz = frequency,
-                                        levelDbmv = level,
-                                        isValid = isValid
-                                    )
-                                }
-                                UpstreamLevelsChart(
-                                    data = chartData,
-                                    barColor = accentColor,
-                                    errorColor = errorColor,
-                                    textColor = tableTextPrimary,
-                                    gridColor = strokeColor,
-                                    modifier = Modifier.padding(bottom = 10.dp)
-                                )
-                                val rows = entry.docsisLevels.keys.sorted().map { freq ->
-                                    val channel = entry.docsisMeta[freq]?.channel?.toString() ?: "—"
-                                    val frequency = entry.docsisMeta[freq]?.frequencyMHz ?: freq
-                                    val level = formatDbmv(entry.docsisLevels[freq])
-                                    val icfr = formatDbmv(entry.docsisIcfr[freq])
-                                    val invalidCells = if (entry.docsisLevelOk[freq] == false) setOf(2) else emptySet()
-                                    listOf(
-                                        channel,
-                                        formatMHz(frequency),
-                                        level,
-                                        icfr
-                                    ) to invalidCells
-                                }
-                                MeasurementTableCard(
-                                    title = "Upstream Channels",
-                                    headers = listOf("UCD", "Frecuencia (MHz)", "Nivel (dBmV)", "ICFR (dB)"),
-                                    strokeColor = strokeColor,
-                                    textPrimary = tableTextPrimary,
-                                    textSecondary = tableTextSecondary
-                                ) {
+                                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                     val chartData = entry.docsisLevels.keys.sorted().mapNotNull { freq ->
                                         val level = entry.docsisLevels[freq] ?: return@mapNotNull null
                                         val frequency = entry.docsisMeta[freq]?.frequencyMHz ?: freq
@@ -2629,7 +2592,6 @@ private fun AssetFileSection(
                                             .fillMaxWidth()
                                             .height(140.dp)
                                             .clipToBounds()
-                                            .padding(bottom = 10.dp)
                                     ) {
                                         UpstreamLevelsChart(
                                             data = chartData,
@@ -2640,16 +2602,35 @@ private fun AssetFileSection(
                                             modifier = Modifier.fillMaxSize()
                                         )
                                     }
-                                    Spacer(Modifier.height(8.dp))
-                                    HorizontalDivider(color = strokeColor, thickness = 1.dp)
-                                    rows.forEach { (cells, invalid) ->
-                                        MeasurementTableRow(
-                                            cells = cells,
-                                            invalidCells = invalid,
-                                            textPrimary = tableTextPrimary,
-                                            errorColor = errorColor,
-                                            strokeColor = strokeColor
-                                        )
+                                    val rows = entry.docsisLevels.keys.sorted().map { freq ->
+                                        val channel = entry.docsisMeta[freq]?.channel?.toString() ?: "—"
+                                        val frequency = entry.docsisMeta[freq]?.frequencyMHz ?: freq
+                                        val level = formatDbmv(entry.docsisLevels[freq])
+                                        val icfr = formatDbmv(entry.docsisIcfr[freq])
+                                        val invalidCells = if (entry.docsisLevelOk[freq] == false) setOf(2) else emptySet()
+                                        listOf(
+                                            channel,
+                                            formatMHz(frequency),
+                                            level,
+                                            icfr
+                                        ) to invalidCells
+                                    }
+                                    MeasurementTableCard(
+                                        title = "Upstream Channels",
+                                        headers = listOf("UCD", "Frecuencia (MHz)", "Nivel (dBmV)", "ICFR (dB)"),
+                                        strokeColor = strokeColor,
+                                        textPrimary = tableTextPrimary,
+                                        textSecondary = tableTextSecondary
+                                    ) {
+                                        rows.forEach { (cells, invalid) ->
+                                            MeasurementTableRow(
+                                                cells = cells,
+                                                invalidCells = invalid,
+                                                textPrimary = tableTextPrimary,
+                                                errorColor = errorColor,
+                                                strokeColor = strokeColor
+                                            )
+                                        }
                                     }
                                 }
                             }
