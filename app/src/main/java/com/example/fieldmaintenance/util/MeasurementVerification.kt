@@ -318,24 +318,13 @@ private fun validateMeasurementValues(
         if (ruleTable == null) {
             return listOf("No hay reglas de DOCSIS para $assetKey/$equipmentKey.")
         }
-        val targetFrequencies = listOf(16.8, 20.0, 24.8, 35.0)
-        targetFrequencies.forEach { freq ->
-            val rule = ruleTable.optJSONObject(freq.toString())
-            if (rule == null) {
-                issues.add("No hay regla para $freq MHz.")
-                return@forEach
-            }
-            val row = rows.minByOrNull { row -> kotlin.math.abs((row.frequencyMHz ?: 0.0) - freq) }
-            val level = row?.levelDbmv
-            if (level == null) {
-                issues.add("No se encontró nivel para $freq MHz.")
-                return@forEach
-            }
-            val min = rule.optDouble("min", Double.NaN).takeIf { !it.isNaN() }
-            val max = rule.optDouble("max", Double.NaN).takeIf { !it.isNaN() }
+        val min = ruleTable.optDouble("min", Double.NaN).takeIf { !it.isNaN() }
+        val max = ruleTable.optDouble("max", Double.NaN).takeIf { !it.isNaN() }
+        rows.forEach { row ->
+            val level = row.levelDbmv ?: return@forEach
             val adjusted = level + testPointOffset
             if (!isWithinRange(adjusted, min, max)) {
-                issues.add("Nivel fuera de rango en $freq MHz.")
+                issues.add("Nivel fuera de rango en DOCSIS.")
             }
         }
     }
@@ -754,10 +743,9 @@ suspend fun verifyMeasurementFiles(
                     val docsisRules = rules.optJSONObject("docsisexpert")
                         ?.optJSONObject(assetKey)
                         ?.optJSONObject(equipmentKey)
+                    val min = docsisRules?.optDouble("min", Double.NaN)?.takeIf { !it.isNaN() }
+                    val max = docsisRules?.optDouble("max", Double.NaN)?.takeIf { !it.isNaN() }
                     docsisLevels.forEach { (freq, level) ->
-                        val rule = docsisRules?.optJSONObject(freq.toString())
-                        val min = rule?.optDouble("min", Double.NaN)?.takeIf { !it.isNaN() }
-                        val max = rule?.optDouble("max", Double.NaN)?.takeIf { !it.isNaN() }
                         val adjusted = level + testPointOffset
                         docsisOk[freq] = isWithinRange(adjusted, min, max)
                     }

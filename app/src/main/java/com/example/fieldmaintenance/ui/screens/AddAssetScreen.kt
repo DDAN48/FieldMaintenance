@@ -2214,14 +2214,9 @@ private fun AssetFileSection(
                             hasError: Boolean,
                             onClick: () -> Unit
                         ) {
-                            val bg = when {
-                                isSelected && hasError -> errorColor
-                                isSelected -> accentColor
-                                hasError -> Color.Transparent
-                                else -> Color.Transparent
-                            }
-                            val borderColor = if (hasError) errorColor else strokeColor
-                            val textColor = if (isSelected) Color.White else tableTextPrimary
+                            val bg = if (isSelected) accentColor else Color.Transparent
+                            val borderColor = strokeColor
+                            val textColor = if (hasError) errorColor else if (isSelected) Color.White else tableTextPrimary
                             Box(
                                 modifier = Modifier
                                     .weight(1f)
@@ -2297,7 +2292,7 @@ private fun AssetFileSection(
                                     ) {
                                         Text(
                                             text = footerProvider(tab.entry, tab.label),
-                                            color = tableTextSecondary,
+                                            color = if (tab.hasError) errorColor else tableTextSecondary,
                                             fontSize = 11.sp,
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis,
