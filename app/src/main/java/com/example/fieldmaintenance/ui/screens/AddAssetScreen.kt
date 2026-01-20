@@ -2299,7 +2299,9 @@ private fun AssetFileSection(
                         ) {
                             val bg = if (isSelected) accentColor else Color.Transparent
                             val borderColor = strokeColor
-                            val textColor = if (hasError) errorColor else if (isSelected) Color.White else tableTextPrimary
+                            val textColor = Color.White
+                            val statusIcon = if (hasError) Icons.Default.Close else Icons.Default.Check
+                            val statusColor = if (hasError) Color(0xFFE57373) else Color(0xFF81C784)
                             Box(
                                 modifier = Modifier
                                     .weight(1f)
@@ -2310,7 +2312,18 @@ private fun AssetFileSection(
                                     .clickable { onClick() },
                                 contentAlignment = Alignment.Center
                             ) {
-                                Text(text = label, color = textColor, fontSize = 13.sp)
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = statusIcon,
+                                        contentDescription = null,
+                                        tint = statusColor,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Text(text = label, color = textColor, fontSize = 13.sp)
+                                }
                             }
                         }
 
