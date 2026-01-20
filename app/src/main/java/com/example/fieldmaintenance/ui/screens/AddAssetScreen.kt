@@ -22,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ExpandLess
@@ -2216,7 +2217,9 @@ private fun AssetFileSection(
                         ) {
                             val bg = if (isSelected) accentColor else Color.Transparent
                             val borderColor = if (hasError) errorColor else strokeColor
-                            val textColor = if (hasError) errorColor else if (isSelected) Color.White else tableTextPrimary
+                            val textColor = Color.White
+                            val indicatorColor = if (hasError) Color(0xFFE74C3C) else Color(0xFF7AC943)
+                            val indicatorIcon = if (hasError) Icons.Default.Close else Icons.Default.Check
                             Box(
                                 modifier = Modifier
                                     .weight(1f)
@@ -2227,7 +2230,45 @@ private fun AssetFileSection(
                                     .clickable { onClick() },
                                 contentAlignment = Alignment.Center
                             ) {
-                                Text(text = label, color = textColor, fontSize = 13.sp)
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(18.dp)
+                                            .clip(RoundedCornerShape(9.dp))
+                                            .background(indicatorColor),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = indicatorIcon,
+                                            contentDescription = null,
+                                            tint = Color.White,
+                                            modifier = Modifier.size(12.dp)
+                                        )
+                                    }
+                                    Text(text = label, color = textColor, fontSize = 13.sp)
+                                }
+                                if (expanded) {
+                                    Spacer(Modifier.height(8.dp))
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 6.dp)
+                                    ) {
+                                        headers.forEach { header ->
+                                            Text(
+                                                text = header,
+                                                color = tableTextSecondary,
+                                                fontSize = 11.sp,
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                        }
+                                    }
+                                    HorizontalDivider(color = strokeColor, thickness = 1.dp)
+                                    content()
+                                }
                             }
                         }
 
