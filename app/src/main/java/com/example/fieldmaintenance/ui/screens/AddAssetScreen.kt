@@ -1220,6 +1220,183 @@ private fun FullScreenAdjustmentDialog(
 }
 
 @Composable
+private fun MeasurementTableCard(
+    title: String,
+    headers: List<String>,
+    strokeColor: Color,
+    textPrimary: Color,
+    textSecondary: Color,
+    content: @Composable () -> Unit
+) {
+    var expanded by remember(title) { mutableStateOf(true) }
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .border(1.dp, strokeColor, RoundedCornerShape(12.dp))
+            .padding(10.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                title,
+                color = textPrimary,
+                fontSize = 14.sp,
+                modifier = Modifier.weight(1f)
+            )
+            IconButton(onClick = { expanded = !expanded }) {
+                Icon(
+                    imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    contentDescription = if (expanded) "Colapsar" else "Expandir",
+                    tint = textSecondary
+                )
+            }
+        }
+        if (expanded) {
+            Spacer(Modifier.height(8.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 6.dp)
+            ) {
+                headers.forEach { header ->
+                    Text(
+                        text = header,
+                        color = textSecondary,
+                        fontSize = 11.sp,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+            HorizontalDivider(color = strokeColor, thickness = 1.dp)
+            content()
+        }
+    }
+}
+
+@Composable
+private fun MeasurementTableRow(
+    cells: List<String>,
+    invalidCells: Set<Int> = emptySet(),
+    textPrimary: Color,
+    errorColor: Color,
+    strokeColor: Color
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp)
+    ) {
+        cells.forEachIndexed { index, cell ->
+            val cellColor = if (invalidCells.contains(index)) errorColor else textPrimary
+            Text(
+                text = cell,
+                color = cellColor,
+                fontSize = 12.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
+            )
+        }
+    }
+    HorizontalDivider(color = strokeColor, thickness = 1.dp)
+}
+
+@Composable
+private fun AdjustmentSummaryCard(
+    title: String,
+    status: String,
+    actionLabel: String,
+    isComplete: Boolean,
+    supportingText: String? = null,
+    actionEnabled: Boolean = true,
+    onAction: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.15f)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(title, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                Icon(
+                    imageVector = if (isComplete) Icons.Default.CheckCircle else Icons.Default.Warning,
+                    contentDescription = null,
+                    tint = if (isComplete) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                )
+            }
+            Text(
+                status,
+                style = MaterialTheme.typography.bodySmall,
+                color = if (isComplete) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f)
+            )
+            if (!supportingText.isNullOrBlank()) {
+                Text(
+                    supportingText,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f)
+                )
+            }
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                Button(onClick = onAction, enabled = actionEnabled) {
+                    Text(actionLabel)
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun FullScreenAdjustmentDialog(
+    title: String,
+    onDismiss: () -> Unit,
+    onComplete: () -> Unit,
+    content: @Composable () -> Unit
+) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(modifier = Modifier.fillMaxSize()) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                TopAppBar(
+                    title = { Text(title) },
+                    navigationIcon = {
+                        IconButton(onClick = onDismiss) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Volver"
+                            )
+                        }
+                    },
+                    actions = {
+                        TextButton(onClick = onComplete) {
+                            Text("Completar")
+                        }
+                        IconButton(onClick = onDismiss) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Cerrar"
+                            )
+                        }
+                    }
+                )
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .verticalScroll(rememberScrollState())
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    content()
+                }
+            }
+        }
+    }
+}
+
+@Composable
 fun PhotoSection(
     title: String,
     reportId: String,
@@ -2250,25 +2427,6 @@ private fun AssetFileSection(
                                     }
                                     Text(text = label, color = textColor, fontSize = 13.sp)
                                 }
-                                if (expanded) {
-                                    Spacer(Modifier.height(8.dp))
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(vertical = 6.dp)
-                                    ) {
-                                        headers.forEach { header ->
-                                            Text(
-                                                text = header,
-                                                color = tableTextSecondary,
-                                                fontSize = 11.sp,
-                                                modifier = Modifier.weight(1f)
-                                            )
-                                        }
-                                    }
-                                    HorizontalDivider(color = strokeColor, thickness = 1.dp)
-                                    content()
-                                }
                             }
                         }
 
@@ -2347,38 +2505,7 @@ private fun AssetFileSection(
                                             )
                                         }
                                     }
-                                }
-                            }
-                        }
-
-                        @Composable
-                        fun TableCard(
-                            title: String,
-                            headers: List<String>,
-                            content: @Composable () -> Unit
-                        ) {
-                            var expanded by remember(title) { mutableStateOf(true) }
-                            Column(
-                                Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .border(1.dp, strokeColor, RoundedCornerShape(12.dp))
-                                    .padding(10.dp)
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        title,
-                                        color = tableTextPrimary,
-                                        fontSize = 14.sp,
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                    IconButton(onClick = { expanded = !expanded }) {
-                                        Icon(
-                                            imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                                            contentDescription = if (expanded) "Colapsar" else "Expandir",
-                                            tint = tableTextSecondary
-                                        )
-                                    }
+                                    Text(text = label, color = textColor, fontSize = 13.sp)
                                 }
                                 if (expanded) {
                                     Spacer(Modifier.height(8.dp))
@@ -2400,28 +2527,6 @@ private fun AssetFileSection(
                                     content()
                                 }
                             }
-                        }
-
-                        @Composable
-                        fun TableRow(cells: List<String>, invalidCells: Set<Int> = emptySet()) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 8.dp)
-                            ) {
-                                cells.forEachIndexed { index, cell ->
-                                    val cellColor = if (invalidCells.contains(index)) errorColor else tableTextPrimary
-                                    Text(
-                                        text = cell,
-                                        color = cellColor,
-                                        fontSize = 12.sp,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                }
-                            }
-                            HorizontalDivider(color = strokeColor, thickness = 1.dp)
                         }
 
                         if (assetForDisplay.type != AssetType.NODE) {
@@ -2453,11 +2558,30 @@ private fun AssetFileSection(
                                         "—"
                                     ) to invalidCells
                                 }
-                                TableCard(
+                                MeasurementTableCard(
                                     title = "Upstream Channels",
                                     headers = listOf("UCD", "Frecuencia (MHz)", "Nivel (dBmV)", "ICFR (dB)")
+                                    ,
+                                    strokeColor = strokeColor,
+                                    textPrimary = tableTextPrimary,
+                                    textSecondary = tableTextSecondary
                                 ) {
-                                    rows.forEach { (cells, invalid) -> TableRow(cells, invalid) }
+                                    rows.forEach { (cells, invalid) ->
+                                        MeasurementTableRow(
+                                            cells = cells,
+                                            invalidCells = invalid,
+                                            textPrimary = tableTextPrimary,
+                                            errorColor = errorColor,
+                                            strokeColor = strokeColor
+                                        )
+                                        IconButton(onClick = { onDelete(tab.entry) }) {
+                                            Icon(
+                                                imageVector = Icons.Default.Delete,
+                                                contentDescription = "Eliminar medición",
+                                                tint = tableTextSecondary
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -2480,9 +2604,13 @@ private fun AssetFileSection(
                             onDelete = onRequestDelete
                         ) { entry ->
                             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                TableCard(
+                                MeasurementTableCard(
                                     title = "Downstream Digital Channels",
                                     headers = listOf("Canal", "Freq (MHz)", "Nivel (dBmV)", "MER", "BER pre", "BER post", "ICFR")
+                                    ,
+                                    strokeColor = strokeColor,
+                                    textPrimary = tableTextPrimary,
+                                    textSecondary = tableTextSecondary
                                 ) {
                                     entry.digitalRows.forEach { row ->
                                         val invalidCells = buildSet {
@@ -2492,8 +2620,8 @@ private fun AssetFileSection(
                                             if (row.berPostOk == false) add(5)
                                             if (row.icfrOk == false) add(6)
                                         }
-                                        TableRow(
-                                            listOf(
+                                        MeasurementTableRow(
+                                            cells = listOf(
                                                 row.channel.toString(),
                                                 formatMHz(row.frequencyMHz),
                                                 formatDbmv(row.levelDbmv),
@@ -2502,27 +2630,37 @@ private fun AssetFileSection(
                                                 row.berPost?.toString() ?: "—",
                                                 formatDbmv(row.icfr)
                                             ),
-                                            invalidCells = invalidCells
+                                            invalidCells = invalidCells,
+                                            textPrimary = tableTextPrimary,
+                                            errorColor = errorColor,
+                                            strokeColor = strokeColor
                                         )
                                     }
                                 }
-                                TableCard(
+                                MeasurementTableCard(
                                     title = "Downstream Analogic Channels",
                                     headers = listOf("Canal", "Freq (MHz)", "M1", "M2")
+                                    ,
+                                    strokeColor = strokeColor,
+                                    textPrimary = tableTextPrimary,
+                                    textSecondary = tableTextSecondary
                                 ) {
                                     val pilotChannels = listOf(50, 70, 110, 116, 136)
                                     pilotChannels.forEach { channel ->
                                         val frequency = entry.pilotMeta[channel]?.frequencyMHz
                                         val level = entry.pilotLevels[channel]
                                         val invalidCells = if (entry.pilotLevelOk[channel] == false) setOf(2) else emptySet()
-                                        TableRow(
-                                            listOf(
+                                        MeasurementTableRow(
+                                            cells = listOf(
                                                 channel.toString(),
                                                 formatMHz(frequency),
                                                 formatDbmv(level),
                                                 "—"
                                             ),
-                                            invalidCells = invalidCells
+                                            invalidCells = invalidCells,
+                                            textPrimary = tableTextPrimary,
+                                            errorColor = errorColor,
+                                            strokeColor = strokeColor
                                         )
                                     }
                                 }
