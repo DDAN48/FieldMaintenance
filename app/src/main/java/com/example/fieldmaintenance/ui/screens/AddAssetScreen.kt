@@ -294,6 +294,7 @@ fun AddAssetScreen(
     var showNodeAdjustmentDialog by rememberSaveable { mutableStateOf(false) }
     var showAmplifierAdjustmentDialog by rememberSaveable { mutableStateOf(false) }
     var measurementsComplete by remember { mutableStateOf(false) }
+    val anomalyColor = Color(0xFFE57373)
 
     // Amplifier adjustment (persisted per asset)
     val amplifierAdjustment by repository.getAmplifierAdjustment(workingAssetId)
