@@ -56,6 +56,12 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+private val ampCardColor = Color(0xFF141823)
+private val ampStrokeColor = Color(0xFF2A3142)
+private val ampTextPrimary = Color(0xFFE7EAF0)
+private val ampTextSecondary = Color(0xFFB0B7C3)
+private val ampErrorColor = Color(0xFFE57373)
+
 @Composable
 fun AmplifierAdjustmentCard(
     assetId: String,
@@ -206,7 +212,8 @@ fun AmplifierAdjustmentCard(
     // Outer "frame" for the whole module (visual border)
     Card(
         modifier = Modifier.fillMaxWidth(),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.15f)),
+        border = BorderStroke(1.dp, ampStrokeColor),
+        colors = CardDefaults.cardColors(containerColor = ampCardColor),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(
@@ -218,7 +225,8 @@ fun AmplifierAdjustmentCard(
             Text(
                 "Ajuste de Amplificador",
                 style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold
+                fontWeight = FontWeight.SemiBold,
+                color = ampTextPrimary
             )
             SectionCard(
                 titleBold = "Niveles ENTRADA",
@@ -227,12 +235,12 @@ fun AmplifierAdjustmentCard(
                     Text(
                         "FWD IN PAD: ${pad?.let { CiscoHfcAmpCalculator.format1(it) } ?: "—"}",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                        color = ampTextSecondary
                     )
                     Text(
                         "${if (tilt != null && tilt > 0) "FWD IN invEQ" else "FWD IN EQ"}: ${tilt?.let { CiscoHfcAmpCalculator.format1(it) } ?: "—"}",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                        color = ampTextSecondary
                     )
                     Spacer(Modifier.height(6.dp))
                     // Header row like the reference (CANAL / FRECUENCIA / AMPLITUD / PLANO / DIF)
@@ -305,7 +313,7 @@ fun AmplifierAdjustmentCard(
                         Text(
                             "Complete mediciones de entrada válidas para continuar. La diferencia entre el nivel de entrada y medido aceptable es menor a 4. Nivel minimo de entrada permitido es 15 dBmV si esta indicado por plano.",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error
+                            color = ampErrorColor
                         )
                         return@SectionCard
                     }
@@ -357,11 +365,11 @@ fun AmplifierAdjustmentCard(
                     if (isWeirdDbmv(parseDbmv(planLowDbmv)) || isWeirdDbmv(parseDbmv(planHighDbmv))) {
                         Spacer(Modifier.height(6.dp))
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Icon(Icons.Default.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                            Icon(Icons.Default.Warning, contentDescription = null, tint = ampErrorColor)
                             Text(
                                 "Revisa amplitudes (-20 a 80 dBmV).",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.error
+                                color = ampErrorColor
                             )
                         }
                     }
@@ -437,7 +445,7 @@ fun AmplifierAdjustmentCard(
                         Text(
                             "Complete mediciones de entrada válidas para continuar. La diferencia entre el nivel de entrada y medido aceptable es menor a 4. Nivel minimo de entrada permitido es 15 dBmV si esta indicado por plano.",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error
+                            color = ampErrorColor
                         )
                         return@SectionCard
                     }
@@ -500,15 +508,15 @@ private fun DbmvField(
     }
 
     // Compact field: avoids text clipping and forces visible text color.
-    val borderColor = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f)
+    val borderColor = if (isError) ampErrorColor else ampStrokeColor
     Column(modifier = modifier) {
         if (label.isNotBlank()) {
-            Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+            Text(label, style = MaterialTheme.typography.labelSmall, color = ampTextSecondary)
             Spacer(Modifier.height(2.dp))
         }
         Surface(
             modifier = Modifier.height(compactHeight),
-            color = MaterialTheme.colorScheme.surface,
+            color = ampCardColor,
             border = BorderStroke(1.dp, borderColor),
             shape = MaterialTheme.shapes.small
         ) {
@@ -524,7 +532,7 @@ private fun DbmvField(
                     onValueChange = onChange,
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = textColor ?: MaterialTheme.colorScheme.onSurface),
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = textColor ?: ampTextPrimary),
                     modifier = Modifier.fillMaxWidth()
                 )
             }
@@ -581,16 +589,22 @@ private fun SectionCard(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        colors = CardDefaults.cardColors(containerColor = ampCardColor),
+        border = BorderStroke(1.dp, ampStrokeColor),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (titleBold.isNotBlank()) {
-                    Text(titleBold, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        titleBold,
+                        fontWeight = FontWeight.SemiBold,
+                        style = MaterialTheme.typography.titleSmall,
+                        color = ampTextPrimary
+                    )
                 }
                 if (titleLight.isNotBlank()) {
-                    Text(" $titleLight", style = MaterialTheme.typography.titleSmall)
+                    Text(" $titleLight", style = MaterialTheme.typography.titleSmall, color = ampTextPrimary)
                 }
             }
             if (titleBold.isNotBlank() || titleLight.isNotBlank()) {
@@ -615,15 +629,15 @@ private fun EntradaRowPlan(
     val plan = planValue.trim().takeIf { it.isNotBlank() }?.replace(',', '.')?.toDoubleOrNull()
     val absDiff = if (med != null && plan != null) kotlin.math.abs(med - plan) else null
     val needsAttention = (absDiff != null && absDiff >= 2.0) || (med != null && med < 15.0)
-    val medColor = if (needsAttention) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+    val medColor = if (needsAttention) ampErrorColor else ampTextPrimary
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(canal, modifier = Modifier.width(60.dp), fontWeight = FontWeight.SemiBold)
-        Text(freqText, modifier = Modifier.width(90.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f))
+        Text(canal, modifier = Modifier.width(60.dp), fontWeight = FontWeight.SemiBold, color = ampTextPrimary)
+        Text(freqText, modifier = Modifier.width(90.dp), color = ampTextSecondary)
         DbmvField(
             label = "",
             value = medidoValue,
@@ -640,11 +654,11 @@ private fun EntradaRowPlan(
             modifier = Modifier.width(88.dp),
             compact = true,
             isError = false,
-            textColor = MaterialTheme.colorScheme.onSurface,
+            textColor = ampTextPrimary,
             onChange = onPlanChange
         )
     }
-    HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+    HorizontalDivider(color = ampStrokeColor, thickness = 1.dp)
 }
 
 @Composable
@@ -664,7 +678,7 @@ private fun EntradaRowWithFreqSelector(
     val plan = planValue.trim().takeIf { it.isNotBlank() }?.replace(',', '.')?.toDoubleOrNull()
     val absDiff = if (med != null && plan != null) kotlin.math.abs(med - plan) else null
     val needsAttention = (absDiff != null && absDiff >= 2.0) || (med != null && med < 15.0)
-    val medColor = if (needsAttention) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+    val medColor = if (needsAttention) ampErrorColor else ampTextPrimary
 
     Row(
         modifier = Modifier
@@ -672,7 +686,7 @@ private fun EntradaRowWithFreqSelector(
             .padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(canal, modifier = Modifier.width(60.dp), fontWeight = FontWeight.SemiBold)
+        Text(canal, modifier = Modifier.width(60.dp), fontWeight = FontWeight.SemiBold, color = ampTextPrimary)
 
         Box(modifier = Modifier.width(90.dp)) {
             Row(
@@ -684,12 +698,12 @@ private fun EntradaRowWithFreqSelector(
                 Text(
                     text = "$freqMHz MHz",
                     modifier = Modifier.weight(1f),
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f)
+                    color = ampTextSecondary
                 )
                 Icon(
                     Icons.Default.ArrowDropDown,
                     contentDescription = "Cambiar frecuencia",
-                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f)
+                    tint = ampTextSecondary
                 )
             }
             DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
@@ -718,11 +732,11 @@ private fun EntradaRowWithFreqSelector(
             modifier = Modifier.width(88.dp),
             compact = true,
             isError = false,
-            textColor = MaterialTheme.colorScheme.onSurface,
+            textColor = ampTextPrimary,
             onChange = onPlanChange
         )
     }
-    HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+    HorizontalDivider(color = ampStrokeColor, thickness = 1.dp)
 }
 
 @Composable
@@ -731,9 +745,9 @@ private fun SimpleCalcList(rows: List<CalcRowData>) {
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Text("CANAL", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
-        Text("FREQ", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
-        Text("CALC (dBmV)", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
+        Text("CANAL", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, color = ampTextSecondary)
+        Text("FREQ", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, color = ampTextSecondary)
+        Text("CALC (dBmV)", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, color = ampTextSecondary)
     }
     Spacer(Modifier.height(6.dp))
     rows.forEachIndexed { idx, r ->
@@ -743,17 +757,18 @@ private fun SimpleCalcList(rows: List<CalcRowData>) {
                 .padding(vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(r.canal, modifier = Modifier.width(70.dp), fontWeight = FontWeight.SemiBold)
-            Text(r.freqText, modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f))
+            Text(r.canal, modifier = Modifier.width(70.dp), fontWeight = FontWeight.SemiBold, color = ampTextPrimary)
+            Text(r.freqText, modifier = Modifier.weight(1f), color = ampTextSecondary)
             Text(
                 r.calc?.let { "${CiscoHfcAmpCalculator.format1(it)}" } ?: "—",
                 modifier = Modifier.width(80.dp),
                 textAlign = TextAlign.End,
-                fontWeight = FontWeight.SemiBold
+                fontWeight = FontWeight.SemiBold,
+                color = ampTextPrimary
             )
         }
         if (idx != rows.lastIndex) {
-            HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+            HorizontalDivider(color = ampStrokeColor, thickness = 1.dp)
         }
     }
 }
@@ -781,13 +796,14 @@ private fun SalidaCompareRow(
             .padding(vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(canal, modifier = Modifier.width(54.dp), fontWeight = FontWeight.SemiBold)
-        Text(freqText, modifier = Modifier.width(78.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f))
+        Text(canal, modifier = Modifier.width(54.dp), fontWeight = FontWeight.SemiBold, color = ampTextPrimary)
+        Text(freqText, modifier = Modifier.width(78.dp), color = ampTextSecondary)
         Text(
             calc?.let { CiscoHfcAmpCalculator.format1(it) } ?: "—",
             modifier = Modifier.width(54.dp),
             textAlign = TextAlign.End,
-            fontWeight = FontWeight.SemiBold
+            fontWeight = FontWeight.SemiBold,
+            color = ampTextPrimary
         )
         Spacer(Modifier.width(6.dp))
         if (hasInput) {
@@ -805,7 +821,7 @@ private fun SalidaCompareRow(
                 "—",
                 modifier = Modifier.width(70.dp),
                 textAlign = TextAlign.Center,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                color = ampTextSecondary
             )
         }
         Spacer(Modifier.width(8.dp))
@@ -813,12 +829,12 @@ private fun SalidaCompareRow(
             "${if (delta != null && delta >= 0) "+" else ""}$deltaLabel",
             modifier = Modifier.width(44.dp),
             textAlign = TextAlign.End,
-            color = if (delta == null) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-            else if (isOk) Color(0xFF2E7D32) else if (isBad) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+            color = if (delta == null) ampTextSecondary
+            else if (isOk) Color(0xFF2E7D32) else if (isBad) ampErrorColor else ampTextSecondary,
             fontWeight = FontWeight.SemiBold
         )
     }
-    HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+    HorizontalDivider(color = ampStrokeColor, thickness = 1.dp)
 }
 
 @Composable
@@ -830,13 +846,14 @@ private fun RecommendationLine(label: String, value: Double?) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Text(label, fontWeight = FontWeight.SemiBold)
+        Text(label, fontWeight = FontWeight.SemiBold, color = ampTextPrimary)
         Text(
             value?.let { "${CiscoHfcAmpCalculator.format1(it)} dB" } ?: "—",
-            fontWeight = FontWeight.SemiBold
+            fontWeight = FontWeight.SemiBold,
+            color = ampTextPrimary
         )
     }
-    HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+    HorizontalDivider(color = ampStrokeColor, thickness = 1.dp)
 }
 
 @Composable
@@ -845,9 +862,9 @@ private fun HeaderRow(c1: String = "CANAL", c2: String = "FRECUENCIA", c3: Strin
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(c1, modifier = Modifier.width(60.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
-        Text(c2, modifier = Modifier.width(90.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
-        Text(c3, modifier = Modifier.weight(1f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
+        Text(c1, modifier = Modifier.width(60.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, color = ampTextSecondary)
+        Text(c2, modifier = Modifier.width(90.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, color = ampTextSecondary)
+        Text(c3, modifier = Modifier.weight(1f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, color = ampTextSecondary)
         Text("", modifier = Modifier.width(44.dp))
     }
     Spacer(Modifier.height(6.dp))
@@ -859,11 +876,11 @@ private fun EntradaHeaderRow() {
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text("CANAL", modifier = Modifier.width(60.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
-        Text("FREQ", modifier = Modifier.width(90.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
-        Text("Medido (dBmV)", modifier = Modifier.width(88.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
+        Text("CANAL", modifier = Modifier.width(60.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, color = ampTextSecondary)
+        Text("FREQ", modifier = Modifier.width(90.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, color = ampTextSecondary)
+        Text("Medido (dBmV)", modifier = Modifier.width(88.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, color = ampTextSecondary)
         Spacer(Modifier.width(8.dp))
-        Text("Plano (dBmV)", modifier = Modifier.width(88.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
+        Text("Plano (dBmV)", modifier = Modifier.width(88.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, color = ampTextSecondary)
     }
     Spacer(Modifier.height(6.dp))
 }
@@ -871,13 +888,13 @@ private fun EntradaHeaderRow() {
 @Composable
 private fun SalidaHeaderRow() {
     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text("CANAL", modifier = Modifier.width(54.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
-        Text("FREQ", modifier = Modifier.width(78.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
-        Text("CALC", modifier = Modifier.width(54.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.End)
+        Text("CANAL", modifier = Modifier.width(54.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, color = ampTextSecondary)
+        Text("FREQ", modifier = Modifier.width(78.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, color = ampTextSecondary)
+        Text("CALC", modifier = Modifier.width(54.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.End, color = ampTextSecondary)
         Spacer(Modifier.width(6.dp))
-        Text("medido", modifier = Modifier.width(70.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
+        Text("medido", modifier = Modifier.width(70.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, color = ampTextSecondary)
         Spacer(Modifier.width(8.dp))
-        Text("DIF", modifier = Modifier.width(44.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.End)
+        Text("DIF", modifier = Modifier.width(44.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.End, color = ampTextSecondary)
     }
     Spacer(Modifier.height(6.dp))
 }
