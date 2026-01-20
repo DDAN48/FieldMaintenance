@@ -1537,7 +1537,7 @@ private fun FullScreenAdjustmentDialog(
                             .weight(1f)
                             .verticalScroll(rememberScrollState())
                             .padding(horizontal = 16.dp, vertical = 16.dp)
-                            .padding(bottom = 76.dp),
+                            .padding(bottom = 200.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         content()
