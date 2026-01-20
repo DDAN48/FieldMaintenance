@@ -323,10 +323,11 @@ private fun DownstreamLevelsChart(
                 val leftPadding = 28.dp.toPx()
                 val rightPadding = 8.dp.toPx()
                 val topPadding = 6.dp.toPx()
-                val bottomPadding = 10.dp.toPx()
+                val bottomPadding = 26.dp.toPx()
                 val plotWidth = size.width - leftPadding - rightPadding
                 val plotHeight = size.height - topPadding - bottomPadding
                 val baselineY = topPadding + plotHeight
+                val xLabelY = size.height - 4.dp.toPx()
 
                 fun xFor(freq: Double): Float {
                     val normalized = ((freq - minFreq) / freqRange).toFloat()
@@ -377,7 +378,7 @@ private fun DownstreamLevelsChart(
                     drawContext.canvas.nativeCanvas.drawText(
                         String.format(Locale.getDefault(), "%.0f", freq),
                         x,
-                        baselineY + 14.dp.toPx(),
+                        xLabelY,
                         xLabelPaint
                     )
                 }
@@ -2863,11 +2864,18 @@ private fun AssetFileSection(
                                         val frequency = row.frequencyMHz
                                         val level = row.levelDbmv
                                         if (frequency != null && level != null) {
+                                            val isRowValid = listOf(
+                                                row.levelOk,
+                                                row.merOk,
+                                                row.berPreOk,
+                                                row.berPostOk,
+                                                row.icfrOk
+                                            ).all { it != false }
                                             add(
                                                 DownstreamChartPoint(
                                                     frequencyMHz = frequency,
                                                     levelDbmv = level,
-                                                    isValid = row.levelOk != false
+                                                    isValid = isRowValid
                                                 )
                                             )
                                         }
@@ -2895,6 +2903,7 @@ private fun AssetFileSection(
                                     fontSize = 11.sp,
                                     modifier = Modifier.align(Alignment.CenterHorizontally)
                                 )
+                                Spacer(Modifier.height(8.dp))
                                 MeasurementTableCard(
                                     title = "Downstream Analogic Channels",
                                     headers = listOf("Canal", "Freq (MHz)", "M1", "M2")
