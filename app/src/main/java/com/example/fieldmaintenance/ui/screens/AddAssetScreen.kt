@@ -2401,7 +2401,6 @@ private fun AssetFileSection(
                                             }
                                         }
                                         HorizontalDivider(color = strokeColor, thickness = 1.dp)
-                                        content()
                                     }
                                 }
                             }
@@ -2452,13 +2451,6 @@ private fun AssetFileSection(
                                             errorColor = errorColor,
                                             strokeColor = strokeColor
                                         )
-                                        IconButton(onClick = { onDelete(tab.entry) }) {
-                                            Icon(
-                                                imageVector = Icons.Default.Delete,
-                                                contentDescription = "Eliminar medición",
-                                                tint = tableTextSecondary
-                                            )
-                                        }
                                     }
                                 }
                             }
