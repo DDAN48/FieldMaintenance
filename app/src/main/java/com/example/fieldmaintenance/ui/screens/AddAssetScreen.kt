@@ -1536,11 +1536,15 @@ private fun FullScreenAdjustmentDialog(
                 ) {
                     content()
                 }
-                Box(
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.surface)
+                        .navigationBarsPadding()
                         .padding(16.dp)
                 ) {
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+                    Spacer(Modifier.height(12.dp))
                     Button(
                         onClick = onComplete,
                         modifier = Modifier.fillMaxWidth()
