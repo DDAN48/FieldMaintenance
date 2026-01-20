@@ -42,6 +42,7 @@ import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.SpanStyle
@@ -148,51 +149,81 @@ private fun UpstreamLevelsChart(
     val minLevel = data.minOf { it.levelDbmv }
     val maxLevel = data.maxOf { it.levelDbmv }
     val range = (maxLevel - minLevel).coerceAtLeast(1.0)
-    Column(modifier = modifier) {
+    Row(modifier = modifier) {
         Text(
-            text = "Niveles canal ascendente",
+            text = "dBmV",
             color = textColor,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.padding(bottom = 6.dp)
-        )
-        Canvas(
+            fontSize = 11.sp,
             modifier = Modifier
-                .fillMaxWidth()
-                .height(96.dp)
-        ) {
-            val leftPadding = 8.dp.toPx()
-            val rightPadding = 8.dp.toPx()
-            val topPadding = 6.dp.toPx()
-            val bottomPadding = 8.dp.toPx()
-            val plotWidth = size.width - leftPadding - rightPadding
-            val plotHeight = size.height - topPadding - bottomPadding
-            val baselineY = topPadding + plotHeight
+                .align(Alignment.CenterVertically)
+                .rotate(-90f)
+        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "Niveles canal ascendente",
+                color = textColor,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(bottom = 6.dp)
+            )
+            Canvas(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(96.dp)
+            ) {
+                val leftPadding = 8.dp.toPx()
+                val rightPadding = 8.dp.toPx()
+                val topPadding = 6.dp.toPx()
+                val bottomPadding = 8.dp.toPx()
+                val plotWidth = size.width - leftPadding - rightPadding
+                val plotHeight = size.height - topPadding - bottomPadding
+                val baselineY = topPadding + plotHeight
 
-            val gridSteps = 3
-            repeat(gridSteps + 1) { index ->
-                val y = topPadding + plotHeight * (index / gridSteps.toFloat())
+                val gridSteps = 3
+                repeat(gridSteps + 1) { index ->
+                    val y = topPadding + plotHeight * (index / gridSteps.toFloat())
+                    drawLine(
+                        color = gridColor,
+                        start = Offset(leftPadding, y),
+                        end = Offset(leftPadding + plotWidth, y),
+                        strokeWidth = 1.dp.toPx()
+                    )
+                }
                 drawLine(
                     color = gridColor,
-                    start = Offset(leftPadding, y),
-                    end = Offset(leftPadding + plotWidth, y),
+                    start = Offset(leftPadding, topPadding),
+                    end = Offset(leftPadding, baselineY),
                     strokeWidth = 1.dp.toPx()
                 )
-            }
-
-            val slotWidth = plotWidth / data.size
-            val barWidth = slotWidth * 0.6f
-            data.forEachIndexed { index, point ->
-                val normalized = ((point.levelDbmv - minLevel) / range).toFloat()
-                val barHeight = normalized * plotHeight
-                val barLeft = leftPadding + slotWidth * index + (slotWidth - barWidth) / 2f
-                val barTop = baselineY - barHeight
-                drawRect(
-                    color = if (point.isValid) barColor else errorColor,
-                    topLeft = Offset(barLeft, barTop),
-                    size = Size(barWidth, barHeight)
+                drawLine(
+                    color = gridColor,
+                    start = Offset(leftPadding, baselineY),
+                    end = Offset(leftPadding + plotWidth, baselineY),
+                    strokeWidth = 1.dp.toPx()
                 )
+
+                val slotWidth = plotWidth / data.size
+                val barWidth = slotWidth * 0.6f
+                data.forEachIndexed { index, point ->
+                    val normalized = ((point.levelDbmv - minLevel) / range).toFloat()
+                    val barHeight = normalized * plotHeight
+                    val barLeft = leftPadding + slotWidth * index + (slotWidth - barWidth) / 2f
+                    val barTop = baselineY - barHeight
+                    drawRect(
+                        color = if (point.isValid) barColor else errorColor,
+                        topLeft = Offset(barLeft, barTop),
+                        size = Size(barWidth, barHeight)
+                    )
+                }
             }
+            Text(
+                text = "MHz",
+                color = textColor,
+                fontSize = 11.sp,
+                modifier = Modifier
+                    .align(Alignment.CenterHorizontally)
+                    .padding(top = 4.dp)
+            )
         }
     }
 }
