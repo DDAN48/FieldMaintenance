@@ -71,11 +71,14 @@ import android.graphics.Paint
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
@@ -125,6 +128,74 @@ import java.net.URLConnection
 import java.util.UUID
 
 private val anomalyColor = Color(0xFFE57373)
+
+private data class UpstreamChartPoint(
+    val frequencyMHz: Double,
+    val levelDbmv: Double,
+    val isValid: Boolean
+)
+
+@Composable
+private fun UpstreamLevelsChart(
+    data: List<UpstreamChartPoint>,
+    barColor: Color,
+    errorColor: Color,
+    textColor: Color,
+    gridColor: Color,
+    modifier: Modifier = Modifier
+) {
+    if (data.isEmpty()) return
+    val minLevel = data.minOf { it.levelDbmv }
+    val maxLevel = data.maxOf { it.levelDbmv }
+    val range = (maxLevel - minLevel).coerceAtLeast(1.0)
+    Column(modifier = modifier) {
+        Text(
+            text = "Niveles canal ascendente",
+            color = textColor,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(bottom = 6.dp)
+        )
+        Canvas(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(96.dp)
+        ) {
+            val leftPadding = 8.dp.toPx()
+            val rightPadding = 8.dp.toPx()
+            val topPadding = 6.dp.toPx()
+            val bottomPadding = 8.dp.toPx()
+            val plotWidth = size.width - leftPadding - rightPadding
+            val plotHeight = size.height - topPadding - bottomPadding
+            val baselineY = topPadding + plotHeight
+
+            val gridSteps = 3
+            repeat(gridSteps + 1) { index ->
+                val y = topPadding + plotHeight * (index / gridSteps.toFloat())
+                drawLine(
+                    color = gridColor,
+                    start = Offset(leftPadding, y),
+                    end = Offset(leftPadding + plotWidth, y),
+                    strokeWidth = 1.dp.toPx()
+                )
+            }
+
+            val slotWidth = plotWidth / data.size
+            val barWidth = slotWidth * 0.6f
+            data.forEachIndexed { index, point ->
+                val normalized = ((point.levelDbmv - minLevel) / range).toFloat()
+                val barHeight = normalized * plotHeight
+                val barLeft = leftPadding + slotWidth * index + (slotWidth - barWidth) / 2f
+                val barTop = baselineY - barHeight
+                drawRect(
+                    color = if (point.isValid) barColor else errorColor,
+                    topLeft = Offset(barLeft, barTop),
+                    size = Size(barWidth, barHeight)
+                )
+            }
+        }
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -2442,6 +2513,24 @@ private fun AssetFileSection(
                                 },
                                 onDelete = onRequestDelete
                             ) { entry ->
+                                val chartData = entry.docsisLevels.keys.sorted().mapNotNull { freq ->
+                                    val level = entry.docsisLevels[freq] ?: return@mapNotNull null
+                                    val frequency = entry.docsisMeta[freq]?.frequencyMHz ?: freq
+                                    val isValid = entry.docsisLevelOk[freq] != false
+                                    UpstreamChartPoint(
+                                        frequencyMHz = frequency,
+                                        levelDbmv = level,
+                                        isValid = isValid
+                                    )
+                                }
+                                UpstreamLevelsChart(
+                                    data = chartData,
+                                    barColor = accentColor,
+                                    errorColor = errorColor,
+                                    textColor = tableTextPrimary,
+                                    gridColor = strokeColor,
+                                    modifier = Modifier.padding(bottom = 10.dp)
+                                )
                                 val rows = entry.docsisLevels.keys.sorted().map { freq ->
                                     val channel = entry.docsisMeta[freq]?.channel?.toString() ?: "—"
                                     val frequency = entry.docsisMeta[freq]?.frequencyMHz ?: freq
@@ -2457,8 +2546,7 @@ private fun AssetFileSection(
                                 }
                                 MeasurementTableCard(
                                     title = "Upstream Channels",
-                                    headers = listOf("UCD", "Frecuencia (MHz)", "Nivel (dBmV)", "ICFR (dB)")
-                                    ,
+                                    headers = listOf("UCD", "Frecuencia (MHz)", "Nivel (dBmV)", "ICFR (dB)"),
                                     strokeColor = strokeColor,
                                     textPrimary = tableTextPrimary,
                                     textSecondary = tableTextSecondary
