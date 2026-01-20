@@ -42,8 +42,13 @@ import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.Dialog
@@ -68,13 +73,17 @@ import android.graphics.Paint
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
 import androidx.core.content.ContextCompat
-import androidx.core.content.FileProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import coil.compose.rememberAsyncImagePainter
@@ -91,7 +100,6 @@ import com.example.fieldmaintenance.ui.viewmodel.ReportViewModelFactory
 import com.example.fieldmaintenance.util.DatabaseProvider
 import com.example.fieldmaintenance.util.ImageStore
 import com.example.fieldmaintenance.util.PhotoManager
-import com.example.fieldmaintenance.util.SettingsStore
 import com.example.fieldmaintenance.util.AppSettings
 import com.example.fieldmaintenance.util.MaintenanceStorage
 import com.example.fieldmaintenance.util.PlanCache
@@ -122,6 +130,131 @@ import kotlinx.coroutines.launch
 import java.io.File
 import java.net.URLConnection
 import java.util.UUID
+
+private val anomalyColor = Color(0xFFE57373)
+
+private data class UpstreamChartPoint(
+    val frequencyMHz: Double,
+    val levelDbmv: Double,
+    val isValid: Boolean
+)
+
+@Composable
+private fun UpstreamLevelsChart(
+    data: List<UpstreamChartPoint>,
+    barColor: Color,
+    errorColor: Color,
+    textColor: Color,
+    gridColor: Color,
+    modifier: Modifier = Modifier
+) {
+    if (data.isEmpty()) return
+    val minLevel = data.minOf { it.levelDbmv }
+    val maxLevel = data.maxOf { it.levelDbmv }
+    val range = (maxLevel - minLevel).coerceAtLeast(1.0)
+    val tickPadding = range * 0.1
+    val chartMin = minLevel - tickPadding
+    val chartMax = maxLevel + tickPadding
+    val chartRange = (chartMax - chartMin).coerceAtLeast(1.0)
+    val labelColor = textColor.toArgb()
+    Row(modifier = modifier) {
+        Text(
+            text = "dBmV",
+            color = textColor,
+            fontSize = 11.sp,
+            modifier = Modifier
+                .align(Alignment.CenterVertically)
+                .rotate(-90f)
+        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "Upstream Channels Chart",
+                color = textColor,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(bottom = 6.dp)
+            )
+            Canvas(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(96.dp)
+                    .clipToBounds()
+            ) {
+                val leftPadding = 28.dp.toPx()
+                val rightPadding = 8.dp.toPx()
+                val topPadding = 6.dp.toPx()
+                val bottomPadding = 26.dp.toPx()
+                val plotWidth = size.width - leftPadding - rightPadding
+                val plotHeight = size.height - topPadding - bottomPadding
+                val baselineY = topPadding + plotHeight
+                val xLabelY = size.height - 4.dp.toPx()
+
+                val gridSteps = 3
+                val yLabelPaint = Paint().apply {
+                    color = labelColor
+                    textAlign = Paint.Align.RIGHT
+                    textSize = 10.sp.toPx()
+                    isAntiAlias = true
+                }
+                val xLabelPaint = Paint().apply {
+                    color = labelColor
+                    textAlign = Paint.Align.CENTER
+                    textSize = 10.sp.toPx()
+                    isAntiAlias = true
+                }
+                repeat(gridSteps + 1) { index ->
+                    val y = topPadding + plotHeight * (index / gridSteps.toFloat())
+                    drawLine(
+                        color = gridColor,
+                        start = Offset(leftPadding, y),
+                        end = Offset(leftPadding + plotWidth, y),
+                        strokeWidth = 1.dp.toPx()
+                    )
+                    val labelValue = chartMax - (chartRange * index / gridSteps.toDouble())
+                    drawContext.canvas.nativeCanvas.drawText(
+                        String.format(Locale.getDefault(), "%.1f", labelValue),
+                        leftPadding - 6.dp.toPx(),
+                        y + 3.dp.toPx(),
+                        yLabelPaint
+                    )
+                }
+                drawLine(
+                    color = gridColor,
+                    start = Offset(leftPadding, topPadding),
+                    end = Offset(leftPadding, baselineY),
+                    strokeWidth = 1.dp.toPx()
+                )
+                drawLine(
+                    color = gridColor,
+                    start = Offset(leftPadding, baselineY),
+                    end = Offset(leftPadding + plotWidth, baselineY),
+                    strokeWidth = 1.dp.toPx()
+                )
+
+                val slotWidth = plotWidth / data.size
+                val barWidth = slotWidth * 0.4f
+                data.forEachIndexed { index, point ->
+                    val normalized = ((point.levelDbmv - chartMin) / chartRange).toFloat()
+                    val barHeight = normalized * plotHeight
+                    val barLeft = leftPadding + slotWidth * index + (slotWidth - barWidth) / 2f
+                    val barTop = baselineY - barHeight
+                    val labelX = barLeft + barWidth / 2f
+                    drawRect(
+                        color = if (point.isValid) barColor else errorColor,
+                        topLeft = Offset(barLeft, barTop),
+                        size = Size(barWidth, barHeight)
+                    )
+                    drawContext.canvas.nativeCanvas.drawText(
+                        String.format(Locale.getDefault(), "%.1f", point.frequencyMHz),
+                        labelX,
+                        xLabelY,
+                        xLabelPaint
+                    )
+                }
+            }
+        }
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -1280,18 +1413,20 @@ private fun MeasurementTableRow(
     textPrimary: Color,
     errorColor: Color,
     strokeColor: Color
-) {
+    ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 8.dp)
     ) {
         cells.forEachIndexed { index, cell ->
-            val cellColor = if (invalidCells.contains(index)) errorColor else textPrimary
+            val isInvalid = invalidCells.contains(index)
+            val cellColor = if (isInvalid) errorColor else textPrimary
             Text(
                 text = cell,
                 color = cellColor,
                 fontSize = 12.sp,
+                fontWeight = if (isInvalid) FontWeight.Bold else FontWeight.Normal,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f)
@@ -2121,7 +2256,7 @@ private fun AssetFileSection(
                         imageVector = Icons.Default.RemoveRedEye,
                         contentDescription = "Observaciones",
                         tint = if (observationSummary.third > 0) {
-                            MaterialTheme.colorScheme.error
+                            anomalyColor
                         } else {
                             MaterialTheme.colorScheme.primary
                         }
@@ -2261,7 +2396,7 @@ private fun AssetFileSection(
                         val cardColor = Color(0xFF141823)
                         val strokeColor = Color(0xFF2A3142)
                         val accentColor = Color(0xFF1E88E5)
-                        val errorColor = Color(0xFFD32F2F)
+                        val errorColor = anomalyColor
                         val tableTextPrimary = Color(0xFFE7EAF0)
                         val tableTextSecondary = Color(0xFFB0B7C3)
 
@@ -2436,34 +2571,68 @@ private fun AssetFileSection(
                                 },
                                 onDelete = onRequestDelete
                             ) { entry ->
-                                val rows = entry.docsisLevels.keys.sorted().map { freq ->
-                                    val channel = entry.docsisMeta[freq]?.channel?.toString() ?: "—"
-                                    val frequency = entry.docsisMeta[freq]?.frequencyMHz ?: freq
-                                    val level = formatDbmv(entry.docsisLevels[freq])
-                                    val invalidCells = if (entry.docsisLevelOk[freq] == false) setOf(2) else emptySet()
-                                    listOf(
-                                        channel,
-                                        formatMHz(frequency),
-                                        level,
-                                        "—"
-                                    ) to invalidCells
-                                }
-                                MeasurementTableCard(
-                                    title = "Upstream Channels",
-                                    headers = listOf("UCD", "Frecuencia (MHz)", "Nivel (dBmV)", "ICFR (dB)")
-                                    ,
-                                    strokeColor = strokeColor,
-                                    textPrimary = tableTextPrimary,
-                                    textSecondary = tableTextSecondary
-                                ) {
-                                    rows.forEach { (cells, invalid) ->
-                                        MeasurementTableRow(
-                                            cells = cells,
-                                            invalidCells = invalid,
-                                            textPrimary = tableTextPrimary,
-                                            errorColor = errorColor,
-                                            strokeColor = strokeColor
+                                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    val chartData = entry.docsisLevels.keys.sorted().mapNotNull { freq ->
+                                        val level = entry.docsisLevels[freq] ?: return@mapNotNull null
+                                        val frequency = entry.docsisMeta[freq]?.frequencyMHz ?: freq
+                                        val isValid = entry.docsisLevelOk[freq] != false
+                                        UpstreamChartPoint(
+                                            frequencyMHz = frequency,
+                                            levelDbmv = level,
+                                            isValid = isValid
                                         )
+                                    }
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(140.dp)
+                                            .clipToBounds()
+                                    ) {
+                                        UpstreamLevelsChart(
+                                            data = chartData,
+                                            barColor = accentColor,
+                                            errorColor = anomalyColor,
+                                            textColor = tableTextPrimary,
+                                            gridColor = strokeColor,
+                                            modifier = Modifier.fillMaxSize()
+                                        )
+                                    }
+                                    Text(
+                                        text = "MHz",
+                                        color = tableTextSecondary,
+                                        fontSize = 11.sp,
+                                        modifier = Modifier.align(Alignment.CenterHorizontally)
+                                    )
+                                    Spacer(Modifier.height(12.dp))
+                                    val rows = entry.docsisLevels.keys.sorted().map { freq ->
+                                        val channel = entry.docsisMeta[freq]?.channel?.toString() ?: "—"
+                                        val frequency = entry.docsisMeta[freq]?.frequencyMHz ?: freq
+                                        val level = formatDbmv(entry.docsisLevels[freq])
+                                        val icfr = formatDbmv(entry.docsisIcfr[freq])
+                                        val invalidCells = if (entry.docsisLevelOk[freq] == false) setOf(2) else emptySet()
+                                        listOf(
+                                            channel,
+                                            formatMHz(frequency),
+                                            level,
+                                            icfr
+                                        ) to invalidCells
+                                    }
+                                    MeasurementTableCard(
+                                        title = "Upstream Channels",
+                                        headers = listOf("UCD", "Frecuencia (MHz)", "Nivel (dBmV)", "ICFR (dB)"),
+                                        strokeColor = strokeColor,
+                                        textPrimary = tableTextPrimary,
+                                        textSecondary = tableTextSecondary
+                                    ) {
+                                        rows.forEach { (cells, invalid) ->
+                                            MeasurementTableRow(
+                                                cells = cells,
+                                                invalidCells = invalid,
+                                                textPrimary = tableTextPrimary,
+                                                errorColor = errorColor,
+                                                strokeColor = strokeColor
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -2732,7 +2901,18 @@ private fun AssetFileSection(
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     duplicateNotice.forEach { name ->
                         Text(
-                            "No se agregó la medición $name por estar duplicada.",
+                            buildAnnotatedString {
+                                append("No se agregó la medición ")
+                                withStyle(
+                                    SpanStyle(
+                                        color = anomalyColor,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                ) {
+                                    append(name)
+                                }
+                                append(" por estar duplicada.")
+                            },
                             style = MaterialTheme.typography.bodySmall
                         )
                     }
@@ -2779,6 +2959,8 @@ private fun AssetFileSection(
                             Text(
                                 name,
                                 style = MaterialTheme.typography.bodySmall,
+                                color = anomalyColor,
+                                fontWeight = FontWeight.Bold,
                                 modifier = Modifier.weight(1f)
                             )
                         }
