@@ -1302,101 +1302,6 @@ private fun MeasurementTableRow(
 }
 
 @Composable
-private fun AdjustmentSummaryCard(
-    title: String,
-    status: String,
-    actionLabel: String,
-    isComplete: Boolean,
-    supportingText: String? = null,
-    actionEnabled: Boolean = true,
-    onAction: () -> Unit
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.15f)),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-    ) {
-        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(title, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                Icon(
-                    imageVector = if (isComplete) Icons.Default.CheckCircle else Icons.Default.Warning,
-                    contentDescription = null,
-                    tint = if (isComplete) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                )
-            }
-            Text(
-                status,
-                style = MaterialTheme.typography.bodySmall,
-                color = if (isComplete) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f)
-            )
-            if (!supportingText.isNullOrBlank()) {
-                Text(
-                    supportingText,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f)
-                )
-            }
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                Button(onClick = onAction, enabled = actionEnabled) {
-                    Text(actionLabel)
-                }
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun FullScreenAdjustmentDialog(
-    title: String,
-    onDismiss: () -> Unit,
-    onComplete: () -> Unit,
-    content: @Composable () -> Unit
-) {
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
-    ) {
-        Surface(modifier = Modifier.fillMaxSize()) {
-            Column(modifier = Modifier.fillMaxSize()) {
-                TopAppBar(
-                    title = { Text(title) },
-                    navigationIcon = {
-                        IconButton(onClick = onDismiss) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "Volver"
-                            )
-                        }
-                    },
-                    actions = {
-                        TextButton(onClick = onComplete) {
-                            Text("Completar")
-                        }
-                        IconButton(onClick = onDismiss) {
-                            Icon(
-                                imageVector = Icons.Default.Close,
-                                contentDescription = "Cerrar"
-                            )
-                        }
-                    }
-                )
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .verticalScroll(rememberScrollState())
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    content()
-                }
-            }
-        }
-    }
-}
-
-@Composable
 fun PhotoSection(
     title: String,
     reportId: String,
@@ -2394,9 +2299,7 @@ private fun AssetFileSection(
                         ) {
                             val bg = if (isSelected) accentColor else Color.Transparent
                             val borderColor = if (hasError) errorColor else strokeColor
-                            val textColor = Color.White
-                            val indicatorColor = if (hasError) Color(0xFFE74C3C) else Color(0xFF7AC943)
-                            val indicatorIcon = if (hasError) Icons.Default.Close else Icons.Default.Check
+                            val textColor = if (hasError) errorColor else if (isSelected) Color.White else tableTextPrimary
                             Box(
                                 modifier = Modifier
                                     .weight(1f)
@@ -2407,26 +2310,7 @@ private fun AssetFileSection(
                                     .clickable { onClick() },
                                 contentAlignment = Alignment.Center
                             ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(18.dp)
-                                            .clip(RoundedCornerShape(9.dp))
-                                            .background(indicatorColor),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Icon(
-                                            imageVector = indicatorIcon,
-                                            contentDescription = null,
-                                            tint = Color.White,
-                                            modifier = Modifier.size(12.dp)
-                                        )
-                                    }
-                                    Text(text = label, color = textColor, fontSize = 13.sp)
-                                }
+                                Text(text = label, color = textColor, fontSize = 13.sp)
                             }
                         }
 
@@ -2502,24 +2386,6 @@ private fun AssetFileSection(
                                                 imageVector = Icons.Default.Delete,
                                                 contentDescription = "Eliminar medición",
                                                 tint = tableTextSecondary
-                                            )
-                                        }
-                                    }
-                                    Text(text = label, color = textColor, fontSize = 13.sp)
-                                }
-                                if (expanded) {
-                                    Spacer(Modifier.height(8.dp))
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(vertical = 6.dp)
-                                    ) {
-                                        headers.forEach { header ->
-                                            Text(
-                                                text = header,
-                                                color = tableTextSecondary,
-                                                fontSize = 11.sp,
-                                                modifier = Modifier.weight(1f)
                                             )
                                         }
                                     }
