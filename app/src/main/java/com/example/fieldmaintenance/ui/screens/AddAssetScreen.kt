@@ -1549,7 +1549,7 @@ private fun FullScreenAdjustmentDialog(
                         .fillMaxWidth()
                         .background(MaterialTheme.colorScheme.surface)
                         .navigationBarsPadding()
-                        .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 56.dp)
+                        .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 112.dp)
                 ) {
                     HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
                     Spacer(Modifier.height(12.dp))
