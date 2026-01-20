@@ -1507,7 +1507,7 @@ private fun FullScreenAdjustmentDialog(
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
         Surface(modifier = Modifier.fillMaxSize()) {
-            Column(modifier = Modifier.fillMaxSize()) {
+            Box(modifier = Modifier.fillMaxSize()) {
                 TopAppBar(
                     title = { Text(title) },
                     navigationIcon = {
@@ -1529,12 +1529,28 @@ private fun FullScreenAdjustmentDialog(
                 )
                 Column(
                     modifier = Modifier
-                        .weight(1f)
-                        .verticalScroll(rememberScrollState())
-                        .padding(horizontal = 16.dp, vertical = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                        .fillMaxSize()
+                        .padding(top = 56.dp)
                 ) {
-                    content()
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .verticalScroll(rememberScrollState())
+                            .padding(horizontal = 16.dp, vertical = 16.dp)
+                            .padding(bottom = 76.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        content()
+                    }
+                }
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.surface)
+                        .navigationBarsPadding()
+                        .padding(16.dp)
+                ) {
                     HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
                     Spacer(Modifier.height(12.dp))
                     Button(
