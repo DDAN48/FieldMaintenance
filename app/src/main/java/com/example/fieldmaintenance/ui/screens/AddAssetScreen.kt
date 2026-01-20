@@ -2446,12 +2446,13 @@ private fun AssetFileSection(
                                     val channel = entry.docsisMeta[freq]?.channel?.toString() ?: "—"
                                     val frequency = entry.docsisMeta[freq]?.frequencyMHz ?: freq
                                     val level = formatDbmv(entry.docsisLevels[freq])
+                                    val icfr = formatDbmv(entry.docsisIcfr[freq])
                                     val invalidCells = if (entry.docsisLevelOk[freq] == false) setOf(2) else emptySet()
                                     listOf(
                                         channel,
                                         formatMHz(frequency),
                                         level,
-                                        "—"
+                                        icfr
                                     ) to invalidCells
                                 }
                                 MeasurementTableCard(
