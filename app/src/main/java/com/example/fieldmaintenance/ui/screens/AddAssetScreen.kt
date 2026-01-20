@@ -2624,15 +2624,24 @@ private fun AssetFileSection(
                                             isValid = isValid
                                         )
                                     }
-                                    UpstreamLevelsChart(
-                                        data = chartData,
-                                        barColor = accentColor,
-                                        errorColor = errorColor,
-                                        textColor = tableTextPrimary,
-                                        gridColor = strokeColor,
-                                        modifier = Modifier.padding(bottom = 10.dp)
-                                    )
-                                    Spacer(Modifier.height(6.dp))
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(140.dp)
+                                            .clipToBounds()
+                                            .padding(bottom = 10.dp)
+                                    ) {
+                                        UpstreamLevelsChart(
+                                            data = chartData,
+                                            barColor = accentColor,
+                                            errorColor = errorColor,
+                                            textColor = tableTextPrimary,
+                                            gridColor = strokeColor,
+                                            modifier = Modifier.fillMaxSize()
+                                        )
+                                    }
+                                    Spacer(Modifier.height(8.dp))
+                                    HorizontalDivider(color = strokeColor, thickness = 1.dp)
                                     rows.forEach { (cells, invalid) ->
                                         MeasurementTableRow(
                                             cells = cells,
