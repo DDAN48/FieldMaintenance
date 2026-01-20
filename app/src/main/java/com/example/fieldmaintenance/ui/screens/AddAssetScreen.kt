@@ -396,7 +396,8 @@ private fun DownstreamLevelsChart(
                     strokeWidth = 1.dp.toPx()
                 )
 
-                points.forEach { point ->
+                val (validPoints, invalidPoints) = points.partition { it.isValid }
+                (validPoints + invalidPoints).forEach { point ->
                     val x = xFor(point.frequencyMHz)
                     val y = yFor(point.levelDbmv)
                     drawLine(
@@ -2906,7 +2907,7 @@ private fun AssetFileSection(
                                 Spacer(Modifier.height(8.dp))
                                 MeasurementTableCard(
                                     title = "Downstream Analogic Channels",
-                                    headers = listOf("Canal", "Freq (MHz)", "M1", "M2")
+                                    headers = listOf("Canal", "Freq (MHz)", "M1")
                                     ,
                                     strokeColor = strokeColor,
                                     textPrimary = tableTextPrimary,
@@ -2921,8 +2922,7 @@ private fun AssetFileSection(
                                             cells = listOf(
                                                 channel.toString(),
                                                 formatMHz(frequency),
-                                                formatDbmv(level),
-                                                "—"
+                                                formatDbmv(level)
                                             ),
                                             invalidCells = invalidCells,
                                             textPrimary = tableTextPrimary,
