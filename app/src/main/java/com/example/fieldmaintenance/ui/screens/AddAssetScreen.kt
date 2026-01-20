@@ -7,6 +7,7 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.combinedClickable
@@ -93,6 +94,8 @@ import com.example.fieldmaintenance.data.model.*
 import com.example.fieldmaintenance.data.model.label
 import com.example.fieldmaintenance.ui.components.AmplifierAdjustmentCard
 import com.example.fieldmaintenance.ui.components.NodeAdjustmentCard
+import com.example.fieldmaintenance.ui.theme.OutlookDarkSuccess
+import com.example.fieldmaintenance.ui.theme.OutlookLightSuccess
 import com.example.fieldmaintenance.ui.navigation.PendingMeasurementAssetIdKey
 import com.example.fieldmaintenance.ui.navigation.PendingMeasurementReportIdKey
 import com.example.fieldmaintenance.ui.navigation.PendingMeasurementAssetTypeKey
@@ -1569,6 +1572,8 @@ private fun FullScreenAdjustmentDialog(
 private fun MeasurementTableCard(
     title: String,
     headers: List<String>,
+    containerColor: Color,
+    headerBackground: Color,
     strokeColor: Color,
     textPrimary: Color,
     textSecondary: Color,
@@ -1579,6 +1584,7 @@ private fun MeasurementTableCard(
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
+            .background(containerColor)
             .border(1.dp, strokeColor, RoundedCornerShape(12.dp))
             .padding(10.dp)
     ) {
@@ -1602,7 +1608,8 @@ private fun MeasurementTableCard(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 6.dp)
+                    .background(headerBackground, RoundedCornerShape(8.dp))
+                    .padding(vertical = 6.dp, horizontal = 6.dp)
             ) {
                 headers.forEach { header ->
                     Text(
@@ -1842,7 +1849,7 @@ fun PhotoSection(
         colors = CardDefaults.outlinedCardColors(),
         border = androidx.compose.foundation.BorderStroke(
             1.dp,
-            if (isMissingRequired || isOverMax) MaterialTheme.colorScheme.error else androidx.compose.ui.graphics.Color.Black
+            if (isMissingRequired || isOverMax) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outline
         )
     ) {
         Column(
@@ -2606,12 +2613,17 @@ private fun AssetFileSection(
                     val docsisTableEntries = docsisListEntries.take(required.maxDocsisTable)
                     val channelTableEntries = channelListEntries.take(required.maxChannelTable)
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        val cardColor = Color(0xFF141823)
-                        val strokeColor = Color(0xFF2A3142)
-                        val accentColor = Color(0xFF1E88E5)
-                        val errorColor = anomalyColor
-                        val tableTextPrimary = Color(0xFFE7EAF0)
-                        val tableTextSecondary = Color(0xFFB0B7C3)
+                        val colorScheme = MaterialTheme.colorScheme
+                        val isDark = isSystemInDarkTheme()
+                        val cardColor = colorScheme.surface
+                        val strokeColor = colorScheme.outline
+                        val accentColor = colorScheme.primary
+                        val errorColor = colorScheme.error
+                        val tableTextPrimary = colorScheme.onSurface
+                        val tableTextSecondary = colorScheme.onSurfaceVariant
+                        val headerBackground = colorScheme.surfaceVariant
+                        val successColor = if (isDark) OutlookDarkSuccess else OutlookLightSuccess
+                        val chipUnselectedBg = if (isDark) colorScheme.surface else colorScheme.surfaceVariant
 
                         val docsisCountLabel = "${summary.result.docsisExpert}/${summary.expectedDocsis}"
                         val channelCountLabel = "${summary.result.channelExpert}/${summary.expectedChannel}"
@@ -2645,11 +2657,10 @@ private fun AssetFileSection(
                             hasError: Boolean,
                             onClick: () -> Unit
                         ) {
-                            val bg = if (isSelected) accentColor else Color.Transparent
+                            val bg = if (isSelected) accentColor else chipUnselectedBg
                             val borderColor = strokeColor
-                            val textColor = Color.White
                             val statusIcon = if (hasError) Icons.Default.Close else Icons.Default.Check
-                            val statusColor = if (hasError) Color(0xFFE57373) else Color(0xFF81C784)
+                            val statusColor = if (hasError) errorColor else successColor
                             Box(
                                 modifier = Modifier
                                     .weight(1f)
@@ -2670,7 +2681,11 @@ private fun AssetFileSection(
                                         tint = statusColor,
                                         modifier = Modifier.size(16.dp)
                                     )
-                                    Text(text = label, color = textColor, fontSize = 13.sp)
+                                    Text(
+                                        text = label,
+                                        color = if (isSelected) colorScheme.onPrimary else tableTextPrimary,
+                                        fontSize = 13.sp
+                                    )
                                 }
                             }
                         }
@@ -2804,7 +2819,7 @@ private fun AssetFileSection(
                                         UpstreamLevelsChart(
                                             data = chartData,
                                             barColor = accentColor,
-                                            errorColor = anomalyColor,
+                                            errorColor = errorColor,
                                             textColor = tableTextPrimary,
                                             gridColor = strokeColor,
                                             modifier = Modifier.fillMaxSize()
@@ -2833,6 +2848,8 @@ private fun AssetFileSection(
                                     MeasurementTableCard(
                                         title = "Upstream Channels",
                                         headers = listOf("UCD", "Frecuencia (MHz)", "Nivel (dBmV)", "ICFR (dB)"),
+                                        containerColor = cardColor,
+                                        headerBackground = headerBackground,
                                         strokeColor = strokeColor,
                                         textPrimary = tableTextPrimary,
                                         textSecondary = tableTextSecondary
@@ -2913,7 +2930,7 @@ private fun AssetFileSection(
                                         points = downstreamPoints,
                                         ofdmSeries = entry.ofdmSeries,
                                         barColor = accentColor,
-                                        errorColor = anomalyColor,
+                                        errorColor = errorColor,
                                         textColor = tableTextPrimary,
                                         gridColor = strokeColor,
                                         modifier = Modifier.fillMaxSize()
@@ -2930,6 +2947,8 @@ private fun AssetFileSection(
                                     title = "Downstream Analogic Channels",
                                     headers = listOf("Canal", "Freq (MHz)", "M1")
                                     ,
+                                    containerColor = cardColor,
+                                    headerBackground = headerBackground,
                                     strokeColor = strokeColor,
                                     textPrimary = tableTextPrimary,
                                     textSecondary = tableTextSecondary
@@ -2956,6 +2975,8 @@ private fun AssetFileSection(
                                     title = "Downstream Digital Channels",
                                     headers = listOf("Canal", "Freq (MHz)", "Nivel (dBmV)", "MER", "BER pre", "BER post", "ICFR")
                                     ,
+                                    containerColor = cardColor,
+                                    headerBackground = headerBackground,
                                     strokeColor = strokeColor,
                                     textPrimary = tableTextPrimary,
                                     textSecondary = tableTextSecondary
