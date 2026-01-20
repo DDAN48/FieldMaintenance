@@ -326,6 +326,7 @@ fun AddAssetScreen(
     var showNodeAdjustmentDialog by rememberSaveable { mutableStateOf(false) }
     var showAmplifierAdjustmentDialog by rememberSaveable { mutableStateOf(false) }
     var measurementsComplete by remember { mutableStateOf(false) }
+    val anomalyColor = Color(0xFFE57373)
 
     // Amplifier adjustment (persisted per asset)
     val amplifierAdjustment by repository.getAmplifierAdjustment(workingAssetId)
@@ -2575,6 +2576,24 @@ private fun AssetFileSection(
                                 },
                                 onDelete = onRequestDelete
                             ) { entry ->
+                                val chartData = entry.docsisLevels.keys.sorted().mapNotNull { freq ->
+                                    val level = entry.docsisLevels[freq] ?: return@mapNotNull null
+                                    val frequency = entry.docsisMeta[freq]?.frequencyMHz ?: freq
+                                    val isValid = entry.docsisLevelOk[freq] != false
+                                    UpstreamChartPoint(
+                                        frequencyMHz = frequency,
+                                        levelDbmv = level,
+                                        isValid = isValid
+                                    )
+                                }
+                                UpstreamLevelsChart(
+                                    data = chartData,
+                                    barColor = accentColor,
+                                    errorColor = errorColor,
+                                    textColor = tableTextPrimary,
+                                    gridColor = strokeColor,
+                                    modifier = Modifier.padding(bottom = 10.dp)
+                                )
                                 val rows = entry.docsisLevels.keys.sorted().map { freq ->
                                     val channel = entry.docsisMeta[freq]?.channel?.toString() ?: "—"
                                     val frequency = entry.docsisMeta[freq]?.frequencyMHz ?: freq
