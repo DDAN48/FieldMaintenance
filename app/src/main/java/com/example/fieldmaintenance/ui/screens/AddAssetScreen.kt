@@ -22,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ExpandLess
@@ -2388,6 +2389,8 @@ private fun AssetFileSection(
                                             )
                                         }
                                     }
+                                    HorizontalDivider(color = strokeColor, thickness = 1.dp)
+                                    content()
                                 }
                             }
                         }
@@ -2437,6 +2440,13 @@ private fun AssetFileSection(
                                             errorColor = errorColor,
                                             strokeColor = strokeColor
                                         )
+                                        IconButton(onClick = { onDelete(tab.entry) }) {
+                                            Icon(
+                                                imageVector = Icons.Default.Delete,
+                                                contentDescription = "Eliminar medición",
+                                                tint = tableTextSecondary
+                                            )
+                                        }
                                     }
                                 }
                             }
