@@ -252,14 +252,6 @@ private fun UpstreamLevelsChart(
                     )
                 }
             }
-            Text(
-                text = "MHz",
-                color = textColor,
-                fontSize = 11.sp,
-                modifier = Modifier
-                    .align(Alignment.CenterHorizontally)
-                    .padding(top = 4.dp)
-            )
         }
     }
 }
@@ -2606,6 +2598,12 @@ private fun AssetFileSection(
                                             modifier = Modifier.fillMaxSize()
                                         )
                                     }
+                                    Text(
+                                        text = "MHz",
+                                        color = tableTextSecondary,
+                                        fontSize = 11.sp,
+                                        modifier = Modifier.align(Alignment.CenterHorizontally)
+                                    )
                                     Spacer(Modifier.height(12.dp))
                                     val rows = entry.docsisLevels.keys.sorted().map { freq ->
                                         val channel = entry.docsisMeta[freq]?.channel?.toString() ?: "—"
