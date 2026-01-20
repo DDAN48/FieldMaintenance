@@ -1519,9 +1519,6 @@ private fun FullScreenAdjustmentDialog(
                         }
                     },
                     actions = {
-                        TextButton(onClick = onComplete) {
-                            Text("Completar")
-                        }
                         IconButton(onClick = onDismiss) {
                             Icon(
                                 imageVector = Icons.Default.Close,
@@ -1534,10 +1531,22 @@ private fun FullScreenAdjustmentDialog(
                     modifier = Modifier
                         .weight(1f)
                         .verticalScroll(rememberScrollState())
-                        .padding(16.dp),
+                        .padding(horizontal = 16.dp, vertical = 16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     content()
+                }
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                ) {
+                    Button(
+                        onClick = onComplete,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Completar")
+                    }
                 }
             }
         }
