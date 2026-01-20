@@ -83,6 +83,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.Stroke
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
@@ -134,6 +136,12 @@ import java.util.UUID
 private val anomalyColor = Color(0xFFE57373)
 
 private data class UpstreamChartPoint(
+    val frequencyMHz: Double,
+    val levelDbmv: Double,
+    val isValid: Boolean
+)
+
+private data class DownstreamChartPoint(
     val frequencyMHz: Double,
     val levelDbmv: Double,
     val isValid: Boolean
@@ -248,6 +256,187 @@ private fun UpstreamLevelsChart(
                         String.format(Locale.getDefault(), "%.1f", point.frequencyMHz),
                         labelX,
                         xLabelY,
+                        xLabelPaint
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DownstreamLevelsChart(
+    points: List<DownstreamChartPoint>,
+    ofdmSeries: com.example.fieldmaintenance.util.OfdmSeries?,
+    barColor: Color,
+    errorColor: Color,
+    textColor: Color,
+    gridColor: Color,
+    modifier: Modifier = Modifier
+) {
+    val ofdmPoints = ofdmSeries?.points?.filter { it.second > -100.0 }.orEmpty()
+    if (points.isEmpty() && ofdmPoints.isEmpty()) return
+    val levelCandidates = buildList {
+        addAll(points.map { it.levelDbmv })
+        addAll(ofdmPoints.map { it.second })
+    }
+    val minLevel = levelCandidates.minOrNull() ?: 0.0
+    val maxLevel = levelCandidates.maxOrNull() ?: minLevel + 1.0
+    val range = (maxLevel - minLevel).coerceAtLeast(1.0)
+    val tickPadding = range * 0.1
+    val chartMin = minLevel - tickPadding
+    val chartMax = maxLevel + tickPadding
+    val chartRange = (chartMax - chartMin).coerceAtLeast(1.0)
+
+    val freqCandidates = buildList {
+        addAll(points.map { it.frequencyMHz })
+        addAll(ofdmPoints.map { it.first })
+    }
+    val minFreq = freqCandidates.minOrNull() ?: 0.0
+    val maxFreq = freqCandidates.maxOrNull() ?: minFreq + 1.0
+    val freqRange = (maxFreq - minFreq).coerceAtLeast(1.0)
+    val labelColor = textColor.toArgb()
+
+    Row(modifier = modifier) {
+        Text(
+            text = "dBmV",
+            color = textColor,
+            fontSize = 11.sp,
+            modifier = Modifier
+                .align(Alignment.CenterVertically)
+                .rotate(-90f)
+        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "Downstream Channels Chart",
+                color = textColor,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(bottom = 6.dp)
+            )
+            Canvas(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(110.dp)
+                    .clipToBounds()
+            ) {
+                val leftPadding = 28.dp.toPx()
+                val rightPadding = 8.dp.toPx()
+                val topPadding = 6.dp.toPx()
+                val bottomPadding = 10.dp.toPx()
+                val plotWidth = size.width - leftPadding - rightPadding
+                val plotHeight = size.height - topPadding - bottomPadding
+                val baselineY = topPadding + plotHeight
+
+                fun xFor(freq: Double): Float {
+                    val normalized = ((freq - minFreq) / freqRange).toFloat()
+                    return leftPadding + normalized * plotWidth
+                }
+
+                fun yFor(level: Double): Float {
+                    val normalized = ((level - chartMin) / chartRange).toFloat()
+                    return baselineY - normalized * plotHeight
+                }
+
+                val gridSteps = 3
+                val yLabelPaint = Paint().apply {
+                    color = labelColor
+                    textAlign = Paint.Align.RIGHT
+                    textSize = 10.sp.toPx()
+                    isAntiAlias = true
+                }
+                val xLabelPaint = Paint().apply {
+                    color = labelColor
+                    textAlign = Paint.Align.CENTER
+                    textSize = 10.sp.toPx()
+                    isAntiAlias = true
+                }
+
+                repeat(gridSteps + 1) { index ->
+                    val y = topPadding + plotHeight * (index / gridSteps.toFloat())
+                    drawLine(
+                        color = gridColor,
+                        start = Offset(leftPadding, y),
+                        end = Offset(leftPadding + plotWidth, y),
+                        strokeWidth = 1.dp.toPx()
+                    )
+                    val labelValue = chartMax - (chartRange * index / gridSteps.toDouble())
+                    drawContext.canvas.nativeCanvas.drawText(
+                        String.format(Locale.getDefault(), "%.1f", labelValue),
+                        leftPadding - 6.dp.toPx(),
+                        y + 3.dp.toPx(),
+                        yLabelPaint
+                    )
+                }
+
+                val xTickCount = 5
+                repeat(xTickCount) { index ->
+                    val fraction = if (xTickCount == 1) 0.0 else index / (xTickCount - 1.0)
+                    val freq = minFreq + freqRange * fraction
+                    val x = xFor(freq)
+                    drawContext.canvas.nativeCanvas.drawText(
+                        String.format(Locale.getDefault(), "%.0f", freq),
+                        x,
+                        baselineY + 14.dp.toPx(),
+                        xLabelPaint
+                    )
+                }
+
+                drawLine(
+                    color = gridColor,
+                    start = Offset(leftPadding, topPadding),
+                    end = Offset(leftPadding, baselineY),
+                    strokeWidth = 1.dp.toPx()
+                )
+                drawLine(
+                    color = gridColor,
+                    start = Offset(leftPadding, baselineY),
+                    end = Offset(leftPadding + plotWidth, baselineY),
+                    strokeWidth = 1.dp.toPx()
+                )
+
+                points.forEach { point ->
+                    val x = xFor(point.frequencyMHz)
+                    val y = yFor(point.levelDbmv)
+                    drawLine(
+                        color = if (point.isValid) barColor else errorColor,
+                        start = Offset(x, baselineY),
+                        end = Offset(x, y),
+                        strokeWidth = 2.dp.toPx()
+                    )
+                }
+
+                if (ofdmPoints.size >= 2) {
+                    val path = Path()
+                    ofdmPoints.forEachIndexed { index, (freq, level) ->
+                        val x = xFor(freq)
+                        val y = yFor(level)
+                        if (index == 0) {
+                            path.moveTo(x, y)
+                        } else {
+                            path.lineTo(x, y)
+                        }
+                    }
+                    val firstX = xFor(ofdmPoints.first().first)
+                    val lastX = xFor(ofdmPoints.last().first)
+                    path.lineTo(lastX, baselineY)
+                    path.lineTo(firstX, baselineY)
+                    path.close()
+                    val ofdmStrokeColor = if (ofdmSeries?.isValid == true) barColor else errorColor
+                    drawPath(
+                        path = path,
+                        color = ofdmStrokeColor.copy(alpha = 0.18f)
+                    )
+                    drawPath(
+                        path = path,
+                        color = ofdmStrokeColor,
+                        style = Stroke(width = 1.5.dp.toPx())
+                    )
+                    val ofdmLabelX = (firstX + lastX) / 2f
+                    drawContext.canvas.nativeCanvas.drawText(
+                        "OFDM",
+                        ofdmLabelX,
+                        yFor(chartMax - chartRange * 0.35),
                         xLabelPaint
                     )
                 }
@@ -2657,6 +2846,55 @@ private fun AssetFileSection(
                             onDelete = onRequestDelete
                         ) { entry ->
                             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                val downstreamPoints = buildList {
+                                    entry.pilotLevels.forEach { (channel, level) ->
+                                        val frequency = entry.pilotMeta[channel]?.frequencyMHz
+                                        if (frequency != null) {
+                                            add(
+                                                DownstreamChartPoint(
+                                                    frequencyMHz = frequency,
+                                                    levelDbmv = level,
+                                                    isValid = entry.pilotLevelOk[channel] != false
+                                                )
+                                            )
+                                        }
+                                    }
+                                    entry.digitalRows.forEach { row ->
+                                        val frequency = row.frequencyMHz
+                                        val level = row.levelDbmv
+                                        if (frequency != null && level != null) {
+                                            add(
+                                                DownstreamChartPoint(
+                                                    frequencyMHz = frequency,
+                                                    levelDbmv = level,
+                                                    isValid = row.levelOk != false
+                                                )
+                                            )
+                                        }
+                                    }
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(150.dp)
+                                        .clipToBounds()
+                                ) {
+                                    DownstreamLevelsChart(
+                                        points = downstreamPoints,
+                                        ofdmSeries = entry.ofdmSeries,
+                                        barColor = accentColor,
+                                        errorColor = anomalyColor,
+                                        textColor = tableTextPrimary,
+                                        gridColor = strokeColor,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                }
+                                Text(
+                                    text = "MHz",
+                                    color = tableTextSecondary,
+                                    fontSize = 11.sp,
+                                    modifier = Modifier.align(Alignment.CenterHorizontally)
+                                )
                                 MeasurementTableCard(
                                     title = "Downstream Analogic Channels",
                                     headers = listOf("Canal", "Freq (MHz)", "M1", "M2")

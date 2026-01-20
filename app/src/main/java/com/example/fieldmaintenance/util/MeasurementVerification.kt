@@ -269,6 +269,26 @@ private fun collectMerPairs(results: JSONObject?): List<Pair<Double, Double>> {
     return pairs
 }
 
+private fun collectOfdmSeries(results: JSONObject?): OfdmSeries? {
+    val view = results?.optJSONObject("docsisDownstreamLevelsView") ?: return null
+    val failed = view.optJSONObject("Failed OFDM")
+    val passed = view.optJSONObject("Passed OFDM")
+    val target = failed ?: passed ?: return null
+    val data = target.optJSONArray("data") ?: return null
+    val points = mutableListOf<Pair<Double, Double>>()
+    for (i in 0 until data.length()) {
+        val pair = data.optJSONArray(i) ?: continue
+        if (pair.length() < 2) continue
+        val freq = pair.optDouble(0, Double.NaN)
+        val level = pair.optDouble(1, Double.NaN)
+        if (!freq.isNaN() && !level.isNaN()) {
+            points.add(freq to level)
+        }
+    }
+    if (points.isEmpty()) return null
+    return OfdmSeries(points = points, isValid = failed == null)
+}
+
 private fun parseTestPointOffset(test: JSONObject): Double {
     val config = test.optJSONObject("configuration")
     val networkConfig = config?.optJSONObject("networkConfig")
@@ -498,7 +518,13 @@ data class MeasurementEntry(
     val pilotMeta: Map<Int, ChannelMeta>,
     val pilotLevels: Map<Int, Double>,
     val pilotLevelOk: Map<Int, Boolean>,
-    val digitalRows: List<DigitalChannelRow>
+    val digitalRows: List<DigitalChannelRow>,
+    val ofdmSeries: OfdmSeries?
+)
+
+data class OfdmSeries(
+    val points: List<Pair<Double, Double>>,
+    val isValid: Boolean
 )
 
 data class ChannelMeta(
@@ -850,6 +876,7 @@ suspend fun verifyMeasurementFiles(
                             icfrOk = row.icfrDb?.let { icfrMax == null || it <= icfrMax }
                         )
                     }
+                val ofdmSeries = collectOfdmSeries(results)
 
                 measurementEntries.add(
                     MeasurementEntry(
@@ -865,7 +892,8 @@ suspend fun verifyMeasurementFiles(
                         pilotMeta = pilotMeta,
                         pilotLevels = pilotLevels,
                         pilotLevelOk = pilotOk,
-                        digitalRows = digitalRows
+                        digitalRows = digitalRows,
+                        ofdmSeries = ofdmSeries
                     )
                 )
 
