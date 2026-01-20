@@ -162,10 +162,12 @@ private fun collectChannelRows(json: Any?): List<ChannelRow> {
                 val channelValue = row.optJSONObject(0)?.optString("value")
                 val frequencyValue = row.optJSONObject(1)?.optString("value")
                 val levelValue = row.optJSONObject(2)?.optString("value")
+                val icfrValue = row.optJSONObject(3)?.optString("value")
                 val channel = parseInt(channelValue)
                 val frequency = parseNumber(frequencyValue)
                 val level = parseNumber(levelValue)
-                if (channel != null || frequency != null || level != null) {
+                val icfr = parseNumber(icfrValue)
+                if (channel != null || frequency != null || level != null || icfr != null) {
                     rows.add(
                         ChannelRow(
                             channel = channel,
@@ -174,7 +176,7 @@ private fun collectChannelRows(json: Any?): List<ChannelRow> {
                             merDb = null,
                             berPre = null,
                             berPost = null,
-                            icfrDb = null
+                            icfrDb = icfr
                         )
                     )
                 }
@@ -491,6 +493,7 @@ data class MeasurementEntry(
     val geoLocation: GeoPoint?,
     val docsisMeta: Map<Double, ChannelMeta>,
     val docsisLevels: Map<Double, Double>,
+    val docsisIcfr: Map<Double, Double>,
     val docsisLevelOk: Map<Double, Boolean>,
     val pilotMeta: Map<Int, ChannelMeta>,
     val pilotLevels: Map<Int, Double>,
@@ -749,6 +752,10 @@ suspend fun verifyMeasurementFiles(
                     rows.firstOrNull { it.frequencyMHz != null && kotlin.math.abs(it.frequencyMHz - freq) <= 0.5 }
                         ?.levelDbmv
                 }.filterValues { it != null }.mapValues { it.value!! }
+                val docsisIcfr = docsisFrequencies.associateWith { freq ->
+                    rows.firstOrNull { it.frequencyMHz != null && kotlin.math.abs(it.frequencyMHz - freq) <= 0.5 }
+                        ?.icfrDb
+                }.filterValues { it != null }.mapValues { it.value!! }
 
                 val pilotLevels = pilotChannels.associateWith { channel ->
                     rows.firstOrNull { it.channel == channel }?.levelDbmv
@@ -853,6 +860,7 @@ suspend fun verifyMeasurementFiles(
                         geoLocation = geoResult.point,
                         docsisMeta = docsisMeta,
                         docsisLevels = docsisLevels,
+                        docsisIcfr = docsisIcfr,
                         docsisLevelOk = docsisOk,
                         pilotMeta = pilotMeta,
                         pilotLevels = pilotLevels,
