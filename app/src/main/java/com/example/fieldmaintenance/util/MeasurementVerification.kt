@@ -57,15 +57,14 @@ private fun inferSwitchSelection(label: String, options: List<String>): String? 
     val cleaned = normalized.replace(Regex("[^A-Z0-9]"), "_")
     val tokens = cleaned.split("_").filter { it.isNotBlank() }.toSet()
     val containsMain = cleaned.contains("MAIN") || cleaned.contains("PRINCIPAL")
-    val containsIn = cleaned.contains("IN") || cleaned.contains("ENTRADA")
     val containsAux = cleaned.contains("AUX") || cleaned.contains("AUXILIAR")
     val auxdcMatch = cleaned.contains("AUXDC") ||
         cleaned.contains("AUX_DC") ||
         cleaned.contains("AUXILIARDC") ||
         cleaned.contains("AUXILIAR_DC")
     return when {
-        containsIn || tokens.contains("IN") || tokens.contains("ENTRADA") -> "IN"
         containsMain || tokens.contains("MAIN") || tokens.contains("PRINCIPAL") -> "MAIN"
+        tokens.contains("IN") || tokens.contains("ENTRADA") -> "IN"
         auxdcMatch && options.contains("AUXDC") -> "AUXDC"
         containsAux || tokens.contains("AUX") || tokens.contains("AUXILIAR") -> "AUX"
         else -> null
