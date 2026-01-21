@@ -2648,6 +2648,7 @@ private fun AssetFileSection(
                             onDelete: (MeasurementEntry) -> Unit,
                             allowExpand: Boolean = true,
                             alwaysShowContent: Boolean = false,
+                            showFooterBlock: Boolean = true,
                             showFooterWhenCollapsed: Boolean = false,
                             footerExtras: (@Composable () -> Unit)? = null,
                             tableContent: @Composable (MeasurementEntry) -> Unit
@@ -2709,7 +2710,7 @@ private fun AssetFileSection(
                                     )
                                 }
 
-                                if (tabs.isNotEmpty() && (isExpanded || showFooterWhenCollapsed)) {
+                                if (showFooterBlock && tabs.isNotEmpty() && (isExpanded || showFooterWhenCollapsed)) {
                                     Spacer(Modifier.height(8.dp))
                                     selectedTab?.let { tab ->
                                         Row(
@@ -2739,6 +2740,35 @@ private fun AssetFileSection(
                             }
                         }
 
+                        @Composable
+                        fun MeasurementFooterRow(
+                            entry: MeasurementEntry,
+                            label: String,
+                            hasError: Boolean,
+                            onDelete: (MeasurementEntry) -> Unit
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "$label = ${displayLabel(entry)}",
+                                    color = if (hasError) errorColor else tableTextSecondary,
+                                    fontSize = 11.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                IconButton(onClick = { onDelete(entry) }) {
+                                    Icon(
+                                        imageVector = Icons.Default.Delete,
+                                        contentDescription = "Eliminar medición",
+                                        tint = tableTextSecondary
+                                    )
+                                }
+                            }
+                        }
+
                         if (assetForDisplay.type == AssetType.NODE && !isModule) {
                             Text("Channel Expert $channelCountLabel", color = tableTextPrimary, fontSize = 18.sp)
                             Spacer(Modifier.height(8.dp))
@@ -2749,6 +2779,7 @@ private fun AssetFileSection(
                                     hasError = channelHasError(entry)
                                 )
                             }
+                            val channelLabelForEntry = channelTabs.associate { it.entry to it.label }
                             MeasurementTabsWithPagerCard(
                                 tabs = channelTabs,
                                 footerProvider = { entry, label ->
@@ -2757,6 +2788,7 @@ private fun AssetFileSection(
                                 onDelete = onRequestDelete,
                                 allowExpand = true,
                                 alwaysShowContent = true,
+                                showFooterBlock = false,
                                 showFooterWhenCollapsed = true
                             ) { entry ->
                                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -2816,6 +2848,44 @@ private fun AssetFileSection(
                                         fontSize = 11.sp,
                                         modifier = Modifier.align(Alignment.CenterHorizontally)
                                     )
+                                    channelLabelForEntry[entry]?.let { label ->
+                                        MeasurementFooterRow(
+                                            entry = entry,
+                                            label = label,
+                                            hasError = channelHasError(entry),
+                                            onDelete = onRequestDelete
+                                        )
+                                    }
+                                    if (assetForDisplay.type == AssetType.AMPLIFIER) {
+                                        Spacer(Modifier.height(8.dp))
+                                        val options = listOf("IN", "AUX", "DC")
+                                        var selected by remember { mutableStateOf("IN") }
+                                        Row(
+                                            modifier = Modifier
+                                                .align(Alignment.CenterHorizontally)
+                                                .clip(RoundedCornerShape(16.dp))
+                                                .border(1.dp, strokeColor, RoundedCornerShape(16.dp))
+                                                .padding(4.dp),
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            options.forEach { option ->
+                                                val isSelected = selected == option
+                                                Box(
+                                                    modifier = Modifier
+                                                        .clip(RoundedCornerShape(12.dp))
+                                                        .background(if (isSelected) accentColor else Color.Transparent)
+                                                        .clickable { selected = option }
+                                                        .padding(horizontal = 10.dp, vertical = 4.dp)
+                                                ) {
+                                                    Text(
+                                                        text = option,
+                                                        color = if (isSelected) Color.White else tableTextSecondary,
+                                                        fontSize = 11.sp
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
                                     Spacer(Modifier.height(8.dp))
                                     MeasurementTableCard(
                                         title = "Downstream Analogic Channels",
@@ -2888,6 +2958,7 @@ private fun AssetFileSection(
                                     hasError = docsisHasError(entry)
                                 )
                             }
+                            val docsisLabelForEntry = docsisTabs.associate { it.entry to it.label }
                             MeasurementTabsWithPagerCard(
                                 tabs = docsisTabs,
                                 footerProvider = { entry, label ->
@@ -2896,6 +2967,7 @@ private fun AssetFileSection(
                                 onDelete = onRequestDelete,
                                 allowExpand = true,
                                 alwaysShowContent = true,
+                                showFooterBlock = false,
                                 showFooterWhenCollapsed = true
                             ) { entry ->
                                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -2930,6 +3002,14 @@ private fun AssetFileSection(
                                         fontSize = 11.sp,
                                         modifier = Modifier.align(Alignment.CenterHorizontally)
                                     )
+                                    docsisLabelForEntry[entry]?.let { label ->
+                                        MeasurementFooterRow(
+                                            entry = entry,
+                                            label = label,
+                                            hasError = docsisHasError(entry),
+                                            onDelete = onRequestDelete
+                                        )
+                                    }
                                     Spacer(Modifier.height(12.dp))
                                     val rows = entry.docsisLevels.keys.sorted().map { freq ->
                                         val channel = entry.docsisMeta[freq]?.channel?.toString() ?: "—"
@@ -2975,6 +3055,7 @@ private fun AssetFileSection(
                                     hasError = channelHasError(entry)
                                 )
                             }
+                            val channelLabelForEntry = channelTabs.associate { it.entry to it.label }
                             MeasurementTabsWithPagerCard(
                                 tabs = channelTabs,
                                 footerProvider = { entry, label ->
@@ -2982,6 +3063,7 @@ private fun AssetFileSection(
                                 },
                                 onDelete = onRequestDelete,
                                 alwaysShowContent = true,
+                                showFooterBlock = false,
                                 showFooterWhenCollapsed = true
                             ) { entry ->
                                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -3041,6 +3123,14 @@ private fun AssetFileSection(
                                         fontSize = 11.sp,
                                         modifier = Modifier.align(Alignment.CenterHorizontally)
                                     )
+                                    channelLabelForEntry[entry]?.let { label ->
+                                        MeasurementFooterRow(
+                                            entry = entry,
+                                            label = label,
+                                            hasError = channelHasError(entry),
+                                            onDelete = onRequestDelete
+                                        )
+                                    }
                                     Spacer(Modifier.height(8.dp))
                                     MeasurementTableCard(
                                         title = "Downstream Analogic Channels",
@@ -3113,6 +3203,7 @@ private fun AssetFileSection(
                                     hasError = docsisHasError(entry)
                                 )
                             }
+                            val docsisLabelForEntry = docsisTabs.associate { it.entry to it.label }
                             MeasurementTabsWithPagerCard(
                                 tabs = docsisTabs,
                                 footerProvider = { entry, label ->
@@ -3120,6 +3211,7 @@ private fun AssetFileSection(
                                 },
                                 onDelete = onRequestDelete,
                                 alwaysShowContent = true,
+                                showFooterBlock = false,
                                 showFooterWhenCollapsed = true
                             ) { entry ->
                                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -3154,6 +3246,14 @@ private fun AssetFileSection(
                                         fontSize = 11.sp,
                                         modifier = Modifier.align(Alignment.CenterHorizontally)
                                     )
+                                    docsisLabelForEntry[entry]?.let { label ->
+                                        MeasurementFooterRow(
+                                            entry = entry,
+                                            label = label,
+                                            hasError = docsisHasError(entry),
+                                            onDelete = onRequestDelete
+                                        )
+                                    }
                                     Spacer(Modifier.height(12.dp))
                                     val rows = entry.docsisLevels.keys.sorted().map { freq ->
                                         val channel = entry.docsisMeta[freq]?.channel?.toString() ?: "—"
@@ -3198,6 +3298,7 @@ private fun AssetFileSection(
                                     hasError = channelHasError(entry)
                                 )
                             }
+                            val channelLabelForEntry = channelTabs.associate { it.entry to it.label }
                             MeasurementTabsWithPagerCard(
                                 tabs = channelTabs,
                                 footerProvider = { entry, label ->
@@ -3205,41 +3306,9 @@ private fun AssetFileSection(
                                 },
                                 onDelete = onRequestDelete,
                                 alwaysShowContent = true,
+                                showFooterBlock = false,
                                 showFooterWhenCollapsed = true,
-                                footerExtras = if (assetForDisplay.type == AssetType.AMPLIFIER) {
-                                    {
-                                        Spacer(Modifier.height(8.dp))
-                                        val options = listOf("IN", "AUX", "DC")
-                                        var selected by remember { mutableStateOf("IN") }
-                                        Row(
-                                            modifier = Modifier
-                                                .align(Alignment.CenterHorizontally)
-                                                .clip(RoundedCornerShape(16.dp))
-                                                .border(1.dp, strokeColor, RoundedCornerShape(16.dp))
-                                                .padding(4.dp),
-                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                        ) {
-                                            options.forEach { option ->
-                                                val isSelected = selected == option
-                                                Box(
-                                                    modifier = Modifier
-                                                        .clip(RoundedCornerShape(12.dp))
-                                                        .background(if (isSelected) accentColor else Color.Transparent)
-                                                        .clickable { selected = option }
-                                                        .padding(horizontal = 10.dp, vertical = 4.dp)
-                                                ) {
-                                                    Text(
-                                                        text = option,
-                                                        color = if (isSelected) Color.White else tableTextSecondary,
-                                                        fontSize = 11.sp
-                                                    )
-                                                }
-                                            }
-                                        }
-                                    }
-                                } else {
-                                    null
-                                }
+                                footerExtras = null
                             ) { entry ->
                                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                     val downstreamPoints = buildList {
@@ -3298,6 +3367,44 @@ private fun AssetFileSection(
                                         fontSize = 11.sp,
                                         modifier = Modifier.align(Alignment.CenterHorizontally)
                                     )
+                                    channelLabelForEntry[entry]?.let { label ->
+                                        MeasurementFooterRow(
+                                            entry = entry,
+                                            label = label,
+                                            hasError = channelHasError(entry),
+                                            onDelete = onRequestDelete
+                                        )
+                                    }
+                                    if (assetForDisplay.type == AssetType.AMPLIFIER) {
+                                        Spacer(Modifier.height(8.dp))
+                                        val options = listOf("IN", "AUX", "DC")
+                                        var selected by remember { mutableStateOf("IN") }
+                                        Row(
+                                            modifier = Modifier
+                                                .align(Alignment.CenterHorizontally)
+                                                .clip(RoundedCornerShape(16.dp))
+                                                .border(1.dp, strokeColor, RoundedCornerShape(16.dp))
+                                                .padding(4.dp),
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            options.forEach { option ->
+                                                val isSelected = selected == option
+                                                Box(
+                                                    modifier = Modifier
+                                                        .clip(RoundedCornerShape(12.dp))
+                                                        .background(if (isSelected) accentColor else Color.Transparent)
+                                                        .clickable { selected = option }
+                                                        .padding(horizontal = 10.dp, vertical = 4.dp)
+                                                ) {
+                                                    Text(
+                                                        text = option,
+                                                        color = if (isSelected) Color.White else tableTextSecondary,
+                                                        fontSize = 11.sp
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
                                     Spacer(Modifier.height(8.dp))
                                     MeasurementTableCard(
                                         title = "Downstream Analogic Channels",
