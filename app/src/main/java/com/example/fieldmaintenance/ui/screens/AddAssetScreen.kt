@@ -2965,7 +2965,12 @@ private fun AssetFileSection(
                                     if (assetForDisplay.type == AssetType.AMPLIFIER && !isModule) {
                                         Spacer(Modifier.height(8.dp))
                                         val channelSwitchOptions = switchOptionsFor(assetForDisplay.amplifierMode)
-                                        val savedSelections = remember(channelTabs, assetForDisplay.id) {
+                                        val savedSelections = remember(
+                                            channelTabs,
+                                            assetForDisplay.id,
+                                            verificationSummaryRx,
+                                            verificationSummaryModule
+                                        ) {
                                             channelTabs.associate { tab ->
                                                 tab.entry.label to switchPrefs.getString(
                                                     switchKey(assetForDisplay.id, tab.entry.label),
@@ -3502,7 +3507,12 @@ private fun AssetFileSection(
                                     if (assetForDisplay.type == AssetType.AMPLIFIER && !isModule) {
                                         Spacer(Modifier.height(8.dp))
                                         val channelSwitchOptions = switchOptionsFor(assetForDisplay.amplifierMode)
-                                        val savedSelections = remember(channelTabs, assetForDisplay.id) {
+                                        val savedSelections = remember(
+                                            channelTabs,
+                                            assetForDisplay.id,
+                                            verificationSummaryRx,
+                                            verificationSummaryModule
+                                        ) {
                                             channelTabs.associate { tab ->
                                                 tab.entry.label to switchPrefs.getString(
                                                     switchKey(assetForDisplay.id, tab.entry.label),
