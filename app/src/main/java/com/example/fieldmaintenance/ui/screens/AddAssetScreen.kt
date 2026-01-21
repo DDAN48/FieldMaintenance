@@ -2607,7 +2607,7 @@ private fun AssetFileSection(
                         fun switchOptionsFor(mode: AmplifierMode?): List<String> {
                             return when (mode) {
                                 AmplifierMode.HGD -> listOf("IN", "MAIN", "AUX", "AUXDC")
-                                AmplifierMode.HGBT -> listOf("IN", "MAIN", "AUX")
+                                AmplifierMode.HGDT -> listOf("IN", "MAIN", "AUX")
                                 else -> listOf("IN", "MAIN", "AUX")
                             }
                         }
@@ -2841,7 +2841,7 @@ private fun AssetFileSection(
                                 )
                             }
                             val channelLabelForEntry = channelTabs.associate { it.entry to it.label }
-                            val channelSwitchOptions = switchOptionsFor(amplifierMode)
+                            val channelSwitchOptions = switchOptionsFor(assetForDisplay.amplifierMode)
                             val channelSwitchSelections = remember(channelTabs, channelSwitchOptions) {
                                 buildSwitchSelections(channelTabs, channelSwitchOptions)
                             }
@@ -3123,7 +3123,7 @@ private fun AssetFileSection(
                                 )
                             }
                             val channelLabelForEntry = channelTabs.associate { it.entry to it.label }
-                            val channelSwitchOptions = switchOptionsFor(amplifierMode)
+                            val channelSwitchOptions = switchOptionsFor(assetForDisplay.amplifierMode)
                             val channelSwitchSelections = remember(channelTabs, channelSwitchOptions) {
                                 buildSwitchSelections(channelTabs, channelSwitchOptions)
                             }
