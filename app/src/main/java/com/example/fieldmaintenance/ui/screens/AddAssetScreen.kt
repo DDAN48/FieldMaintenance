@@ -2458,32 +2458,19 @@ private fun AssetFileSection(
                 if (asset.type == AssetType.NODE) {
                     Row(
                         modifier = Modifier.weight(1f),
-                        horizontalArrangement = Arrangement.spacedBy(16.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("Mediciones RX", fontWeight = FontWeight.SemiBold)
-                            IconButton(onClick = { startViaviImport(AssetType.NODE) }) {
-                                Icon(Icons.Default.FileUpload, contentDescription = "Agregar mediciones RX")
-                            }
-                        }
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("Modulo", fontWeight = FontWeight.SemiBold)
-                            IconButton(onClick = { startViaviImport(AssetType.AMPLIFIER) }) {
-                                Icon(Icons.Default.FileUpload, contentDescription = "Agregar mediciones Modulo")
-                            }
+                        Text("Mediciones RX", fontWeight = FontWeight.SemiBold)
+                        IconButton(onClick = { startViaviImport(AssetType.NODE) }) {
+                            Icon(Icons.Default.FileUpload, contentDescription = "Agregar mediciones RX")
                         }
                     }
                 } else {
-                    Row(
-                        modifier = Modifier.weight(1f),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("Mediciones", fontWeight = FontWeight.SemiBold)
-                        IconButton(onClick = { startViaviImport(asset.type) }) {
-                            Icon(Icons.Default.FileUpload, contentDescription = "Agregar mediciones")
-                        }
-                    }
+                    Text(
+                        "Mediciones Modulo",
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.weight(1f)
+                    )
                 }
                 IconButton(
                     onClick = { showObservationsDialog = true }
@@ -3050,6 +3037,15 @@ private fun AssetFileSection(
                                 isModule = false
                             )
                         }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Mediciones Modulo", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                            IconButton(onClick = { startViaviImport(AssetType.AMPLIFIER) }) {
+                                Icon(Icons.Default.FileUpload, contentDescription = "Agregar mediciones Modulo")
+                            }
+                        }
                         verificationSummaryModule?.let { summary ->
                             VerificationSummaryView(
                                 summary,
@@ -3064,15 +3060,6 @@ private fun AssetFileSection(
                         }
                     }
                 } else {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("Agregar Mediciones", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                        IconButton(onClick = { startViaviImport(asset.type) }) {
-                            Icon(Icons.Default.FileUpload, contentDescription = "Agregar mediciones")
-                        }
-                    }
                     verificationSummaryRx?.let { summary ->
                         VerificationSummaryView(
                             summary,
