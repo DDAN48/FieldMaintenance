@@ -2577,8 +2577,10 @@ private fun AssetFileSection(
                         val tableTextPrimary = Color(0xFFE7EAF0)
                         val tableTextSecondary = Color(0xFFB0B7C3)
 
-                        val docsisCountLabel = "${docsisListEntries.size}/${summary.expectedDocsis}"
-                        val channelCountLabel = "${channelListEntries.size}/${summary.expectedChannel}"
+                        val docsisDisplayCount = docsisListEntries.size.coerceAtMost(summary.expectedDocsis)
+                        val channelDisplayCount = channelListEntries.size.coerceAtMost(summary.expectedChannel)
+                        val docsisCountLabel = "${docsisDisplayCount}/${summary.expectedDocsis}"
+                        val channelCountLabel = "${channelDisplayCount}/${summary.expectedChannel}"
 
                         data class MeasurementTab(
                             val label: String,
