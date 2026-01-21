@@ -2285,8 +2285,6 @@ private fun AssetFileSection(
     }
 
     var isExpanded by remember { mutableStateOf(true) }
-    var rxExpanded by remember { mutableStateOf(true) }
-    var moduleExpanded by remember { mutableStateOf(true) }
     var verificationSummaryRx by remember { mutableStateOf<MeasurementVerificationSummary?>(null) }
     var verificationSummaryModule by remember { mutableStateOf<MeasurementVerificationSummary?>(null) }
     var duplicateNotice by remember { mutableStateOf<List<String>>(emptyList()) }
@@ -2457,11 +2455,36 @@ private fun AssetFileSection(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    "Carga de Mediciones",
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.weight(1f)
-                )
+                if (asset.type == AssetType.NODE) {
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Mediciones RX", fontWeight = FontWeight.SemiBold)
+                            IconButton(onClick = { startViaviImport(AssetType.NODE) }) {
+                                Icon(Icons.Default.FileUpload, contentDescription = "Agregar mediciones RX")
+                            }
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Modulo", fontWeight = FontWeight.SemiBold)
+                            IconButton(onClick = { startViaviImport(AssetType.AMPLIFIER) }) {
+                                Icon(Icons.Default.FileUpload, contentDescription = "Agregar mediciones Modulo")
+                            }
+                        }
+                    }
+                } else {
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Mediciones", fontWeight = FontWeight.SemiBold)
+                        IconButton(onClick = { startViaviImport(asset.type) }) {
+                            Icon(Icons.Default.FileUpload, contentDescription = "Agregar mediciones")
+                        }
+                    }
+                }
                 IconButton(
                     onClick = { showObservationsDialog = true }
                 ) {
@@ -2473,58 +2496,6 @@ private fun AssetFileSection(
                         } else {
                             MaterialTheme.colorScheme.primary
                         }
-                    )
-                }
-                IconButton(
-                    onClick = {
-                        onInteraction()
-                        scope.launch {
-                            val updatedRxFiles = rxAssetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
-                            rxFiles = updatedRxFiles
-                            if (updatedRxFiles.isNotEmpty()) {
-                                verificationSummaryRx = verifyMeasurementFiles(
-                                    context,
-                                    updatedRxFiles,
-                                    asset,
-                                    repository,
-                                    rxDiscardedLabels,
-                                    expectedDocsisOverride = rxRequired.expectedDocsis,
-                                    expectedChannelOverride = rxRequired.expectedChannel
-                                )
-                            } else {
-                                verificationSummaryRx = null
-                            }
-
-                            if (isNodeAsset) {
-                                val updatedModuleFiles = moduleAssetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
-                                moduleFiles = updatedModuleFiles
-                                if (updatedModuleFiles.isNotEmpty()) {
-                                    verificationSummaryModule = verifyMeasurementFiles(
-                                        context,
-                                        updatedModuleFiles,
-                                        moduleAsset,
-                                        repository,
-                                        moduleDiscardedLabels,
-                                        expectedDocsisOverride = moduleRequired.expectedDocsis,
-                                        expectedChannelOverride = moduleRequired.expectedChannel
-                                    )
-                                } else {
-                                    verificationSummaryModule = null
-                                }
-                            }
-                        }
-                    },
-                    enabled = asset.type in setOf(AssetType.NODE, AssetType.AMPLIFIER) && canRefresh
-                ) {
-                    Icon(Icons.Default.Refresh, contentDescription = "Refrescar verificación")
-                }
-                IconButton(onClick = {
-                    onInteraction()
-                    isExpanded = !isExpanded
-                }) {
-                    Icon(
-                        if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                        contentDescription = if (isExpanded) "Colapsar" else "Expandir"
                     )
                 }
             }
@@ -3066,64 +3037,30 @@ private fun AssetFileSection(
                 }
 
                 if (asset.type == AssetType.NODE) {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { rxExpanded = !rxExpanded },
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("Mediciones RX", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                            IconButton(onClick = { startViaviImport(AssetType.NODE) }) {
-                                Icon(Icons.Default.FileUpload, contentDescription = "Agregar mediciones RX")
-                            }
-                            Icon(
-                                if (rxExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                                contentDescription = null
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        verificationSummaryRx?.let { summary ->
+                            VerificationSummaryView(
+                                summary,
+                                asset,
+                                ::toggleDiscardRx,
+                                onRequestDelete = { entry ->
+                                    pendingDeleteEntry = entry
+                                    pendingDeleteIsModule = false
+                                },
+                                isModule = false
                             )
                         }
-                        if (rxExpanded) {
-                            verificationSummaryRx?.let { summary ->
-                                VerificationSummaryView(
-                                    summary,
-                                    asset,
-                                    ::toggleDiscardRx,
-                                    onRequestDelete = { entry ->
-                                        pendingDeleteEntry = entry
-                                        pendingDeleteIsModule = false
-                                    },
-                                    isModule = false
-                                )
-                            }
-                        }
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { moduleExpanded = !moduleExpanded },
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("Mediciones Modulo", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                            IconButton(onClick = { startViaviImport(AssetType.AMPLIFIER) }) {
-                                Icon(Icons.Default.FileUpload, contentDescription = "Agregar mediciones Modulo")
-                            }
-                            Icon(
-                                if (moduleExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                                contentDescription = null
+                        verificationSummaryModule?.let { summary ->
+                            VerificationSummaryView(
+                                summary,
+                                moduleAsset,
+                                ::toggleDiscardModule,
+                                onRequestDelete = { entry ->
+                                    pendingDeleteEntry = entry
+                                    pendingDeleteIsModule = true
+                                },
+                                isModule = true
                             )
-                        }
-                        if (moduleExpanded) {
-                            verificationSummaryModule?.let { summary ->
-                                VerificationSummaryView(
-                                    summary,
-                                    moduleAsset,
-                                    ::toggleDiscardModule,
-                                    onRequestDelete = { entry ->
-                                        pendingDeleteEntry = entry
-                                        pendingDeleteIsModule = true
-                                    },
-                                    isModule = true
-                                )
-                            }
                         }
                     }
                 } else {
