@@ -162,10 +162,12 @@ private fun collectChannelRows(json: Any?): List<ChannelRow> {
                 val channelValue = row.optJSONObject(0)?.optString("value")
                 val frequencyValue = row.optJSONObject(1)?.optString("value")
                 val levelValue = row.optJSONObject(2)?.optString("value")
+                val icfrValue = row.optJSONObject(3)?.optString("value")
                 val channel = parseInt(channelValue)
                 val frequency = parseNumber(frequencyValue)
                 val level = parseNumber(levelValue)
-                if (channel != null || frequency != null || level != null) {
+                val icfr = parseNumber(icfrValue)
+                if (channel != null || frequency != null || level != null || icfr != null) {
                     rows.add(
                         ChannelRow(
                             channel = channel,
@@ -174,7 +176,7 @@ private fun collectChannelRows(json: Any?): List<ChannelRow> {
                             merDb = null,
                             berPre = null,
                             berPost = null,
-                            icfrDb = null
+                            icfrDb = icfr
                         )
                     )
                 }
@@ -265,6 +267,26 @@ private fun collectMerPairs(results: JSONObject?): List<Pair<Double, Double>> {
         }
     }
     return pairs
+}
+
+private fun collectOfdmSeries(results: JSONObject?): OfdmSeries? {
+    val view = results?.optJSONObject("docsisDownstreamLevelsView") ?: return null
+    val failed = view.optJSONObject("Failed OFDM")
+    val passed = view.optJSONObject("Passed OFDM")
+    val target = failed ?: passed ?: return null
+    val data = target.optJSONArray("data") ?: return null
+    val points = mutableListOf<Pair<Double, Double>>()
+    for (i in 0 until data.length()) {
+        val pair = data.optJSONArray(i) ?: continue
+        if (pair.length() < 2) continue
+        val freq = pair.optDouble(0, Double.NaN)
+        val level = pair.optDouble(1, Double.NaN)
+        if (!freq.isNaN() && !level.isNaN()) {
+            points.add(freq to level)
+        }
+    }
+    if (points.isEmpty()) return null
+    return OfdmSeries(points = points, isValid = failed == null)
 }
 
 private fun parseTestPointOffset(test: JSONObject): Double {
@@ -491,11 +513,18 @@ data class MeasurementEntry(
     val geoLocation: GeoPoint?,
     val docsisMeta: Map<Double, ChannelMeta>,
     val docsisLevels: Map<Double, Double>,
+    val docsisIcfr: Map<Double, Double>,
     val docsisLevelOk: Map<Double, Boolean>,
     val pilotMeta: Map<Int, ChannelMeta>,
     val pilotLevels: Map<Int, Double>,
     val pilotLevelOk: Map<Int, Boolean>,
-    val digitalRows: List<DigitalChannelRow>
+    val digitalRows: List<DigitalChannelRow>,
+    val ofdmSeries: OfdmSeries?
+)
+
+data class OfdmSeries(
+    val points: List<Pair<Double, Double>>,
+    val isValid: Boolean
 )
 
 data class ChannelMeta(
@@ -749,6 +778,10 @@ suspend fun verifyMeasurementFiles(
                     rows.firstOrNull { it.frequencyMHz != null && kotlin.math.abs(it.frequencyMHz - freq) <= 0.5 }
                         ?.levelDbmv
                 }.filterValues { it != null }.mapValues { it.value!! }
+                val docsisIcfr = docsisFrequencies.associateWith { freq ->
+                    rows.firstOrNull { it.frequencyMHz != null && kotlin.math.abs(it.frequencyMHz - freq) <= 0.5 }
+                        ?.icfrDb
+                }.filterValues { it != null }.mapValues { it.value!! }
 
                 val pilotLevels = pilotChannels.associateWith { channel ->
                     rows.firstOrNull { it.channel == channel }?.levelDbmv
@@ -843,6 +876,7 @@ suspend fun verifyMeasurementFiles(
                             icfrOk = row.icfrDb?.let { icfrMax == null || it <= icfrMax }
                         )
                     }
+                val ofdmSeries = collectOfdmSeries(results)
 
                 measurementEntries.add(
                     MeasurementEntry(
@@ -853,11 +887,13 @@ suspend fun verifyMeasurementFiles(
                         geoLocation = geoResult.point,
                         docsisMeta = docsisMeta,
                         docsisLevels = docsisLevels,
+                        docsisIcfr = docsisIcfr,
                         docsisLevelOk = docsisOk,
                         pilotMeta = pilotMeta,
                         pilotLevels = pilotLevels,
                         pilotLevelOk = pilotOk,
-                        digitalRows = digitalRows
+                        digitalRows = digitalRows,
+                        ofdmSeries = ofdmSeries
                     )
                 )
 
