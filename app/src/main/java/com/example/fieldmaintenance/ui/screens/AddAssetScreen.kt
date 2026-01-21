@@ -2604,6 +2604,62 @@ private fun AssetFileSection(
                             return pilotError || digitalError
                         }
 
+                        fun switchOptionsFor(mode: AmplifierMode?): List<String> {
+                            return when (mode) {
+                                AmplifierMode.HGD -> listOf("IN", "MAIN", "AUX", "AUXDC")
+                                AmplifierMode.HGBT -> listOf("IN", "MAIN", "AUX")
+                                else -> listOf("IN", "MAIN", "AUX")
+                            }
+                        }
+
+                        fun inferSwitchSelection(label: String, options: List<String>): String? {
+                            val normalized = label.uppercase(Locale.getDefault())
+                            val cleaned = normalized.replace(Regex("[^A-Z0-9]"), "_")
+                            val tokens = cleaned.split("_").filter { it.isNotBlank() }.toSet()
+                            val auxdcMatch = cleaned.contains("AUXDC") ||
+                                cleaned.contains("AUX_DC") ||
+                                cleaned.contains("AUXILIARDC") ||
+                                cleaned.contains("AUXILIAR_DC")
+                            return when {
+                                auxdcMatch && options.contains("AUXDC") -> "AUXDC"
+                                tokens.contains("MAIN") || tokens.contains("PRINCIPAL") -> "MAIN"
+                                tokens.contains("IN") || tokens.contains("ENTRADA") -> "IN"
+                                tokens.contains("AUX") || tokens.contains("AUXILIAR") -> "AUX"
+                                else -> null
+                            }
+                        }
+
+                        fun buildSwitchSelections(
+                            tabs: List<MeasurementTab>,
+                            options: List<String>
+                        ): Map<MeasurementEntry, String> {
+                            val selections = mutableMapOf<MeasurementEntry, String>()
+                            var mainUsed = false
+                            var inUsed = false
+                            tabs.forEachIndexed { index, tab ->
+                                val inferred = inferSwitchSelection(tab.entry.label, options)
+                                var selection = when {
+                                    inferred != null -> inferred
+                                    index == 0 -> "MAIN"
+                                    index == 1 -> "IN"
+                                    else -> "AUX"
+                                }
+                                if (selection == "MAIN" && mainUsed) {
+                                    selection = "AUX"
+                                }
+                                if (selection == "IN" && inUsed) {
+                                    selection = "AUX"
+                                }
+                                if (selection == "AUXDC" && !options.contains("AUXDC")) {
+                                    selection = "AUX"
+                                }
+                                if (selection == "MAIN") mainUsed = true
+                                if (selection == "IN") inUsed = true
+                                selections[tab.entry] = selection
+                            }
+                            return selections
+                        }
+
                         @Composable
                         fun MeasurementTabChip(
                             label: String,
@@ -2780,6 +2836,10 @@ private fun AssetFileSection(
                                 )
                             }
                             val channelLabelForEntry = channelTabs.associate { it.entry to it.label }
+                            val channelSwitchOptions = switchOptionsFor(amplifierMode)
+                            val channelSwitchSelections = remember(channelTabs, channelSwitchOptions) {
+                                buildSwitchSelections(channelTabs, channelSwitchOptions)
+                            }
                             MeasurementTabsWithPagerCard(
                                 tabs = channelTabs,
                                 footerProvider = { entry, label ->
@@ -2858,8 +2918,10 @@ private fun AssetFileSection(
                                     }
                                     if (assetForDisplay.type == AssetType.AMPLIFIER && !isModule) {
                                         Spacer(Modifier.height(8.dp))
-                                        val options = listOf("IN", "AUX", "DC")
-                                        var selected by remember { mutableStateOf("IN") }
+                                        val initialSelection = channelSwitchSelections[entry] ?: "MAIN"
+                                        var selected by remember(entry.label, initialSelection) {
+                                            mutableStateOf(initialSelection)
+                                        }
                                         Row(
                                             modifier = Modifier
                                                 .align(Alignment.CenterHorizontally)
@@ -2868,7 +2930,7 @@ private fun AssetFileSection(
                                                 .padding(4.dp),
                                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                                         ) {
-                                            options.forEach { option ->
+                                            channelSwitchOptions.forEach { option ->
                                                 val isSelected = selected == option
                                                 Box(
                                                     modifier = Modifier
@@ -3056,6 +3118,10 @@ private fun AssetFileSection(
                                 )
                             }
                             val channelLabelForEntry = channelTabs.associate { it.entry to it.label }
+                            val channelSwitchOptions = switchOptionsFor(amplifierMode)
+                            val channelSwitchSelections = remember(channelTabs, channelSwitchOptions) {
+                                buildSwitchSelections(channelTabs, channelSwitchOptions)
+                            }
                             MeasurementTabsWithPagerCard(
                                 tabs = channelTabs,
                                 footerProvider = { entry, label ->
@@ -3377,8 +3443,10 @@ private fun AssetFileSection(
                                     }
                                     if (assetForDisplay.type == AssetType.AMPLIFIER && !isModule) {
                                         Spacer(Modifier.height(8.dp))
-                                        val options = listOf("IN", "AUX", "DC")
-                                        var selected by remember { mutableStateOf("IN") }
+                                        val initialSelection = channelSwitchSelections[entry] ?: "MAIN"
+                                        var selected by remember(entry.label, initialSelection) {
+                                            mutableStateOf(initialSelection)
+                                        }
                                         Row(
                                             modifier = Modifier
                                                 .align(Alignment.CenterHorizontally)
@@ -3387,7 +3455,7 @@ private fun AssetFileSection(
                                                 .padding(4.dp),
                                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                                         ) {
-                                            options.forEach { option ->
+                                            channelSwitchOptions.forEach { option ->
                                                 val isSelected = selected == option
                                                 Box(
                                                     modifier = Modifier
