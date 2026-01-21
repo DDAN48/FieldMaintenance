@@ -52,7 +52,8 @@ private fun switchOptionsFor(mode: com.example.fieldmaintenance.data.model.Ampli
 }
 
 private fun inferSwitchSelection(label: String, options: List<String>): String? {
-    val normalized = label.uppercase(Locale.getDefault())
+    val fileLabel = label.substringAfterLast('/')
+    val normalized = fileLabel.uppercase(Locale.getDefault())
     val cleaned = normalized.replace(Regex("[^A-Z0-9]"), "_")
     val tokens = cleaned.split("_").filter { it.isNotBlank() }.toSet()
     val auxdcMatch = cleaned.contains("AUXDC") ||
@@ -607,6 +608,8 @@ suspend fun verifyMeasurementFiles(
         AssetType.AMPLIFIER -> 4
     }
 
+    val switchPrefs = context.getSharedPreferences("measurement_switch_positions", Context.MODE_PRIVATE)
+
     val seenIds = mutableSetOf<String>()
     var docsisCount = 0
     var channelCount = 0
@@ -751,7 +754,8 @@ suspend fun verifyMeasurementFiles(
                 emptyList()
             }
             val switchSelection = if (assetType == AssetType.AMPLIFIER) {
-                val inferred = inferSwitchSelection(sourceLabel, switchOptions)
+                val saved = switchPrefs.getString("switch_${asset.id}_${sourceLabel}", null)
+                val inferred = saved ?: inferSwitchSelection(sourceLabel, switchOptions)
                 if (inferred != null) {
                     inferred
                 } else if (normalizedType == "channelexpert" && !isDiscarded) {

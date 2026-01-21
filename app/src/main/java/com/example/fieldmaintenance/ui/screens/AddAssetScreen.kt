@@ -32,7 +32,6 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Save
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.RemoveRedEye
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
@@ -102,7 +101,6 @@ import com.example.fieldmaintenance.ui.viewmodel.ReportViewModelFactory
 import com.example.fieldmaintenance.util.DatabaseProvider
 import com.example.fieldmaintenance.util.ImageStore
 import com.example.fieldmaintenance.util.PhotoManager
-import com.example.fieldmaintenance.util.AppSettings
 import com.example.fieldmaintenance.util.MaintenanceStorage
 import com.example.fieldmaintenance.util.PlanCache
 import com.example.fieldmaintenance.util.PlanRepository
@@ -124,7 +122,6 @@ import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 import android.os.Looper
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
@@ -2430,7 +2427,54 @@ private fun AssetFileSection(
     val observationPrefs = remember {
         context.getSharedPreferences("observation_flags", Context.MODE_PRIVATE)
     }
+    val switchPrefs = remember {
+        context.getSharedPreferences("measurement_switch_positions", Context.MODE_PRIVATE)
+    }
     var showObservationsDialog by rememberSaveable { mutableStateOf(false) }
+
+    fun switchKey(assetId: String, label: String): String = "switch_${assetId}_${label}"
+
+    fun refreshVerificationSummary(isModule: Boolean) {
+        scope.launch(Dispatchers.IO) {
+            val updated = if (isModule) {
+                moduleAssetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
+            } else {
+                rxAssetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
+            }
+            val required = if (isModule) {
+                requiredCounts(moduleAsset.type, isModule = true)
+            } else {
+                requiredCounts(asset.type, isModule = false)
+            }
+            val summary = if (updated.isNotEmpty()) {
+                verifyMeasurementFiles(
+                    context,
+                    updated,
+                    if (isModule) moduleAsset else asset,
+                    repository,
+                    if (isModule) moduleDiscardedLabels else rxDiscardedLabels,
+                    expectedDocsisOverride = required.expectedDocsis,
+                    expectedChannelOverride = required.expectedChannel
+                )
+            } else {
+                null
+            }
+            withContext(Dispatchers.Main) {
+                if (isModule) {
+                    moduleFiles = updated
+                    verificationSummaryModule = summary
+                } else {
+                    rxFiles = updated
+                    verificationSummaryRx = summary
+                }
+            }
+        }
+    }
+
+    fun updateSwitchSelection(entryLabel: String, selection: String, isModule: Boolean, assetId: String) {
+        switchPrefs.edit().putString(switchKey(assetId, entryLabel), selection).apply()
+        refreshVerificationSummary(isModule)
+    }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -2613,7 +2657,8 @@ private fun AssetFileSection(
                         }
 
                         fun inferSwitchSelection(label: String, options: List<String>): String? {
-                            val normalized = label.uppercase(Locale.getDefault())
+                            val fileLabel = label.substringAfterLast('/')
+                            val normalized = fileLabel.uppercase(Locale.getDefault())
                             val cleaned = normalized.replace(Regex("[^A-Z0-9]"), "_")
                             val tokens = cleaned.split("_").filter { it.isNotBlank() }.toSet()
                             val auxdcMatch = cleaned.contains("AUXDC") ||
@@ -2631,14 +2676,16 @@ private fun AssetFileSection(
 
                         fun buildSwitchSelections(
                             tabs: List<MeasurementTab>,
-                            options: List<String>
+                            options: List<String>,
+                            savedSelections: Map<String, String?>
                         ): Map<MeasurementEntry, String> {
                             val selections = mutableMapOf<MeasurementEntry, String>()
                             var mainUsed = false
                             var inUsed = false
                             var auxdcUsed = false
                             tabs.forEachIndexed { index, tab ->
-                                val inferred = inferSwitchSelection(tab.entry.label, options)
+                                val saved = savedSelections[tab.entry.label]?.uppercase(Locale.getDefault())
+                                val inferred = saved ?: inferSwitchSelection(tab.entry.label, options)
                                 var selection = when {
                                     inferred != null -> inferred
                                     index == 0 -> "MAIN"
@@ -2920,8 +2967,16 @@ private fun AssetFileSection(
                                     if (assetForDisplay.type == AssetType.AMPLIFIER && !isModule) {
                                         Spacer(Modifier.height(8.dp))
                                         val channelSwitchOptions = switchOptionsFor(assetForDisplay.amplifierMode)
-                                        val channelSwitchSelections = remember(channelTabs, channelSwitchOptions) {
-                                            buildSwitchSelections(channelTabs, channelSwitchOptions)
+                                        val savedSelections = remember(channelTabs, assetForDisplay.id) {
+                                            channelTabs.associate { tab ->
+                                                tab.entry.label to switchPrefs.getString(
+                                                    switchKey(assetForDisplay.id, tab.entry.label),
+                                                    null
+                                                )
+                                            }
+                                        }
+                                        val channelSwitchSelections = remember(channelTabs, channelSwitchOptions, savedSelections) {
+                                            buildSwitchSelections(channelTabs, channelSwitchOptions, savedSelections)
                                         }
                                         val initialSelection = channelSwitchSelections[entry] ?: "MAIN"
                                         var selected by remember(entry.label, initialSelection) {
@@ -2941,7 +2996,15 @@ private fun AssetFileSection(
                                                     modifier = Modifier
                                                         .clip(RoundedCornerShape(12.dp))
                                                         .background(if (isSelected) accentColor else Color.Transparent)
-                                                        .clickable { selected = option }
+                                                        .clickable {
+                                                            selected = option
+                                                            updateSwitchSelection(
+                                                                entry.label,
+                                                                option,
+                                                                isModule,
+                                                                assetForDisplay.id
+                                                            )
+                                                        }
                                                         .padding(horizontal = 10.dp, vertical = 4.dp)
                                                 ) {
                                                     Text(
@@ -3445,8 +3508,16 @@ private fun AssetFileSection(
                                     if (assetForDisplay.type == AssetType.AMPLIFIER && !isModule) {
                                         Spacer(Modifier.height(8.dp))
                                         val channelSwitchOptions = switchOptionsFor(assetForDisplay.amplifierMode)
-                                        val channelSwitchSelections = remember(channelTabs, channelSwitchOptions) {
-                                            buildSwitchSelections(channelTabs, channelSwitchOptions)
+                                        val savedSelections = remember(channelTabs, assetForDisplay.id) {
+                                            channelTabs.associate { tab ->
+                                                tab.entry.label to switchPrefs.getString(
+                                                    switchKey(assetForDisplay.id, tab.entry.label),
+                                                    null
+                                                )
+                                            }
+                                        }
+                                        val channelSwitchSelections = remember(channelTabs, channelSwitchOptions, savedSelections) {
+                                            buildSwitchSelections(channelTabs, channelSwitchOptions, savedSelections)
                                         }
                                         val initialSelection = channelSwitchSelections[entry] ?: "MAIN"
                                         var selected by remember(entry.label, initialSelection) {
@@ -3466,7 +3537,15 @@ private fun AssetFileSection(
                                                     modifier = Modifier
                                                         .clip(RoundedCornerShape(12.dp))
                                                         .background(if (isSelected) accentColor else Color.Transparent)
-                                                        .clickable { selected = option }
+                                                        .clickable {
+                                                            selected = option
+                                                            updateSwitchSelection(
+                                                                entry.label,
+                                                                option,
+                                                                isModule,
+                                                                assetForDisplay.id
+                                                            )
+                                                        }
                                                         .padding(horizontal = 10.dp, vertical = 4.dp)
                                                 ) {
                                                     Text(
