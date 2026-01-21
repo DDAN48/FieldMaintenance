@@ -43,6 +43,31 @@ fun requiredCounts(assetType: AssetType, isModule: Boolean): RequiredCounts {
     }
 }
 
+private fun switchOptionsFor(mode: com.example.fieldmaintenance.data.model.AmplifierMode?): List<String> {
+    return when (mode) {
+        com.example.fieldmaintenance.data.model.AmplifierMode.HGD -> listOf("IN", "MAIN", "AUX", "AUXDC")
+        com.example.fieldmaintenance.data.model.AmplifierMode.HGDT -> listOf("IN", "MAIN", "AUX")
+        else -> listOf("IN", "MAIN", "AUX")
+    }
+}
+
+private fun inferSwitchSelection(label: String, options: List<String>): String? {
+    val normalized = label.uppercase(Locale.getDefault())
+    val cleaned = normalized.replace(Regex("[^A-Z0-9]"), "_")
+    val tokens = cleaned.split("_").filter { it.isNotBlank() }.toSet()
+    val auxdcMatch = cleaned.contains("AUXDC") ||
+        cleaned.contains("AUX_DC") ||
+        cleaned.contains("AUXILIARDC") ||
+        cleaned.contains("AUXILIAR_DC")
+    return when {
+        auxdcMatch && options.contains("AUXDC") -> "AUXDC"
+        tokens.contains("MAIN") || tokens.contains("PRINCIPAL") -> "MAIN"
+        tokens.contains("IN") || tokens.contains("ENTRADA") -> "IN"
+        tokens.contains("AUX") || tokens.contains("AUXILIAR") -> "AUX"
+        else -> null
+    }
+}
+
 fun meetsRequired(summary: MeasurementVerificationSummary?, required: RequiredCounts): Boolean {
     if (summary == null) return false
     return summary.result.docsisExpert >= required.expectedDocsis &&
@@ -162,10 +187,12 @@ private fun collectChannelRows(json: Any?): List<ChannelRow> {
                 val channelValue = row.optJSONObject(0)?.optString("value")
                 val frequencyValue = row.optJSONObject(1)?.optString("value")
                 val levelValue = row.optJSONObject(2)?.optString("value")
+                val icfrValue = row.optJSONObject(3)?.optString("value")
                 val channel = parseInt(channelValue)
                 val frequency = parseNumber(frequencyValue)
                 val level = parseNumber(levelValue)
-                if (channel != null || frequency != null || level != null) {
+                val icfr = parseNumber(icfrValue)
+                if (channel != null || frequency != null || level != null || icfr != null) {
                     rows.add(
                         ChannelRow(
                             channel = channel,
@@ -174,7 +201,7 @@ private fun collectChannelRows(json: Any?): List<ChannelRow> {
                             merDb = null,
                             berPre = null,
                             berPost = null,
-                            icfrDb = null
+                            icfrDb = icfr
                         )
                     )
                 }
@@ -265,6 +292,26 @@ private fun collectMerPairs(results: JSONObject?): List<Pair<Double, Double>> {
         }
     }
     return pairs
+}
+
+private fun collectOfdmSeries(results: JSONObject?): OfdmSeries? {
+    val view = results?.optJSONObject("docsisDownstreamLevelsView") ?: return null
+    val failed = view.optJSONObject("Failed OFDM")
+    val passed = view.optJSONObject("Passed OFDM")
+    val target = failed ?: passed ?: return null
+    val data = target.optJSONArray("data") ?: return null
+    val points = mutableListOf<Pair<Double, Double>>()
+    for (i in 0 until data.length()) {
+        val pair = data.optJSONArray(i) ?: continue
+        if (pair.length() < 2) continue
+        val freq = pair.optDouble(0, Double.NaN)
+        val level = pair.optDouble(1, Double.NaN)
+        if (!freq.isNaN() && !level.isNaN()) {
+            points.add(freq to level)
+        }
+    }
+    if (points.isEmpty()) return null
+    return OfdmSeries(points = points, isValid = failed == null)
 }
 
 private fun parseTestPointOffset(test: JSONObject): Double {
@@ -491,11 +538,18 @@ data class MeasurementEntry(
     val geoLocation: GeoPoint?,
     val docsisMeta: Map<Double, ChannelMeta>,
     val docsisLevels: Map<Double, Double>,
+    val docsisIcfr: Map<Double, Double>,
     val docsisLevelOk: Map<Double, Boolean>,
     val pilotMeta: Map<Int, ChannelMeta>,
     val pilotLevels: Map<Int, Double>,
     val pilotLevelOk: Map<Int, Boolean>,
-    val digitalRows: List<DigitalChannelRow>
+    val digitalRows: List<DigitalChannelRow>,
+    val ofdmSeries: OfdmSeries?
+)
+
+data class OfdmSeries(
+    val points: List<Pair<Double, Double>>,
+    val isValid: Boolean
 )
 
 data class ChannelMeta(
@@ -556,6 +610,7 @@ suspend fun verifyMeasurementFiles(
     val seenIds = mutableSetOf<String>()
     var docsisCount = 0
     var channelCount = 0
+    var channelSequenceIndex = 0
     val docsisNames = linkedSetOf<String>()
     val channelNames = linkedSetOf<String>()
     val measurementEntries = mutableListOf<MeasurementEntry>()
@@ -574,9 +629,13 @@ suspend fun verifyMeasurementFiles(
     val geoIssueDetails = mutableListOf<GeoIssueDetail>()
     val rules = loadMeasurementRules(context)
     val equipmentKey = equipmentKeyFor(asset)
+    val amplifierAdjustment = if (assetType == AssetType.AMPLIFIER) {
+        repository.getAmplifierAdjustmentOne(asset.id)
+    } else {
+        null
+    }
     val amplifierTargets = if (assetType == AssetType.AMPLIFIER) {
-        val adjustment = repository.getAmplifierAdjustmentOne(asset.id)
-        val calculated = adjustment?.let { CiscoHfcAmpCalculator.nivelesSalidaCalculados(it) }
+        val calculated = amplifierAdjustment?.let { CiscoHfcAmpCalculator.nivelesSalidaCalculados(it) }
         calculated?.let {
             mapOf(
                 50 to it["CH50"],
@@ -585,6 +644,24 @@ suspend fun verifyMeasurementFiles(
                 116 to it["CH116"],
                 136 to it["CH136"]
             ).filterValues { value -> value != null }.mapValues { it.value!! }
+        }
+    } else {
+        null
+    }
+    val ampInputStatus = if (assetType == AssetType.AMPLIFIER) {
+        val adj = amplifierAdjustment
+        if (adj == null) {
+            null
+        } else {
+            val ch50Med = adj.inputCh50Dbmv
+            val ch50Plan = adj.inputPlanCh50Dbmv
+            val highMed = adj.inputCh116Dbmv
+            val highPlan = adj.inputPlanHighDbmv
+            val ch50Ok = ch50Med != null && ch50Plan != null &&
+                ch50Med >= 15.0 && kotlin.math.abs(ch50Med - ch50Plan) < 4.0
+            val highOk = highMed != null && highPlan != null &&
+                highMed >= 15.0 && kotlin.math.abs(highMed - highPlan) < 4.0
+            ch50Ok to highOk
         }
     } else {
         null
@@ -668,6 +745,40 @@ suspend fun verifyMeasurementFiles(
             val geoResult = parseGeoLocation(results)
             val geoLocation = geoKey(geoResult.point)
             val normalizedType = type.lowercase(Locale.getDefault())
+            val switchOptions = if (assetType == AssetType.AMPLIFIER) {
+                switchOptionsFor(asset.amplifierMode)
+            } else {
+                emptyList()
+            }
+            val switchSelection = if (assetType == AssetType.AMPLIFIER) {
+                val inferred = inferSwitchSelection(sourceLabel, switchOptions)
+                if (inferred != null) {
+                    inferred
+                } else if (normalizedType == "channelexpert" && !isDiscarded) {
+                    val selection = when (channelSequenceIndex) {
+                        0 -> "MAIN"
+                        1 -> "IN"
+                        else -> "AUX"
+                    }
+                    channelSequenceIndex += 1
+                    selection
+                } else {
+                    null
+                }
+            } else {
+                null
+            }
+            val toleranceOverride = when (switchSelection) {
+                "AUX" -> 8.0
+                "AUXDC" -> 14.0
+                else -> null
+            }
+            val forceChannelFail = if (switchSelection == "IN") {
+                val (ch50Ok, highOk) = ampInputStatus ?: (true to true)
+                !(ch50Ok && highOk)
+            } else {
+                false
+            }
             val id = hashId(type, testTime, testDurationMs, geoLocation)
             if (!seenIds.add(id)) {
                 if (!isDiscarded) {
@@ -749,6 +860,10 @@ suspend fun verifyMeasurementFiles(
                     rows.firstOrNull { it.frequencyMHz != null && kotlin.math.abs(it.frequencyMHz - freq) <= 0.5 }
                         ?.levelDbmv
                 }.filterValues { it != null }.mapValues { it.value!! }
+                val docsisIcfr = docsisFrequencies.associateWith { freq ->
+                    rows.firstOrNull { it.frequencyMHz != null && kotlin.math.abs(it.frequencyMHz - freq) <= 0.5 }
+                        ?.icfrDb
+                }.filterValues { it != null }.mapValues { it.value!! }
 
                 val pilotLevels = pilotChannels.associateWith { channel ->
                     rows.firstOrNull { it.channel == channel }?.levelDbmv
@@ -777,20 +892,23 @@ suspend fun verifyMeasurementFiles(
                         val adjusted = level + testPointOffset
                         if (rule?.has("source") == true) {
                             val target = amplifierTargets?.get(channel)
-                            val tolerance = rule.optDouble("tolerance", 1.5)
-                            pilotOk[channel] = target != null &&
-                                adjusted >= target - tolerance &&
-                                adjusted <= target + tolerance
+                        val tolerance = toleranceOverride ?: rule.optDouble("tolerance", 1.5)
+                        pilotOk[channel] = target != null &&
+                            adjusted >= target - tolerance &&
+                            adjusted <= target + tolerance
+                    } else {
+                        val target = rule?.optDouble("target", Double.NaN)?.takeIf { !it.isNaN() }
+                        val tolerance = toleranceOverride ?: rule?.optDouble("tolerance", Double.NaN)?.takeIf { !it.isNaN() }
+                        pilotOk[channel] = if (target != null && tolerance != null) {
+                            adjusted >= target - tolerance && adjusted <= target + tolerance
                         } else {
-                            val target = rule?.optDouble("target", Double.NaN)?.takeIf { !it.isNaN() }
-                            val tolerance = rule?.optDouble("tolerance", Double.NaN)?.takeIf { !it.isNaN() }
-                            pilotOk[channel] = if (target != null && tolerance != null) {
-                                adjusted >= target - tolerance && adjusted <= target + tolerance
-                            } else {
-                                true
-                            }
+                            true
                         }
                     }
+                }
+                if (forceChannelFail) {
+                    pilotOk.keys.forEach { channel -> pilotOk[channel] = false }
+                }
                 }
 
                 val assetKey = if (assetType == AssetType.NODE) "node" else "amplifier"
@@ -810,7 +928,7 @@ suspend fun verifyMeasurementFiles(
                 }
                 val pilotTarget = txConfig?.optDouble("pilotTarget", Double.NaN)
                 val digitalOffset = txTargets?.optDouble("digitalOffset", Double.NaN)
-                val digitalTolerance = txTargets?.optDouble("digitalTolerance", Double.NaN)
+                val digitalTolerance = toleranceOverride ?: txTargets?.optDouble("digitalTolerance", Double.NaN)
                 val digitalTarget = if (pilotTarget != null && !pilotTarget.isNaN() &&
                     digitalOffset != null && !digitalOffset.isNaN()
                 ) {
@@ -822,11 +940,16 @@ suspend fun verifyMeasurementFiles(
                 val digitalRows = rows.filter { it.channel != null && it.channel in 14..115 }
                     .mapNotNull { row ->
                         val channel = row.channel ?: return@mapNotNull null
-                        val levelOk = if (digitalTarget != null && digitalTolerance != null && !digitalTolerance.isNaN()) {
+                        val levelOkBase = if (digitalTarget != null && digitalTolerance != null && !digitalTolerance.isNaN()) {
                             val adjusted = (row.levelDbmv ?: return@mapNotNull null) + testPointOffset
                             adjusted >= digitalTarget - digitalTolerance && adjusted <= digitalTarget + digitalTolerance
                         } else {
                             null
+                        }
+                        val levelOk = if (forceChannelFail) {
+                            false
+                        } else {
+                            levelOkBase
                         }
                         DigitalChannelRow(
                             channel = channel,
@@ -843,6 +966,7 @@ suspend fun verifyMeasurementFiles(
                             icfrOk = row.icfrDb?.let { icfrMax == null || it <= icfrMax }
                         )
                     }
+                val ofdmSeries = collectOfdmSeries(results)
 
                 measurementEntries.add(
                     MeasurementEntry(
@@ -853,11 +977,13 @@ suspend fun verifyMeasurementFiles(
                         geoLocation = geoResult.point,
                         docsisMeta = docsisMeta,
                         docsisLevels = docsisLevels,
+                        docsisIcfr = docsisIcfr,
                         docsisLevelOk = docsisOk,
                         pilotMeta = pilotMeta,
                         pilotLevels = pilotLevels,
                         pilotLevelOk = pilotOk,
-                        digitalRows = digitalRows
+                        digitalRows = digitalRows,
+                        ofdmSeries = ofdmSeries
                     )
                 )
 
