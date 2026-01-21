@@ -2841,10 +2841,6 @@ private fun AssetFileSection(
                                 )
                             }
                             val channelLabelForEntry = channelTabs.associate { it.entry to it.label }
-                            val channelSwitchOptions = switchOptionsFor(assetForDisplay.amplifierMode)
-                            val channelSwitchSelections = remember(channelTabs, channelSwitchOptions) {
-                                buildSwitchSelections(channelTabs, channelSwitchOptions)
-                            }
                             MeasurementTabsWithPagerCard(
                                 tabs = channelTabs,
                                 footerProvider = { entry, label ->
@@ -2923,6 +2919,10 @@ private fun AssetFileSection(
                                     }
                                     if (assetForDisplay.type == AssetType.AMPLIFIER && !isModule) {
                                         Spacer(Modifier.height(8.dp))
+                                        val channelSwitchOptions = switchOptionsFor(assetForDisplay.amplifierMode)
+                                        val channelSwitchSelections = remember(channelTabs, channelSwitchOptions) {
+                                            buildSwitchSelections(channelTabs, channelSwitchOptions)
+                                        }
                                         val initialSelection = channelSwitchSelections[entry] ?: "MAIN"
                                         var selected by remember(entry.label, initialSelection) {
                                             mutableStateOf(initialSelection)
@@ -3123,10 +3123,6 @@ private fun AssetFileSection(
                                 )
                             }
                             val channelLabelForEntry = channelTabs.associate { it.entry to it.label }
-                            val channelSwitchOptions = switchOptionsFor(assetForDisplay.amplifierMode)
-                            val channelSwitchSelections = remember(channelTabs, channelSwitchOptions) {
-                                buildSwitchSelections(channelTabs, channelSwitchOptions)
-                            }
                             MeasurementTabsWithPagerCard(
                                 tabs = channelTabs,
                                 footerProvider = { entry, label ->
@@ -3448,6 +3444,10 @@ private fun AssetFileSection(
                                     }
                                     if (assetForDisplay.type == AssetType.AMPLIFIER && !isModule) {
                                         Spacer(Modifier.height(8.dp))
+                                        val channelSwitchOptions = switchOptionsFor(assetForDisplay.amplifierMode)
+                                        val channelSwitchSelections = remember(channelTabs, channelSwitchOptions) {
+                                            buildSwitchSelections(channelTabs, channelSwitchOptions)
+                                        }
                                         val initialSelection = channelSwitchSelections[entry] ?: "MAIN"
                                         var selected by remember(entry.label, initialSelection) {
                                             mutableStateOf(initialSelection)
