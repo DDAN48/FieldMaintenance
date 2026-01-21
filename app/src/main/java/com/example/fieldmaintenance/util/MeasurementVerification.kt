@@ -760,11 +760,13 @@ suspend fun verifyMeasurementFiles(
             val switchSelection = if (assetType == AssetType.AMPLIFIER) {
                 val switchKey = "switch_${asset.id}_${sourceLabel}"
                 val saved = switchPrefs.getString(switchKey, null)
-                val inferred = inferSwitchSelection(sourceLabel, switchOptions)
-                if (inferred != null && inferred != saved) {
+                val inferred = if (saved == null) inferSwitchSelection(sourceLabel, switchOptions) else null
+                if (saved == null && inferred != null) {
                     switchPrefs.edit().putString(switchKey, inferred).apply()
                 }
-                if (inferred != null) {
+                if (saved != null) {
+                    saved
+                } else if (inferred != null) {
                     inferred
                 } else if (saved != null) {
                     saved
