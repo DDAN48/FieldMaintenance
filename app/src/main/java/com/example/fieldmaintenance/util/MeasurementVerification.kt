@@ -61,9 +61,9 @@ private fun inferSwitchSelection(label: String, options: List<String>): String? 
         cleaned.contains("AUXILIARDC") ||
         cleaned.contains("AUXILIAR_DC")
     return when {
-        auxdcMatch && options.contains("AUXDC") -> "AUXDC"
-        tokens.contains("MAIN") || tokens.contains("PRINCIPAL") -> "MAIN"
         tokens.contains("IN") || tokens.contains("ENTRADA") -> "IN"
+        tokens.contains("MAIN") || tokens.contains("PRINCIPAL") -> "MAIN"
+        auxdcMatch && options.contains("AUXDC") -> "AUXDC"
         tokens.contains("AUX") || tokens.contains("AUXILIAR") -> "AUX"
         else -> null
     }
@@ -754,8 +754,12 @@ suspend fun verifyMeasurementFiles(
                 emptyList()
             }
             val switchSelection = if (assetType == AssetType.AMPLIFIER) {
-                val saved = switchPrefs.getString("switch_${asset.id}_${sourceLabel}", null)
+                val switchKey = "switch_${asset.id}_${sourceLabel}"
+                val saved = switchPrefs.getString(switchKey, null)
                 val inferred = saved ?: inferSwitchSelection(sourceLabel, switchOptions)
+                if (saved == null && inferred != null) {
+                    switchPrefs.edit().putString(switchKey, inferred).apply()
+                }
                 if (inferred != null) {
                     inferred
                 } else if (normalizedType == "channelexpert" && !isDiscarded) {
@@ -905,7 +909,7 @@ suspend fun verifyMeasurementFiles(
                         if (rule?.has("source") == true) {
                             val target = amplifierTargets?.get(channel)
                             val ruleTolerance = rule.optDouble("tolerance", 1.5)
-                            val tolerance = resolveTolerance(ruleTolerance, toleranceOverride)
+                            val tolerance = resolveTolerance(ruleTolerance, toleranceOverride) ?: ruleTolerance
                             pilotOk[channel] = target != null &&
                                 adjusted >= target - tolerance &&
                                 adjusted <= target + tolerance
@@ -920,19 +924,11 @@ suspend fun verifyMeasurementFiles(
                             }
                         }
                     }
-                if (forceChannelFail) {
-                    pilotOk.keys.forEach { channel -> pilotOk[channel] = false }
-                }
-                }
-                if (forceChannelFail) {
-                    pilotOk.keys.forEach { channel -> pilotOk[channel] = false }
-                }
                 }
                 if (forceChannelFail) {
                     pilotOk.keys.forEach { channel -> pilotOk[channel] = false }
                 }
 
-                val assetKey = if (assetType == AssetType.NODE) "node" else "amplifier"
                 val common = rules?.optJSONObject("channelexpert")?.optJSONObject("common")
                 val merMin = common?.optJSONObject("mer")?.optDouble("min", Double.NaN)?.takeIf { !it.isNaN() }
                 val berPreMax = common?.optJSONObject("berPre")?.optDouble("max", Double.NaN)?.takeIf { !it.isNaN() }
