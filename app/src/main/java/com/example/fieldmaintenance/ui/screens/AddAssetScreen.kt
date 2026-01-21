@@ -3431,7 +3431,7 @@ private fun AssetFileSection(
                         val file = list.firstOrNull { it.name == entryName }
                         if (file != null) {
                             scope.launch(Dispatchers.IO) {
-                                MaintenanceStorage.moveMeasurementFileToTrash(context, file)
+                                file.delete()
                                 val updated = if (isModule) {
                                     moduleAssetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
                                 } else {
