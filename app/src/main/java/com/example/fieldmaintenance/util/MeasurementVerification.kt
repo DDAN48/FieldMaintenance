@@ -361,9 +361,11 @@ private fun validateMeasurementValues(
     equipmentKey: String,
     assetType: AssetType,
     amplifierTargets: Map<Int, Double>?,
-    nodeTxType: String?
+    nodeTxType: String?,
+    skipChannelValidation: Boolean
 ): List<String> {
     if (rules == null) return listOf("No se pudo cargar la tabla de validación.")
+    if (type == "channelexpert" && skipChannelValidation) return emptyList()
     val issues = mutableListOf<String>()
     val assetKey = when (assetType) {
         AssetType.NODE -> "node"
@@ -785,12 +787,7 @@ suspend fun verifyMeasurementFiles(
                 "AUXDC" -> 14.0
                 else -> null
             }
-            val forceChannelFail = if (switchSelection == "IN") {
-                val (ch50Ok, highOk) = ampInputStatus ?: (true to true)
-                !(ch50Ok && highOk)
-            } else {
-                false
-            }
+            val useInputValidation = switchSelection == "IN" && ampInputStatus != null
             val id = hashId(type, testTime, testDurationMs, geoLocation)
             if (!seenIds.add(id)) {
                 if (!isDiscarded) {
@@ -892,7 +889,12 @@ suspend fun verifyMeasurementFiles(
                     }
                 }
 
-                if (rules != null) {
+                if (useInputValidation) {
+                    val (ch50Ok, highOk) = ampInputStatus ?: (true to true)
+                    pilotLevels.keys.forEach { channel ->
+                        pilotOk[channel] = if (channel == 50) ch50Ok else highOk
+                    }
+                } else if (rules != null) {
                     val assetKey = if (assetType == AssetType.NODE) "node" else "amplifier"
                     val docsisRules = rules.optJSONObject("docsisexpert")
                         ?.optJSONObject(assetKey)
@@ -928,9 +930,6 @@ suspend fun verifyMeasurementFiles(
                             }
                         }
                     }
-                }
-                if (forceChannelFail) {
-                    pilotOk.keys.forEach { channel -> pilotOk[channel] = false }
                 }
 
                 val common = rules?.optJSONObject("channelexpert")?.optJSONObject("common")
@@ -985,7 +984,8 @@ suspend fun verifyMeasurementFiles(
                         equipmentKey = equipmentKey,
                         assetType = assetType,
                         amplifierTargets = amplifierTargets,
-                        nodeTxType = nodeTxType
+                        nodeTxType = nodeTxType,
+                        skipChannelValidation = switchSelection == "IN"
                     )
                     issues.forEach { issue ->
                         validationIssues.add(
