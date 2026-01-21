@@ -768,6 +768,8 @@ suspend fun verifyMeasurementFiles(
                     saved
                 } else if (inferred != null) {
                     inferred
+                } else if (saved != null) {
+                    saved
                 } else if (normalizedType == "channelexpert" && !isDiscarded) {
                     val selection = when (channelSequenceIndex) {
                         0 -> "MAIN"
