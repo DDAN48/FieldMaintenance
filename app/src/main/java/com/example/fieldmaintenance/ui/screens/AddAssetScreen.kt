@@ -2856,7 +2856,7 @@ private fun AssetFileSection(
                                             onDelete = onRequestDelete
                                         )
                                     }
-                                    if (assetForDisplay.type == AssetType.AMPLIFIER) {
+                                    if (assetForDisplay.type == AssetType.AMPLIFIER && !isModule) {
                                         Spacer(Modifier.height(8.dp))
                                         val options = listOf("IN", "AUX", "DC")
                                         var selected by remember { mutableStateOf("IN") }
@@ -3375,7 +3375,7 @@ private fun AssetFileSection(
                                             onDelete = onRequestDelete
                                         )
                                     }
-                                    if (assetForDisplay.type == AssetType.AMPLIFIER) {
+                                    if (assetForDisplay.type == AssetType.AMPLIFIER && !isModule) {
                                         Spacer(Modifier.height(8.dp))
                                         val options = listOf("IN", "AUX", "DC")
                                         var selected by remember { mutableStateOf("IN") }
