@@ -2636,6 +2636,7 @@ private fun AssetFileSection(
                             val selections = mutableMapOf<MeasurementEntry, String>()
                             var mainUsed = false
                             var inUsed = false
+                            var auxdcUsed = false
                             tabs.forEachIndexed { index, tab ->
                                 val inferred = inferSwitchSelection(tab.entry.label, options)
                                 var selection = when {
@@ -2650,11 +2651,15 @@ private fun AssetFileSection(
                                 if (selection == "IN" && inUsed) {
                                     selection = "AUX"
                                 }
+                                if (selection == "AUXDC" && auxdcUsed) {
+                                    selection = "AUX"
+                                }
                                 if (selection == "AUXDC" && !options.contains("AUXDC")) {
                                     selection = "AUX"
                                 }
                                 if (selection == "MAIN") mainUsed = true
                                 if (selection == "IN") inUsed = true
+                                if (selection == "AUXDC") auxdcUsed = true
                                 selections[tab.entry] = selection
                             }
                             return selections
