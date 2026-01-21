@@ -784,7 +784,7 @@ suspend fun verifyMeasurementFiles(
             }
             val toleranceOverride = when (switchSelection) {
                 "AUX" -> 8.0
-                "AUXDC" -> 14.0
+                "AUXDC" -> 12.0
                 else -> null
             }
             val useInputValidation = switchSelection == "IN" && ampInputStatus != null
