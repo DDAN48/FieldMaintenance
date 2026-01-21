@@ -608,7 +608,7 @@ fun AddAssetScreen(
     
     LaunchedEffect(Unit) {
         hasNode = viewModel.hasNode()
-        if (!isEdit && hasNode) {
+        if (!isEdit && hasNode && parsedAssetType == null) {
             assetType = AssetType.AMPLIFIER
         }
     }
