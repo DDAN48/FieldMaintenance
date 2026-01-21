@@ -905,7 +905,7 @@ suspend fun verifyMeasurementFiles(
                         if (rule?.has("source") == true) {
                             val target = amplifierTargets?.get(channel)
                             val ruleTolerance = rule.optDouble("tolerance", 1.5)
-                            val tolerance = resolveTolerance(ruleTolerance, toleranceOverride)
+                            val tolerance = resolveTolerance(ruleTolerance, toleranceOverride) ?: ruleTolerance
                             pilotOk[channel] = target != null &&
                                 adjusted >= target - tolerance &&
                                 adjusted <= target + tolerance
@@ -920,19 +920,11 @@ suspend fun verifyMeasurementFiles(
                             }
                         }
                     }
-                if (forceChannelFail) {
-                    pilotOk.keys.forEach { channel -> pilotOk[channel] = false }
-                }
-                }
-                if (forceChannelFail) {
-                    pilotOk.keys.forEach { channel -> pilotOk[channel] = false }
-                }
                 }
                 if (forceChannelFail) {
                     pilotOk.keys.forEach { channel -> pilotOk[channel] = false }
                 }
 
-                val assetKey = if (assetType == AssetType.NODE) "node" else "amplifier"
                 val common = rules?.optJSONObject("channelexpert")?.optJSONObject("common")
                 val merMin = common?.optJSONObject("mer")?.optDouble("min", Double.NaN)?.takeIf { !it.isNaN() }
                 val berPreMax = common?.optJSONObject("berPre")?.optDouble("max", Double.NaN)?.takeIf { !it.isNaN() }
