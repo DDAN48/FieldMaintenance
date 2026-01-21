@@ -920,13 +920,6 @@ suspend fun verifyMeasurementFiles(
                             }
                         }
                     }
-                if (forceChannelFail) {
-                    pilotOk.keys.forEach { channel -> pilotOk[channel] = false }
-                }
-                }
-                if (forceChannelFail) {
-                    pilotOk.keys.forEach { channel -> pilotOk[channel] = false }
-                }
                 }
                 if (forceChannelFail) {
                     pilotOk.keys.forEach { channel -> pilotOk[channel] = false }
