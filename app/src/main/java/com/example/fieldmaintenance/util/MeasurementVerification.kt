@@ -924,6 +924,10 @@ suspend fun verifyMeasurementFiles(
                     pilotOk.keys.forEach { channel -> pilotOk[channel] = false }
                 }
                 }
+                if (forceChannelFail) {
+                    pilotOk.keys.forEach { channel -> pilotOk[channel] = false }
+                }
+                }
 
                 val assetKey = if (assetType == AssetType.NODE) "node" else "amplifier"
                 val common = rules?.optJSONObject("channelexpert")?.optJSONObject("common")
