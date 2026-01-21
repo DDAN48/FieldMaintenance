@@ -61,9 +61,9 @@ private fun inferSwitchSelection(label: String, options: List<String>): String? 
         cleaned.contains("AUXILIARDC") ||
         cleaned.contains("AUXILIAR_DC")
     return when {
-        auxdcMatch && options.contains("AUXDC") -> "AUXDC"
-        tokens.contains("MAIN") || tokens.contains("PRINCIPAL") -> "MAIN"
         tokens.contains("IN") || tokens.contains("ENTRADA") -> "IN"
+        tokens.contains("MAIN") || tokens.contains("PRINCIPAL") -> "MAIN"
+        auxdcMatch && options.contains("AUXDC") -> "AUXDC"
         tokens.contains("AUX") || tokens.contains("AUXILIAR") -> "AUX"
         else -> null
     }
@@ -754,8 +754,12 @@ suspend fun verifyMeasurementFiles(
                 emptyList()
             }
             val switchSelection = if (assetType == AssetType.AMPLIFIER) {
-                val saved = switchPrefs.getString("switch_${asset.id}_${sourceLabel}", null)
+                val switchKey = "switch_${asset.id}_${sourceLabel}"
+                val saved = switchPrefs.getString(switchKey, null)
                 val inferred = saved ?: inferSwitchSelection(sourceLabel, switchOptions)
+                if (saved == null && inferred != null) {
+                    switchPrefs.edit().putString(switchKey, inferred).apply()
+                }
                 if (inferred != null) {
                     inferred
                 } else if (normalizedType == "channelexpert" && !isDiscarded) {
