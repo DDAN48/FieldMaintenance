@@ -1452,6 +1452,17 @@ val assets = repository.getAssetsByReportId(report.id).first()
             switchSelections = if (switchSelections.isNotEmpty()) switchSelections else null
         )
         File(exportDir, "report.json").writeText(gson.toJson(exportData))
+        val adjustedCount = countAdjustedAssets(report, assets)
+        exportToHtml(
+            exportDir = exportDir,
+            report = report,
+            assets = assets,
+            passives = passives,
+            adjustedCount = adjustedCount,
+            imagesByAsset = imagesByAsset,
+            adjustmentsByAsset = adjustmentsByAsset,
+            nodeAdjustmentsByAsset = nodeAdjustmentsByAsset
+        )
 
         val zipFile = File(context.getExternalFilesDir(null), "maintenance_${report.id}.zip")
         if (zipFile.exists()) zipFile.delete()
@@ -1461,6 +1472,851 @@ val assets = repository.getAssetsByReportId(report.id).first()
         }
         
         zipFile
+    }
+
+    private suspend fun exportToHtml(
+        exportDir: File,
+        report: MaintenanceReport,
+        assets: List<Asset>,
+        passives: List<PassiveItem>,
+        adjustedCount: Int,
+        imagesByAsset: Map<String, List<ExportImageRef>>,
+        adjustmentsByAsset: Map<String, AmplifierAdjustment>,
+        nodeAdjustmentsByAsset: Map<String, NodeAdjustment>
+    ): File {
+        val measurementRoot = File(exportDir, "measurements")
+        val measurements = buildHtmlMeasurementMap(assets, measurementRoot)
+        val passiveCounts = passives.groupingBy { it.type }.eachCount()
+
+        fun countOf(t: PassiveType) = passiveCounts[t] ?: 0
+
+        val htmlData = HtmlExportData(
+            report = report,
+            info = HtmlInfoCounts(
+                tapsSpliteado = countOf(PassiveType.TAPS_SPLITEADO_A_REFORMA),
+                acometidasCortadas = countOf(PassiveType.ACOMETIDAS_CORTADAS),
+                antirroboColocado = countOf(PassiveType.COLOCA_ANTIRROBO_A_TAP),
+                pasivosNormalizados = countOf(PassiveType.PASIVO_NORMALIZADO_O_REPARADO),
+                activosAjustados = adjustedCount
+            ),
+            assets = assets.map { asset ->
+                val assetPhotos = imagesByAsset[asset.id].orEmpty()
+                val photoTypeCounts = assetPhotos.groupingBy { it.photoType }.eachCount()
+                val photoTypeIndex = mutableMapOf<PhotoType, Int>()
+                HtmlAssetExport(
+                    id = asset.id,
+                    header = assetHeaderLine(report, asset),
+                    type = asset.type.name,
+                    frequencyMHz = asset.frequencyMHz,
+                    amplifierMode = asset.amplifierMode?.label,
+                    portLabel = if (asset.port != null && asset.portIndex != null) {
+                        "${asset.port.name}${String.format("%02d", asset.portIndex)}"
+                    } else {
+                        null
+                    },
+                    photos = assetPhotos.map { ref ->
+                        val baseTitle = photoSectionTitle(ref.photoType)
+                        val currentIndex = photoTypeIndex.getOrPut(ref.photoType) { 0 } + 1
+                        photoTypeIndex[ref.photoType] = currentIndex
+                        val title = if ((photoTypeCounts[ref.photoType] ?: 0) > 1) {
+                            "$baseTitle $currentIndex"
+                        } else {
+                            baseTitle
+                        }
+                        val imageFile = File(exportDir, ref.fileName)
+                        val dataUri = if (imageFile.exists()) {
+                            val encoded = Base64.encodeToString(imageFile.readBytes(), Base64.NO_WRAP)
+                            "data:image/jpeg;base64,$encoded"
+                        } else {
+                            null
+                        }
+                        HtmlPhotoExport(
+                            title = title,
+                            fileName = ref.fileName,
+                            dataUri = dataUri,
+                            photoType = ref.photoType.name
+                        )
+                    },
+                    adjustment = HtmlAdjustmentExport(
+                        node = nodeAdjustmentsByAsset[asset.id]?.let { nodeAdj ->
+                            HtmlNodeAdjustmentExport(
+                                planNode = nodeAdj.planNode,
+                                planContractor = nodeAdj.planContractor,
+                                planTechnology = nodeAdj.planTechnology,
+                                planPoDirecta = nodeAdj.planPoDirecta,
+                                planPoRetorno = nodeAdj.planPoRetorno,
+                                planDistanciaSfp = nodeAdj.planDistanciaSfp,
+                                tx1310Confirmed = nodeAdj.tx1310Confirmed,
+                                tx1550Confirmed = nodeAdj.tx1550Confirmed,
+                                poConfirmed = nodeAdj.poConfirmed,
+                                rxPadSelection = nodeAdj.rxPadSelection,
+                                measurementConfirmed = nodeAdj.measurementConfirmed,
+                                spectrumConfirmed = nodeAdj.spectrumConfirmed,
+                                nonLegacyConfirmed = nodeAdj.nonLegacyConfirmed,
+                                sfpDistance = nodeAdj.sfpDistance,
+                                poDirectaConfirmed = nodeAdj.poDirectaConfirmed,
+                                poRetornoConfirmed = nodeAdj.poRetornoConfirmed,
+                                docsisConfirmed = nodeAdj.docsisConfirmed
+                            )
+                        },
+                        amplifier = adjustmentsByAsset[asset.id]?.let { adj ->
+                            buildHtmlAmplifierAdjustment(asset, adj)
+                        }
+                    )
+                )
+            },
+            measurements = measurements
+        )
+        val json = gson.toJson(htmlData)
+        val html = """
+            <!doctype html>
+            <html lang="es">
+              <head>
+                <meta charset="utf-8" />
+                <meta name="viewport" content="width=device-width, initial-scale=1" />
+                <title>Informe de Mantenimiento</title>
+                <style>
+                  :root {
+                    color-scheme: dark;
+                    --bg: #1b1b26;
+                    --panel: #232334;
+                    --panel-2: #2b2b3f;
+                    --border: #3b3b55;
+                    --text: #f4f4f7;
+                    --muted: #b7b7c5;
+                    --accent: #8ab4ff;
+                    --ok: #62c370;
+                    --warn: #f6c56f;
+                    --bad: #ef6b6b;
+                  }
+                  * { box-sizing: border-box; }
+                  body {
+                    margin: 0;
+                    background: var(--bg);
+                    color: var(--text);
+                    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+                  }
+                  .container {
+                    max-width: 1200px;
+                    margin: 0 auto;
+                    padding: 24px;
+                    display: flex;
+                    flex-direction: column;
+                    gap: 24px;
+                  }
+                  .card {
+                    background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.02));
+                    border: 1px solid var(--border);
+                    border-radius: 16px;
+                    padding: 18px;
+                    box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+                  }
+                  .title {
+                    text-align: center;
+                    font-size: 20px;
+                    font-weight: 700;
+                    padding: 16px;
+                    background: rgba(255,255,255,0.06);
+                    border-radius: 12px;
+                  }
+                  .info-grid {
+                    display: grid;
+                    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+                    gap: 12px;
+                  }
+                  .info-item {
+                    background: var(--panel);
+                    padding: 12px;
+                    border-radius: 12px;
+                    border: 1px solid var(--border);
+                  }
+                  .info-item span {
+                    display: block;
+                    font-size: 12px;
+                    color: var(--muted);
+                  }
+                  .info-item strong {
+                    font-size: 14px;
+                  }
+                  .section-title {
+                    font-weight: 700;
+                    margin-bottom: 8px;
+                  }
+                  .asset-toolbar {
+                    display: flex;
+                    align-items: center;
+                    gap: 12px;
+                    flex-wrap: wrap;
+                  }
+                  select {
+                    background: var(--panel-2);
+                    color: var(--text);
+                    border: 1px solid var(--border);
+                    padding: 8px 12px;
+                    border-radius: 8px;
+                  }
+                  .asset-grid {
+                    display: grid;
+                    grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr);
+                    gap: 18px;
+                  }
+                  .photo-frame {
+                    position: relative;
+                    background: #11111a;
+                    border-radius: 16px;
+                    border: 1px solid var(--border);
+                    padding: 12px;
+                    min-height: 280px;
+                  }
+                  .photo-frame img {
+                    width: 100%;
+                    height: auto;
+                    border-radius: 12px;
+                    display: block;
+                  }
+                  .photo-title {
+                    margin-top: 8px;
+                    text-align: center;
+                    color: var(--muted);
+                    font-size: 13px;
+                  }
+                  .photo-nav {
+                    position: absolute;
+                    top: 50%;
+                    transform: translateY(-50%);
+                    background: rgba(0,0,0,0.55);
+                    border: 1px solid var(--border);
+                    color: var(--text);
+                    padding: 6px 10px;
+                    border-radius: 50%;
+                    cursor: pointer;
+                  }
+                  .photo-nav.prev { left: 8px; }
+                  .photo-nav.next { right: 8px; }
+                  .adjustment-panel {
+                    background: var(--panel);
+                    border-radius: 16px;
+                    border: 1px solid var(--border);
+                    padding: 14px;
+                    display: flex;
+                    flex-direction: column;
+                    gap: 12px;
+                  }
+                  .adjustment-panel h3 {
+                    margin: 0;
+                    font-size: 16px;
+                  }
+                  .table {
+                    width: 100%;
+                    border-collapse: collapse;
+                    font-size: 12px;
+                  }
+                  .table th, .table td {
+                    border: 1px solid var(--border);
+                    padding: 6px;
+                    text-align: left;
+                  }
+                  .table th {
+                    background: rgba(255,255,255,0.06);
+                  }
+                  .badge {
+                    padding: 2px 6px;
+                    border-radius: 999px;
+                    font-size: 11px;
+                    background: rgba(255,255,255,0.1);
+                    display: inline-block;
+                  }
+                  .badge.ok { background: rgba(98,195,112,0.2); color: var(--ok); }
+                  .badge.bad { background: rgba(239,107,107,0.2); color: var(--bad); }
+                  .measurement-section {
+                    margin-top: 16px;
+                    display: flex;
+                    flex-direction: column;
+                    gap: 12px;
+                  }
+                  .measurement-entry {
+                    background: var(--panel);
+                    border-radius: 12px;
+                    border: 1px solid var(--border);
+                    padding: 12px;
+                    display: flex;
+                    flex-direction: column;
+                    gap: 12px;
+                  }
+                  .chart {
+                    width: 100%;
+                    height: 160px;
+                    background: rgba(0,0,0,0.25);
+                    border-radius: 8px;
+                    border: 1px solid var(--border);
+                  }
+                  .muted {
+                    color: var(--muted);
+                    font-size: 12px;
+                  }
+                  @media (max-width: 900px) {
+                    .asset-grid {
+                      grid-template-columns: 1fr;
+                    }
+                  }
+                </style>
+              </head>
+              <body>
+                <div class="container">
+                  <div class="card">
+                    <div class="section-title">Informe de mantenimiento</div>
+                    <div class="info-grid" id="header-info"></div>
+                  </div>
+                  <div class="card">
+                    <div class="title">Informe de Mantenimiento Preventivo</div>
+                    <div class="section-title" style="margin-top:16px;">Información General</div>
+                    <div class="info-grid" id="general-info"></div>
+                  </div>
+                  <div class="card">
+                    <div class="asset-toolbar">
+                      <select id="asset-select"></select>
+                      <strong id="asset-header"></strong>
+                    </div>
+                    <div class="asset-grid" style="margin-top:16px;">
+                      <div>
+                        <div class="photo-frame">
+                          <button class="photo-nav prev" id="photo-prev">‹</button>
+                          <button class="photo-nav next" id="photo-next">›</button>
+                          <img id="photo-image" alt="Foto del activo" />
+                          <div class="photo-title" id="photo-title"></div>
+                        </div>
+                        <div class="measurement-section" id="measurement-section"></div>
+                      </div>
+                      <aside class="adjustment-panel" id="adjustment-panel"></aside>
+                    </div>
+                  </div>
+                </div>
+                <script id="report-data" type="application/json">
+                $json
+                </script>
+                <script>
+                  const data = JSON.parse(document.getElementById('report-data').textContent);
+                  const assetSelect = document.getElementById('asset-select');
+                  const assetHeader = document.getElementById('asset-header');
+                  const photoImage = document.getElementById('photo-image');
+                  const photoTitle = document.getElementById('photo-title');
+                  const photoPrev = document.getElementById('photo-prev');
+                  const photoNext = document.getElementById('photo-next');
+                  const adjustmentPanel = document.getElementById('adjustment-panel');
+                  const measurementSection = document.getElementById('measurement-section');
+                  let currentPhotos = [];
+                  let currentPhotoIndex = 0;
+
+                  function createInfoItem(label, value) {
+                    const div = document.createElement('div');
+                    div.className = 'info-item';
+                    div.innerHTML = `<span>${'$'}{label}</span><strong>${'$'}{value || '—'}</strong>`;
+                    return div;
+                  }
+
+                  const headerInfo = document.getElementById('header-info');
+                  headerInfo.append(
+                    createInfoItem('CONTRATISTA', data.report.contractor),
+                    createInfoItem('GERENCIA', 'Mantenimiento Red de Acceso'),
+                    createInfoItem('NODO', data.report.nodeName),
+                    createInfoItem('Evento', data.report.eventName)
+                  );
+
+                  const generalInfo = document.getElementById('general-info');
+                  generalInfo.append(
+                    createInfoItem('Responsable', data.report.responsible),
+                    createInfoItem('Contratista', data.report.contractor),
+                    createInfoItem('Número del Medidor', data.report.meterNumber),
+                    createInfoItem('Taps Spliteado a reforma', data.info.tapsSpliteado),
+                    createInfoItem('Acometidas cortadas', data.info.acometidasCortadas),
+                    createInfoItem('Antirrobo Colocado', data.info.antirroboColocado),
+                    createInfoItem('Pasivos normalizado o reparado', data.info.pasivosNormalizados),
+                    createInfoItem('Activos ajustados', data.info.activosAjustados)
+                  );
+
+                  data.assets.forEach((asset, index) => {
+                    const option = document.createElement('option');
+                    option.value = asset.id;
+                    option.textContent = asset.header;
+                    if (index === 0) option.selected = true;
+                    assetSelect.appendChild(option);
+                  });
+
+                  function updatePhoto() {
+                    if (!currentPhotos.length) {
+                      photoImage.src = '';
+                      photoTitle.textContent = 'Sin fotos cargadas';
+                      return;
+                    }
+                    const photo = currentPhotos[currentPhotoIndex];
+                    photoImage.src = photo.dataUri || photo.fileName;
+                    photoTitle.textContent = photo.title;
+                  }
+
+                  photoPrev.addEventListener('click', () => {
+                    if (!currentPhotos.length) return;
+                    currentPhotoIndex = (currentPhotoIndex - 1 + currentPhotos.length) % currentPhotos.length;
+                    updatePhoto();
+                  });
+                  photoNext.addEventListener('click', () => {
+                    if (!currentPhotos.length) return;
+                    currentPhotoIndex = (currentPhotoIndex + 1) % currentPhotos.length;
+                    updatePhoto();
+                  });
+
+                  function badge(value) {
+                    const span = document.createElement('span');
+                    span.className = `badge ${'$'}{value ? 'ok' : 'bad'}`;
+                    span.textContent = value ? 'OK' : 'Pendiente';
+                    return span;
+                  }
+
+                  function renderNodeAdjustment(node) {
+                    const container = document.createElement('div');
+                    container.innerHTML = `<h3>Ajuste de Nodo</h3>`;
+                    if (!node) {
+                      container.append(document.createTextNode('Sin datos de ajuste.'));
+                      return container;
+                    }
+                    const info = document.createElement('div');
+                    info.className = 'muted';
+                    info.innerHTML = `
+                      Plan: ${'$'}{node.planNode || '—'}<br />
+                      Contratista: ${'$'}{node.planContractor || '—'}<br />
+                      Tecnología: ${'$'}{node.planTechnology || '—'}
+                    `;
+                    container.append(info);
+                    const table = document.createElement('table');
+                    table.className = 'table';
+                    table.innerHTML = `
+                      <thead><tr><th>Item</th><th>Estado</th></tr></thead>
+                      <tbody>
+                        <tr><td>TX 1310</td><td></td></tr>
+                        <tr><td>TX 1550</td><td></td></tr>
+                        <tr><td>PO Directa</td><td></td></tr>
+                        <tr><td>PO Retorno</td><td></td></tr>
+                        <tr><td>Medición RX</td><td></td></tr>
+                        <tr><td>Espectro</td><td></td></tr>
+                      </tbody>
+                    `;
+                    const rows = table.querySelectorAll('tbody tr');
+                    rows[0].children[1].appendChild(badge(node.tx1310Confirmed));
+                    rows[1].children[1].appendChild(badge(node.tx1550Confirmed));
+                    rows[2].children[1].appendChild(badge(node.poDirectaConfirmed || node.poConfirmed));
+                    rows[3].children[1].appendChild(badge(node.poRetornoConfirmed));
+                    rows[4].children[1].appendChild(badge(node.measurementConfirmed));
+                    rows[5].children[1].appendChild(badge(node.spectrumConfirmed));
+                    container.append(table);
+                    return container;
+                  }
+
+                  function renderAmplifierAdjustment(amp) {
+                    const container = document.createElement('div');
+                    container.innerHTML = `<h3>Ajuste de Amplificador</h3>`;
+                    if (!amp) {
+                      container.append(document.createTextNode('Sin datos de ajuste.'));
+                      return container;
+                    }
+                    const tables = [
+                      { title: 'Niveles ENTRADA medido vs plano', rows: amp.inputMeasured },
+                      { title: 'Niveles ENTRADA calculados', rows: amp.inputCalculated },
+                      { title: 'Niveles SALIDA por plano', rows: amp.outputPlan },
+                      { title: 'Niveles SALIDA calculados', rows: amp.outputCalculated },
+                      { title: 'Niveles SALIDA calculado vs medido', rows: amp.outputMeasured },
+                      { title: 'FWD IN PAD/ EQ /AGC PAD', rows: amp.pads }
+                    ];
+                    tables.forEach((tableData) => {
+                      if (!tableData.rows || !tableData.rows.length) return;
+                      const section = document.createElement('div');
+                      section.innerHTML = `<div class="section-title">${'$'}{tableData.title}</div>`;
+                      const table = document.createElement('table');
+                      table.className = 'table';
+                      const headers = Object.keys(tableData.rows[0]).filter((h) => h !== 'alert');
+                      table.innerHTML = `
+                        <thead><tr>${'$'}{headers.map((h) => `<th>${'$'}{h}</th>`).join('')}</tr></thead>
+                        <tbody></tbody>
+                      `;
+                      const body = table.querySelector('tbody');
+                      tableData.rows.forEach((row) => {
+                        const tr = document.createElement('tr');
+                        headers.forEach((h) => {
+                          const td = document.createElement('td');
+                          td.textContent = row[h] ?? '—';
+                          if (row.alert && h === 'DIF') {
+                            td.style.color = 'var(--bad)';
+                          }
+                          tr.appendChild(td);
+                        });
+                        body.appendChild(tr);
+                      });
+                      section.appendChild(table);
+                      container.appendChild(section);
+                    });
+                    return container;
+                  }
+
+                  function drawBarChart(container, points) {
+                    if (!points.length) {
+                      container.textContent = 'Sin datos para graficar.';
+                      container.classList.add('muted');
+                      return;
+                    }
+                    const width = container.clientWidth || 600;
+                    const height = 160;
+                    const padding = 24;
+                    const levels = points.map((p) => p.levelDbmv).filter((v) => v != null);
+                    if (!levels.length) {
+                      container.textContent = 'Sin datos para graficar.';
+                      container.classList.add('muted');
+                      return;
+                    }
+                    const min = Math.min(...levels);
+                    const max = Math.max(...levels);
+                    const span = max - min || 1;
+                    const barWidth = (width - padding * 2) / points.length;
+                    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                    svg.setAttribute('width', width);
+                    svg.setAttribute('height', height);
+                    points.forEach((point, index) => {
+                      const level = point.levelDbmv ?? 0;
+                      const x = padding + index * barWidth + barWidth * 0.1;
+                      const barHeight = ((level - min) / span) * (height - padding * 2);
+                      const y = height - padding - barHeight;
+                      const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                      rect.setAttribute('x', x);
+                      rect.setAttribute('y', y);
+                      rect.setAttribute('width', barWidth * 0.8);
+                      rect.setAttribute('height', barHeight);
+                      rect.setAttribute('rx', 4);
+                      rect.setAttribute('fill', point.ok === false ? '#ef6b6b' : '#8ab4ff');
+                      svg.appendChild(rect);
+                      const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                      label.setAttribute('x', x + barWidth * 0.4);
+                      label.setAttribute('y', height - 8);
+                      label.setAttribute('text-anchor', 'middle');
+                      label.setAttribute('fill', '#b7b7c5');
+                      label.setAttribute('font-size', '10');
+                      label.textContent = point.frequencyMHz ?? '';
+                      svg.appendChild(label);
+                    });
+                    container.innerHTML = '';
+                    container.appendChild(svg);
+                  }
+
+                  function renderMeasurementEntry(entry) {
+                    const entryEl = document.createElement('div');
+                    entryEl.className = 'measurement-entry';
+                    const title = document.createElement('div');
+                    const discardLabel = entry.isDiscarded ? 'DESCARTADA' : '';
+                    title.innerHTML = `<strong>${'$'}{entry.label}</strong> <span class="muted">${'$'}{entry.type} ${'$'}{discardLabel}</span>`;
+                    entryEl.appendChild(title);
+                    if (entry.type === 'docsisexpert') {
+                      const chart = document.createElement('div');
+                      chart.className = 'chart';
+                      drawBarChart(chart, entry.docsisRows.map((row) => ({
+                        frequencyMHz: row.Frecuencia,
+                        levelDbmv: row.Nivel,
+                        ok: row.Ok
+                      })));
+                      entryEl.appendChild(chart);
+                      entryEl.appendChild(buildTable(entry.docsisRows));
+                    } else if (entry.type === 'channelexpert') {
+                      const chart = document.createElement('div');
+                      chart.className = 'chart';
+                      const points = [...entry.pilotRows, ...entry.digitalRows].map((row) => ({
+                        frequencyMHz: row.Frecuencia,
+                        levelDbmv: row.Nivel,
+                        ok: row.Ok
+                      }));
+                      drawBarChart(chart, points);
+                      entryEl.appendChild(chart);
+                      entryEl.appendChild(buildTable(entry.pilotRows, 'Downstream Analogic Channels'));
+                      entryEl.appendChild(buildTable(entry.digitalRows, 'Downstream Digital Channels'));
+                    }
+                    return entryEl;
+                  }
+
+                  function buildTable(rows, title) {
+                    const wrapper = document.createElement('div');
+                    if (!rows || !rows.length) {
+                      wrapper.innerHTML = `<div class="muted">Sin datos.</div>`;
+                      return wrapper;
+                    }
+                    if (title) {
+                      const heading = document.createElement('div');
+                      heading.className = 'section-title';
+                      heading.textContent = title;
+                      wrapper.appendChild(heading);
+                    }
+                    const table = document.createElement('table');
+                    table.className = 'table';
+                    const headers = Object.keys(rows[0]).filter((h) => h !== 'Ok');
+                    table.innerHTML = `
+                      <thead><tr>${'$'}{headers.map((h) => `<th>${'$'}{h}</th>`).join('')}</tr></thead>
+                      <tbody></tbody>
+                    `;
+                    const body = table.querySelector('tbody');
+                    rows.forEach((row) => {
+                      const tr = document.createElement('tr');
+                      headers.forEach((h) => {
+                        const td = document.createElement('td');
+                        td.textContent = row[h] ?? '—';
+                        if (row.Ok === false) {
+                          td.style.color = 'var(--bad)';
+                        }
+                        tr.appendChild(td);
+                      });
+                      body.appendChild(tr);
+                    });
+                    wrapper.appendChild(table);
+                    return wrapper;
+                  }
+
+                  function renderMeasurements(assetId) {
+                    measurementSection.innerHTML = '';
+                    const bundle = data.measurements[assetId];
+                    if (!bundle || (!bundle.rx?.entries.length && !bundle.module?.entries.length)) {
+                      const empty = document.createElement('div');
+                      empty.className = 'muted';
+                      empty.textContent = 'Sin mediciones cargadas.';
+                      measurementSection.appendChild(empty);
+                      return;
+                    }
+                    const groups = [bundle.rx, bundle.module].filter(Boolean);
+                    groups.forEach((group) => {
+                      const groupEl = document.createElement('div');
+                      const title = document.createElement('div');
+                      title.className = 'section-title';
+                      title.textContent = `Carga de Mediciones - ${'$'}{group.label}`;
+                      groupEl.appendChild(title);
+                      group.entries.forEach((entry) => {
+                        groupEl.appendChild(renderMeasurementEntry(entry));
+                      });
+                      measurementSection.appendChild(groupEl);
+                    });
+                  }
+
+                  function setAsset(assetId) {
+                    const asset = data.assets.find((a) => a.id === assetId);
+                    if (!asset) return;
+                    assetHeader.textContent = asset.header;
+                    currentPhotos = asset.photos || [];
+                    currentPhotoIndex = 0;
+                    updatePhoto();
+                    adjustmentPanel.innerHTML = '';
+                    if (asset.adjustment?.node) {
+                      adjustmentPanel.appendChild(renderNodeAdjustment(asset.adjustment.node));
+                    }
+                    if (asset.adjustment?.amplifier) {
+                      adjustmentPanel.appendChild(renderAmplifierAdjustment(asset.adjustment.amplifier));
+                    }
+                    if (!asset.adjustment?.node && !asset.adjustment?.amplifier) {
+                      adjustmentPanel.textContent = 'Sin ajustes cargados.';
+                    }
+                    renderMeasurements(asset.id);
+                  }
+
+                  assetSelect.addEventListener('change', (event) => {
+                    setAsset(event.target.value);
+                  });
+
+                  if (data.assets.length) {
+                    setAsset(data.assets[0].id);
+                  }
+                </script>
+              </body>
+            </html>
+        """.trimIndent()
+        val output = File(exportDir, "report.html")
+        output.writeText(html)
+        return output
+    }
+
+    private suspend fun buildHtmlMeasurementMap(
+        assets: List<Asset>,
+        measurementRoot: File
+    ): Map<String, HtmlMeasurementBundle> {
+        val result = mutableMapOf<String, HtmlMeasurementBundle>()
+        for (asset in assets) {
+            val rxDir = File(measurementRoot, MaintenanceStorage.assetFolderName(asset))
+            val rxBundle = buildMeasurementGroup("RX", asset, rxDir)
+            val moduleBundle = if (asset.type == AssetType.NODE) {
+                val moduleAsset = asset.copy(type = AssetType.AMPLIFIER)
+                val moduleDir = File(measurementRoot, MaintenanceStorage.assetFolderName(moduleAsset))
+                buildMeasurementGroup("Módulo", moduleAsset, moduleDir)
+            } else {
+                null
+            }
+            result[asset.id] = HtmlMeasurementBundle(rx = rxBundle, module = moduleBundle)
+        }
+        return result
+    }
+
+    private suspend fun buildMeasurementGroup(
+        label: String,
+        asset: Asset,
+        dir: File
+    ): HtmlMeasurementGroup? {
+        val files = dir.listFiles()?.filter { it.isFile } ?: emptyList()
+        if (files.isEmpty()) return null
+        val discardedLabels = loadDiscardedLabels(File(dir, ".discarded_measurements.txt"))
+        val required = requiredCounts(asset.type, isModule = label == "Módulo")
+        val summary = verifyMeasurementFiles(
+            context = context,
+            files = files,
+            asset = asset,
+            repository = repository,
+            discardedLabels = discardedLabels,
+            expectedDocsisOverride = required.expectedDocsis,
+            expectedChannelOverride = required.expectedChannel
+        )
+        val entries = summary.result.measurementEntries
+            .filter { it.type == "docsisexpert" || it.type == "channelexpert" }
+            .map { entry -> entry.toHtmlMeasurementEntry() }
+        if (entries.isEmpty()) return null
+        return HtmlMeasurementGroup(label = label, entries = entries)
+    }
+
+    private fun MeasurementEntry.toHtmlMeasurementEntry(): HtmlMeasurementEntry {
+        val docsisRows = docsisLevels.keys.sorted().map { freq ->
+            val meta = docsisMeta[freq]
+            HtmlDocsisRow(
+                UCD = meta?.channel?.toString() ?: "—",
+                Frecuencia = meta?.frequencyMHz ?: freq,
+                Nivel = docsisLevels[freq],
+                ICFR = docsisIcfr[freq],
+                Ok = docsisLevelOk[freq] != false
+            )
+        }
+        val pilotRows = pilotLevels.keys.sorted().map { channel ->
+            val meta = pilotMeta[channel]
+            HtmlPilotRow(
+                Canal = channel.toString(),
+                Frecuencia = meta?.frequencyMHz,
+                Nivel = pilotLevels[channel],
+                Ok = pilotLevelOk[channel] != false
+            )
+        }
+        val digitalRows = digitalRows.map { row ->
+            HtmlDigitalRow(
+                Canal = row.channel.toString(),
+                Frecuencia = row.frequencyMHz,
+                Nivel = row.levelDbmv,
+                MER = row.mer,
+                BERPre = row.berPre,
+                BERPost = row.berPost,
+                ICFR = row.icfr,
+                Ok = listOf(row.merOk, row.berPreOk, row.berPostOk, row.icfrOk).all { it != false }
+            )
+        }
+        return HtmlMeasurementEntry(
+            label = label,
+            type = type,
+            isDiscarded = isDiscarded,
+            docsisRows = docsisRows,
+            pilotRows = pilotRows,
+            digitalRows = digitalRows,
+            ofdmPoints = ofdmSeries?.points?.map { HtmlPoint(it.first, it.second) }
+        )
+    }
+
+    private fun buildHtmlAmplifierAdjustment(asset: Asset, adj: AmplifierAdjustment): HtmlAmplifierAdjustmentExport {
+        val bw = freqEnumFromMHz(asset.frequencyMHz)
+        val entradaCalc = CiscoHfcAmpCalculator.nivelesEntradaCalculados(adj)
+        val salidaCalc = CiscoHfcAmpCalculator.nivelesSalidaCalculados(adj)
+        val pad = CiscoHfcAmpCalculator.fwdInPad(adj, bw, asset.amplifierMode)
+        val tilt = CiscoHfcAmpCalculator.fwdInEqTilt(adj, bw)
+        val agc = CiscoHfcAmpCalculator.agcPad(adj, bw, asset.amplifierMode)
+        val inputMeasured = listOf(
+            HtmlAmpRow(
+                Canal = "CH50",
+                Frecuencia = 379,
+                Medido = adj.inputCh50Dbmv?.let { CiscoHfcAmpCalculator.format1(it) },
+                Plano = adj.inputPlanCh50Dbmv?.let { CiscoHfcAmpCalculator.format1(it) }
+            ),
+            HtmlAmpRow(
+                Canal = if ((adj.inputHighFreqMHz ?: 750) == 870) "CH136" else "CH116",
+                Frecuencia = adj.inputHighFreqMHz ?: 750,
+                Medido = adj.inputCh116Dbmv?.let { CiscoHfcAmpCalculator.format1(it) },
+                Plano = adj.inputPlanHighDbmv?.let { CiscoHfcAmpCalculator.format1(it) }
+            )
+        )
+        val inputCalculated = listOf(
+            "L 54" to 54,
+            "L102" to 102,
+            "CH3" to 61,
+            "CH50" to 379,
+            "CH70" to 495,
+            "CH116" to 750,
+            "CH136" to 870,
+            "CH158" to 1000
+        ).map { (c, f) ->
+            HtmlAmpRow(
+                Canal = c,
+                Frecuencia = f,
+                Calculado = entradaCalc?.get(c)?.let { CiscoHfcAmpCalculator.format1(it) }
+            )
+        }
+        val outputPlan = listOf(
+            HtmlAmpRow(
+                Canal = "L output",
+                Frecuencia = adj.planLowFreqMHz ?: 54,
+                Plano = adj.planLowDbmv?.let { CiscoHfcAmpCalculator.format1(it) }
+            ),
+            HtmlAmpRow(
+                Canal = "H output",
+                Frecuencia = adj.planHighFreqMHz ?: 750,
+                Plano = adj.planHighDbmv?.let { CiscoHfcAmpCalculator.format1(it) }
+            )
+        )
+        val outputCalculated = listOf(
+            "L54" to 54,
+            "L102" to 102,
+            "CH3" to 61,
+            "CH50" to 379,
+            "CH70" to 495,
+            "CH110" to 711,
+            "CH116" to 750,
+            "CH136" to 870,
+            "CH158" to 1000
+        ).map { (c, f) ->
+            HtmlAmpRow(
+                Canal = c,
+                Frecuencia = f,
+                Calculado = salidaCalc?.get(c)?.let { CiscoHfcAmpCalculator.format1(it) }
+            )
+        }
+        val outputMeasured = listOf(
+            Triple("CH50", 379, adj.outCh50Dbmv),
+            Triple("CH70", 495, adj.outCh70Dbmv),
+            Triple("CH110", 711, adj.outCh110Dbmv),
+            Triple("CH116", 750, adj.outCh116Dbmv),
+            Triple("CH136", 870, adj.outCh136Dbmv),
+        ).map { (c, f, med) ->
+            val calc = salidaCalc?.get(c)
+            val diff = if (calc != null && med != null) med - calc else null
+            HtmlAmpOutputRow(
+                Canal = c,
+                Frecuencia = f,
+                Calculado = calc?.let { CiscoHfcAmpCalculator.format1(it) },
+                Medido = med?.let { CiscoHfcAmpCalculator.format1(it) },
+                DIF = diff?.let { (if (it >= 0) "+" else "") + CiscoHfcAmpCalculator.format1(it) },
+                alert = diff?.let { kotlin.math.abs(it) > 1.2 } == true
+            )
+        }
+        val pads = listOf(
+            HtmlAmpPadRow("FWD IN PAD", pad?.let { CiscoHfcAmpCalculator.format1(it) }),
+            HtmlAmpPadRow("FWD IN EQ (TILT)", tilt?.let { CiscoHfcAmpCalculator.format1(it) }),
+            HtmlAmpPadRow("AGC IN PAD", agc?.let { CiscoHfcAmpCalculator.format1(it) })
+        )
+        return HtmlAmplifierAdjustmentExport(
+            inputMeasured = inputMeasured,
+            inputCalculated = inputCalculated,
+            outputPlan = outputPlan,
+            outputCalculated = outputCalculated,
+            outputMeasured = outputMeasured,
+            pads = pads
+        )
     }
 
     suspend fun exportToBundleZip(report: MaintenanceReport): File = withContext(Dispatchers.IO) {
@@ -1812,4 +2668,144 @@ data class ExportReportImageRef(
     val photoId: String,
     val type: ReportPhotoType,
     val fileName: String
+)
+
+data class HtmlExportData(
+    val report: MaintenanceReport,
+    val info: HtmlInfoCounts,
+    val assets: List<HtmlAssetExport>,
+    val measurements: Map<String, HtmlMeasurementBundle>
+)
+
+data class HtmlInfoCounts(
+    val tapsSpliteado: Int,
+    val acometidasCortadas: Int,
+    val antirroboColocado: Int,
+    val pasivosNormalizados: Int,
+    val activosAjustados: Int
+)
+
+data class HtmlAssetExport(
+    val id: String,
+    val header: String,
+    val type: String,
+    val frequencyMHz: Int,
+    val amplifierMode: String?,
+    val portLabel: String?,
+    val photos: List<HtmlPhotoExport>,
+    val adjustment: HtmlAdjustmentExport
+)
+
+data class HtmlPhotoExport(
+    val title: String,
+    val fileName: String,
+    val dataUri: String? = null,
+    val photoType: String
+)
+
+data class HtmlAdjustmentExport(
+    val node: HtmlNodeAdjustmentExport? = null,
+    val amplifier: HtmlAmplifierAdjustmentExport? = null
+)
+
+data class HtmlNodeAdjustmentExport(
+    val planNode: String?,
+    val planContractor: String?,
+    val planTechnology: String?,
+    val planPoDirecta: String?,
+    val planPoRetorno: String?,
+    val planDistanciaSfp: String?,
+    val tx1310Confirmed: Boolean,
+    val tx1550Confirmed: Boolean,
+    val poConfirmed: Boolean,
+    val rxPadSelection: String?,
+    val measurementConfirmed: Boolean,
+    val spectrumConfirmed: Boolean,
+    val nonLegacyConfirmed: Boolean,
+    val sfpDistance: Int?,
+    val poDirectaConfirmed: Boolean,
+    val poRetornoConfirmed: Boolean,
+    val docsisConfirmed: Boolean
+)
+
+data class HtmlAmplifierAdjustmentExport(
+    val inputMeasured: List<HtmlAmpRow>,
+    val inputCalculated: List<HtmlAmpRow>,
+    val outputPlan: List<HtmlAmpRow>,
+    val outputCalculated: List<HtmlAmpRow>,
+    val outputMeasured: List<HtmlAmpOutputRow>,
+    val pads: List<HtmlAmpPadRow>
+)
+
+data class HtmlAmpRow(
+    val Canal: String,
+    val Frecuencia: Int,
+    val Medido: String? = null,
+    val Plano: String? = null,
+    val Calculado: String? = null
+)
+
+data class HtmlAmpOutputRow(
+    val Canal: String,
+    val Frecuencia: Int,
+    val Calculado: String? = null,
+    val Medido: String? = null,
+    val DIF: String? = null,
+    val alert: Boolean = false
+)
+
+data class HtmlAmpPadRow(
+    val Item: String,
+    val Valor: String?
+)
+
+data class HtmlMeasurementBundle(
+    val rx: HtmlMeasurementGroup?,
+    val module: HtmlMeasurementGroup?
+)
+
+data class HtmlMeasurementGroup(
+    val label: String,
+    val entries: List<HtmlMeasurementEntry>
+)
+
+data class HtmlMeasurementEntry(
+    val label: String,
+    val type: String,
+    val isDiscarded: Boolean,
+    val docsisRows: List<HtmlDocsisRow>,
+    val pilotRows: List<HtmlPilotRow>,
+    val digitalRows: List<HtmlDigitalRow>,
+    val ofdmPoints: List<HtmlPoint>?
+)
+
+data class HtmlDocsisRow(
+    val UCD: String,
+    val Frecuencia: Double,
+    val Nivel: Double?,
+    val ICFR: Double?,
+    val Ok: Boolean
+)
+
+data class HtmlPilotRow(
+    val Canal: String,
+    val Frecuencia: Double?,
+    val Nivel: Double?,
+    val Ok: Boolean
+)
+
+data class HtmlDigitalRow(
+    val Canal: String,
+    val Frecuencia: Double?,
+    val Nivel: Double?,
+    val MER: Double?,
+    val BERPre: Double?,
+    val BERPost: Double?,
+    val ICFR: Double?,
+    val Ok: Boolean
+)
+
+data class HtmlPoint(
+    val x: Double,
+    val y: Double
 )
