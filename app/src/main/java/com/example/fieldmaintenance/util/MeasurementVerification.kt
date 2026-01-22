@@ -775,6 +775,8 @@ suspend fun verifyMeasurementFiles(
                     saved
                 } else if (inferred != null) {
                     inferred
+                } else if (saved != null) {
+                    saved
                 } else if (normalizedType == "channelexpert" && !isDiscarded) {
                     val selection = when (channelSequenceIndex) {
                         0 -> "MAIN"
@@ -890,6 +892,16 @@ suspend fun verifyMeasurementFiles(
 
                 fun resolveTolerance(ruleTolerance: Double?, overrideTolerance: Double?): Double? {
                     return overrideTolerance ?: ruleTolerance
+                }
+                fun applyPilotTolerance(
+                    channel: Int,
+                    adjusted: Double,
+                    target: Double?,
+                    ruleTolerance: Double?
+                ): Boolean {
+                    val tolerance = resolveTolerance(ruleTolerance, toleranceOverride)
+                    if (target == null || tolerance == null) return true
+                    return adjusted >= target - tolerance && adjusted <= target + tolerance
                 }
                 fun applyPilotTolerance(
                     channel: Int,
