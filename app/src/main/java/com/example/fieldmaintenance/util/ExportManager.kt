@@ -1534,6 +1534,9 @@ val assets = repository.getAssetsByReportId(report.id).first()
                             title = title,
                             fileName = ref.fileName,
                             dataUri = dataUri,
+                        HtmlPhotoExport(
+                            title = title,
+                            fileName = ref.fileName,
                             photoType = ref.photoType.name
                         )
                     },
