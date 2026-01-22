@@ -78,6 +78,7 @@ import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.graphics.graphicsLayer
+import com.example.fieldmaintenance.ui.theme.SuccessGreen
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.nativeCanvas
@@ -129,8 +130,6 @@ import kotlinx.coroutines.launch
 import java.io.File
 import java.net.URLConnection
 import java.util.UUID
-
-private val anomalyColor = Color(0xFFE57373)
 
 private data class UpstreamChartPoint(
     val frequencyMHz: Double,
@@ -510,8 +509,6 @@ fun AddAssetScreen(
     var showNodeAdjustmentDialog by rememberSaveable { mutableStateOf(false) }
     var showAmplifierAdjustmentDialog by rememberSaveable { mutableStateOf(false) }
     var measurementsComplete by remember { mutableStateOf(false) }
-    val anomalyColor = Color(0xFFE57373)
-
     // Amplifier adjustment (persisted per asset)
     val amplifierAdjustment by repository.getAmplifierAdjustment(workingAssetId)
         .collectAsState(initial = null)
@@ -860,8 +857,10 @@ fun AddAssetScreen(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimary
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    titleContentColor = MaterialTheme.colorScheme.onSurface,
+                    navigationIconContentColor = MaterialTheme.colorScheme.onSurface,
+                    actionIconContentColor = MaterialTheme.colorScheme.onSurface
                 )
             )
         }
@@ -1522,7 +1521,13 @@ private fun FullScreenAdjustmentDialog(
                                 contentDescription = "Cerrar"
                             )
                         }
-                    }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.surface,
+                        titleContentColor = MaterialTheme.colorScheme.onSurface,
+                        navigationIconContentColor = MaterialTheme.colorScheme.onSurface,
+                        actionIconContentColor = MaterialTheme.colorScheme.onSurface
+                    )
                 )
                 Column(
                     modifier = Modifier
@@ -1566,7 +1571,10 @@ private fun FullScreenAdjustmentDialog(
 private fun MeasurementTableCard(
     title: String,
     headers: List<String>,
-    strokeColor: Color,
+    containerColor: Color,
+    headerColor: Color,
+    borderColor: Color,
+    dividerColor: Color,
     textPrimary: Color,
     textSecondary: Color,
     resetKey: Any? = null,
@@ -1578,7 +1586,8 @@ private fun MeasurementTableCard(
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .border(1.dp, strokeColor, RoundedCornerShape(12.dp))
+            .background(containerColor)
+            .border(1.dp, borderColor, RoundedCornerShape(12.dp))
             .padding(10.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1601,7 +1610,9 @@ private fun MeasurementTableCard(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 6.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(headerColor)
+                    .padding(horizontal = 6.dp, vertical = 6.dp)
             ) {
                 headers.forEach { header ->
                     Text(
@@ -1612,7 +1623,7 @@ private fun MeasurementTableCard(
                     )
                 }
             }
-            HorizontalDivider(color = strokeColor, thickness = 1.dp)
+            HorizontalDivider(color = dividerColor, thickness = 1.dp)
             content()
         }
     }
@@ -1624,7 +1635,7 @@ private fun MeasurementTableRow(
     invalidCells: Set<Int> = emptySet(),
     textPrimary: Color,
     errorColor: Color,
-    strokeColor: Color
+    dividerColor: Color
     ) {
     Row(
         modifier = Modifier
@@ -1645,7 +1656,7 @@ private fun MeasurementTableRow(
             )
         }
     }
-    HorizontalDivider(color = strokeColor, thickness = 1.dp)
+    HorizontalDivider(color = dividerColor, thickness = 1.dp)
 }
 
 @Composable
@@ -2471,8 +2482,30 @@ private fun AssetFileSection(
         }
     }
 
-    fun updateSwitchSelection(entryLabel: String, selection: String, isModule: Boolean, assetId: String) {
-        switchPrefs.edit().putString(switchKey(assetId, entryLabel), selection).apply()
+    fun updateSwitchSelection(
+        entryLabel: String,
+        selection: String,
+        isModule: Boolean,
+        assetId: String,
+        tabLabels: List<String>,
+        options: List<String>
+    ) {
+        val reserved = setOf("IN", "MAIN", "AUXDC")
+        val fallback = options.firstOrNull { it !in reserved } ?: options.firstOrNull().orEmpty()
+        val editor = switchPrefs.edit()
+        editor.putString(switchKey(assetId, entryLabel), selection)
+        if (selection in reserved && fallback.isNotBlank()) {
+            tabLabels.forEach { label ->
+                if (label != entryLabel) {
+                    val key = switchKey(assetId, label)
+                    val stored = switchPrefs.getString(key, null)
+                    if (stored == selection) {
+                        editor.putString(key, fallback)
+                    }
+                }
+            }
+        }
+        editor.apply()
         refreshVerificationSummary(isModule)
     }
 
@@ -2529,7 +2562,7 @@ private fun AssetFileSection(
                         imageVector = Icons.Default.RemoveRedEye,
                         contentDescription = "Observaciones",
                         tint = if (observationSummary.third > 0) {
-                            anomalyColor
+                            MaterialTheme.colorScheme.error
                         } else {
                             MaterialTheme.colorScheme.primary
                         }
@@ -2614,12 +2647,18 @@ private fun AssetFileSection(
                     val docsisTableEntries = docsisListEntries.take(required.maxDocsisTable)
                     val channelTableEntries = channelListEntries.take(required.maxChannelTable)
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        val cardColor = Color(0xFF141823)
-                        val strokeColor = Color(0xFF2A3142)
-                        val accentColor = Color(0xFF1E88E5)
-                        val errorColor = anomalyColor
-                        val tableTextPrimary = Color(0xFFE7EAF0)
-                        val tableTextSecondary = Color(0xFFB0B7C3)
+                        val cardColor = MaterialTheme.colorScheme.surface
+                        val headerColor = MaterialTheme.colorScheme.surfaceVariant
+                        val borderColor = MaterialTheme.colorScheme.outline
+                        val dividerColor = MaterialTheme.colorScheme.outlineVariant
+                        val accentColor = MaterialTheme.colorScheme.primary
+                        val errorColor = MaterialTheme.colorScheme.error
+                        val tableTextPrimary = MaterialTheme.colorScheme.onSurface
+                        val tableTextSecondary = MaterialTheme.colorScheme.onSurfaceVariant
+                        val chipBaseColor = MaterialTheme.colorScheme.surfaceVariant
+                        val chipTextColor = MaterialTheme.colorScheme.onSurface
+                        val chipSelectedText = MaterialTheme.colorScheme.onPrimary
+                        val successColor = SuccessGreen
 
                         val docsisDisplayCount = docsisListEntries.size.coerceAtMost(summary.expectedDocsis)
                         val channelDisplayCount = channelListEntries.size.coerceAtMost(summary.expectedChannel)
@@ -2659,18 +2698,28 @@ private fun AssetFileSection(
                             val fileLabel = label.substringAfterLast('/')
                             val normalized = fileLabel.uppercase(Locale.getDefault())
                             val cleaned = normalized.replace(Regex("[^A-Z0-9]"), "_")
+                            val normalizedNoSep = normalized.replace(Regex("[^A-Z0-9]"), "")
                             val tokens = cleaned.split("_").filter { it.isNotBlank() }.toSet()
-                            val containsMain = cleaned.contains("MAIN") || cleaned.contains("PRINCIPAL")
-                            val containsAux = cleaned.contains("AUX") || cleaned.contains("AUXILIAR")
+                            val containsMain = normalizedNoSep.contains("MAIN") || normalizedNoSep.contains("PRINCIPAL")
+                            val containsAux = normalizedNoSep.contains("AUXILIAR") || normalizedNoSep.contains("AUX")
                             val auxdcMatch = cleaned.contains("AUXDC") ||
+                                cleaned.contains("AXU_DC") ||
                                 cleaned.contains("AUX_DC") ||
                                 cleaned.contains("AUXILIARDC") ||
-                                cleaned.contains("AUXILIAR_DC")
+                                cleaned.contains("AUXILIAR_DC") ||
+                                normalizedNoSep.contains("AUXDC") ||
+                                normalizedNoSep.contains("AUXILIARDC") ||
+                                normalizedNoSep.contains("AXUDC")
+                            val hasEntrada = normalizedNoSep.contains("ENTRADA")
+                            val hasInToken = tokens.contains("IN") || tokens.contains("ENTRADA")
+                            val hasInStandalone = Regex("(^|[0-9])IN").containsMatchIn(normalizedNoSep)
+                            val hasInlineIn = normalizedNoSep.contains("IN") && !hasInToken && !hasEntrada && !hasInStandalone
                             return when {
                                 containsMain || tokens.contains("MAIN") || tokens.contains("PRINCIPAL") -> "MAIN"
-                                tokens.contains("IN") || tokens.contains("ENTRADA") -> "IN"
                                 auxdcMatch && options.contains("AUXDC") -> "AUXDC"
                                 containsAux || tokens.contains("AUX") || tokens.contains("AUXILIAR") -> "AUX"
+                                hasEntrada || hasInToken || hasInStandalone -> "IN"
+                                hasInlineIn -> "MAIN"
                                 else -> null
                             }
                         }
@@ -2717,6 +2766,21 @@ private fun AssetFileSection(
                             return selections
                         }
 
+                        fun persistSwitchSelections(
+                            tabs: List<MeasurementTab>,
+                            selections: Map<MeasurementEntry, String>,
+                            assetId: String
+                        ) {
+                            val editor = switchPrefs.edit()
+                            tabs.forEach { tab ->
+                                val selection = selections[tab.entry]
+                                if (selection != null) {
+                                    editor.putString(switchKey(assetId, tab.entry.label), selection)
+                                }
+                            }
+                            editor.apply()
+                        }
+
                         @Composable
                         fun MeasurementTabChip(
                             label: String,
@@ -2724,11 +2788,10 @@ private fun AssetFileSection(
                             hasError: Boolean,
                             onClick: () -> Unit
                         ) {
-                            val bg = if (isSelected) accentColor else Color.Transparent
-                            val borderColor = strokeColor
-                            val textColor = Color.White
+                            val bg = if (isSelected) accentColor else chipBaseColor
+                            val textColor = if (isSelected) chipSelectedText else chipTextColor
                             val statusIcon = if (hasError) Icons.Default.Close else Icons.Default.Check
-                            val statusColor = if (hasError) Color(0xFFE57373) else Color(0xFF81C784)
+                            val statusColor = if (hasError) errorColor else successColor
                             Box(
                                 modifier = Modifier
                                     .weight(1f)
@@ -2775,7 +2838,7 @@ private fun AssetFileSection(
                                     .fillMaxWidth()
                                     .clip(RoundedCornerShape(14.dp))
                                     .background(cardColor)
-                                    .border(1.dp, strokeColor, RoundedCornerShape(14.dp))
+                                    .border(1.dp, borderColor, RoundedCornerShape(14.dp))
                                     .padding(10.dp)
                             ) {
                                 if (tabs.isNotEmpty()) {
@@ -2847,7 +2910,7 @@ private fun AssetFileSection(
                                             }
                                         }
                                         footerExtras?.invoke()
-                                        HorizontalDivider(color = strokeColor, thickness = 1.dp)
+                                        HorizontalDivider(color = dividerColor, thickness = 1.dp)
                                     }
                                 }
                             }
@@ -2948,9 +3011,9 @@ private fun AssetFileSection(
                                             points = downstreamPoints,
                                             ofdmSeries = entry.ofdmSeries,
                                             barColor = accentColor,
-                                            errorColor = anomalyColor,
+                                            errorColor = errorColor,
                                             textColor = tableTextPrimary,
-                                            gridColor = strokeColor,
+                                            gridColor = dividerColor,
                                             modifier = Modifier.fillMaxSize()
                                         )
                                     }
@@ -2987,6 +3050,9 @@ private fun AssetFileSection(
                                         val channelSwitchSelections = remember(channelTabs, channelSwitchOptions, savedSelections) {
                                             buildSwitchSelections(channelTabs, channelSwitchOptions, savedSelections)
                                         }
+                                        LaunchedEffect(channelSwitchSelections, assetForDisplay.id) {
+                                            persistSwitchSelections(channelTabs, channelSwitchSelections, assetForDisplay.id)
+                                        }
                                         val initialSelection = channelSwitchSelections[entry] ?: "MAIN"
                                         var selected by remember(entry.label, initialSelection) {
                                             mutableStateOf(initialSelection)
@@ -2995,7 +3061,7 @@ private fun AssetFileSection(
                                             modifier = Modifier
                                                 .align(Alignment.CenterHorizontally)
                                                 .clip(RoundedCornerShape(16.dp))
-                                                .border(1.dp, strokeColor, RoundedCornerShape(16.dp))
+                                                .border(1.dp, borderColor, RoundedCornerShape(16.dp))
                                                 .padding(4.dp),
                                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                                         ) {
@@ -3004,21 +3070,23 @@ private fun AssetFileSection(
                                                 Box(
                                                     modifier = Modifier
                                                         .clip(RoundedCornerShape(12.dp))
-                                                        .background(if (isSelected) accentColor else Color.Transparent)
+                                                        .background(if (isSelected) accentColor else chipBaseColor)
                                                         .clickable {
                                                             selected = option
                                                             updateSwitchSelection(
                                                                 entry.label,
                                                                 option,
                                                                 isModule,
-                                                                assetForDisplay.id
+                                                                assetForDisplay.id,
+                                                                channelTabs.map { it.entry.label },
+                                                                channelSwitchOptions
                                                             )
                                                         }
                                                         .padding(horizontal = 10.dp, vertical = 4.dp)
                                                 ) {
                                                     Text(
                                                         text = option,
-                                                        color = if (isSelected) Color.White else tableTextSecondary,
+                                                        color = if (isSelected) chipSelectedText else tableTextSecondary,
                                                         fontSize = 11.sp
                                                     )
                                                 }
@@ -3029,7 +3097,10 @@ private fun AssetFileSection(
                                     MeasurementTableCard(
                                         title = "Downstream Analogic Channels",
                                         headers = listOf("Canal", "Freq (MHz)", "M1"),
-                                        strokeColor = strokeColor,
+                                        containerColor = cardColor,
+                                        headerColor = headerColor,
+                                        borderColor = borderColor,
+                                        dividerColor = dividerColor,
                                         textPrimary = tableTextPrimary,
                                         textSecondary = tableTextSecondary,
                                         resetKey = entry.label
@@ -3048,14 +3119,17 @@ private fun AssetFileSection(
                                                 invalidCells = invalidCells,
                                                 textPrimary = tableTextPrimary,
                                                 errorColor = errorColor,
-                                                strokeColor = strokeColor
+                                                dividerColor = dividerColor
                                             )
                                         }
                                     }
                                     MeasurementTableCard(
                                         title = "Downstream Digital Channels",
                                         headers = listOf("Canal", "Freq (MHz)", "Nivel (dBmV)", "MER", "BER pre", "BER post", "ICFR"),
-                                        strokeColor = strokeColor,
+                                        containerColor = cardColor,
+                                        headerColor = headerColor,
+                                        borderColor = borderColor,
+                                        dividerColor = dividerColor,
                                         textPrimary = tableTextPrimary,
                                         textSecondary = tableTextSecondary,
                                         resetKey = entry.label
@@ -3080,7 +3154,7 @@ private fun AssetFileSection(
                                                 invalidCells = invalidCells,
                                                 textPrimary = tableTextPrimary,
                                                 errorColor = errorColor,
-                                                strokeColor = strokeColor
+                                                dividerColor = dividerColor
                                             )
                                         }
                                     }
@@ -3128,9 +3202,9 @@ private fun AssetFileSection(
                                         UpstreamLevelsChart(
                                             data = chartData,
                                             barColor = accentColor,
-                                            errorColor = anomalyColor,
+                                            errorColor = errorColor,
                                             textColor = tableTextPrimary,
-                                            gridColor = strokeColor,
+                                            gridColor = dividerColor,
                                             modifier = Modifier.fillMaxSize()
                                         )
                                     }
@@ -3165,7 +3239,10 @@ private fun AssetFileSection(
                                     MeasurementTableCard(
                                         title = "Upstream Channels",
                                         headers = listOf("UCD", "Frecuencia (MHz)", "Nivel (dBmV)", "ICFR (dB)"),
-                                        strokeColor = strokeColor,
+                                        containerColor = cardColor,
+                                        headerColor = headerColor,
+                                        borderColor = borderColor,
+                                        dividerColor = dividerColor,
                                         textPrimary = tableTextPrimary,
                                         textSecondary = tableTextSecondary,
                                         resetKey = entry.label
@@ -3176,7 +3253,7 @@ private fun AssetFileSection(
                                                 invalidCells = invalid,
                                                 textPrimary = tableTextPrimary,
                                                 errorColor = errorColor,
-                                                strokeColor = strokeColor
+                                                dividerColor = dividerColor
                                             )
                                         }
                                     }
@@ -3248,9 +3325,9 @@ private fun AssetFileSection(
                                             points = downstreamPoints,
                                             ofdmSeries = entry.ofdmSeries,
                                             barColor = accentColor,
-                                            errorColor = anomalyColor,
+                                            errorColor = errorColor,
                                             textColor = tableTextPrimary,
-                                            gridColor = strokeColor,
+                                            gridColor = dividerColor,
                                             modifier = Modifier.fillMaxSize()
                                         )
                                     }
@@ -3272,7 +3349,10 @@ private fun AssetFileSection(
                                     MeasurementTableCard(
                                         title = "Downstream Analogic Channels",
                                         headers = listOf("Canal", "Freq (MHz)", "M1"),
-                                        strokeColor = strokeColor,
+                                        containerColor = cardColor,
+                                        headerColor = headerColor,
+                                        borderColor = borderColor,
+                                        dividerColor = dividerColor,
                                         textPrimary = tableTextPrimary,
                                         textSecondary = tableTextSecondary,
                                         resetKey = entry.label
@@ -3291,14 +3371,17 @@ private fun AssetFileSection(
                                                 invalidCells = invalidCells,
                                                 textPrimary = tableTextPrimary,
                                                 errorColor = errorColor,
-                                                strokeColor = strokeColor
+                                                dividerColor = dividerColor
                                             )
                                         }
                                     }
                                     MeasurementTableCard(
                                         title = "Downstream Digital Channels",
                                         headers = listOf("Canal", "Freq (MHz)", "Nivel (dBmV)", "MER", "BER pre", "BER post", "ICFR"),
-                                        strokeColor = strokeColor,
+                                        containerColor = cardColor,
+                                        headerColor = headerColor,
+                                        borderColor = borderColor,
+                                        dividerColor = dividerColor,
                                         textPrimary = tableTextPrimary,
                                         textSecondary = tableTextSecondary,
                                         resetKey = entry.label
@@ -3323,7 +3406,7 @@ private fun AssetFileSection(
                                                 invalidCells = invalidCells,
                                                 textPrimary = tableTextPrimary,
                                                 errorColor = errorColor,
-                                                strokeColor = strokeColor
+                                                dividerColor = dividerColor
                                             )
                                         }
                                     }
@@ -3370,9 +3453,9 @@ private fun AssetFileSection(
                                         UpstreamLevelsChart(
                                             data = chartData,
                                             barColor = accentColor,
-                                            errorColor = anomalyColor,
+                                            errorColor = errorColor,
                                             textColor = tableTextPrimary,
-                                            gridColor = strokeColor,
+                                            gridColor = dividerColor,
                                             modifier = Modifier.fillMaxSize()
                                         )
                                     }
@@ -3407,7 +3490,10 @@ private fun AssetFileSection(
                                     MeasurementTableCard(
                                         title = "Upstream Channels",
                                         headers = listOf("UCD", "Frecuencia (MHz)", "Nivel (dBmV)", "ICFR (dB)"),
-                                        strokeColor = strokeColor,
+                                        containerColor = cardColor,
+                                        headerColor = headerColor,
+                                        borderColor = borderColor,
+                                        dividerColor = dividerColor,
                                         textPrimary = tableTextPrimary,
                                         textSecondary = tableTextSecondary,
                                         resetKey = entry.label
@@ -3418,7 +3504,7 @@ private fun AssetFileSection(
                                                 invalidCells = invalid,
                                                 textPrimary = tableTextPrimary,
                                                 errorColor = errorColor,
-                                                strokeColor = strokeColor
+                                                dividerColor = dividerColor
                                             )
                                         }
                                     }
@@ -3490,9 +3576,9 @@ private fun AssetFileSection(
                                             points = downstreamPoints,
                                             ofdmSeries = entry.ofdmSeries,
                                             barColor = accentColor,
-                                            errorColor = anomalyColor,
+                                            errorColor = errorColor,
                                             textColor = tableTextPrimary,
-                                            gridColor = strokeColor,
+                                            gridColor = dividerColor,
                                             modifier = Modifier.fillMaxSize()
                                         )
                                     }
@@ -3529,6 +3615,9 @@ private fun AssetFileSection(
                                         val channelSwitchSelections = remember(channelTabs, channelSwitchOptions, savedSelections) {
                                             buildSwitchSelections(channelTabs, channelSwitchOptions, savedSelections)
                                         }
+                                        LaunchedEffect(channelSwitchSelections, assetForDisplay.id) {
+                                            persistSwitchSelections(channelTabs, channelSwitchSelections, assetForDisplay.id)
+                                        }
                                         val initialSelection = channelSwitchSelections[entry] ?: "MAIN"
                                         var selected by remember(entry.label, initialSelection) {
                                             mutableStateOf(initialSelection)
@@ -3537,7 +3626,7 @@ private fun AssetFileSection(
                                             modifier = Modifier
                                                 .align(Alignment.CenterHorizontally)
                                                 .clip(RoundedCornerShape(16.dp))
-                                                .border(1.dp, strokeColor, RoundedCornerShape(16.dp))
+                                                .border(1.dp, borderColor, RoundedCornerShape(16.dp))
                                                 .padding(4.dp),
                                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                                         ) {
@@ -3546,21 +3635,23 @@ private fun AssetFileSection(
                                                 Box(
                                                     modifier = Modifier
                                                         .clip(RoundedCornerShape(12.dp))
-                                                        .background(if (isSelected) accentColor else Color.Transparent)
+                                                        .background(if (isSelected) accentColor else chipBaseColor)
                                                         .clickable {
                                                             selected = option
                                                             updateSwitchSelection(
                                                                 entry.label,
                                                                 option,
                                                                 isModule,
-                                                                assetForDisplay.id
+                                                                assetForDisplay.id,
+                                                                channelTabs.map { it.entry.label },
+                                                                channelSwitchOptions
                                                             )
                                                         }
                                                         .padding(horizontal = 10.dp, vertical = 4.dp)
                                                 ) {
                                                     Text(
                                                         text = option,
-                                                        color = if (isSelected) Color.White else tableTextSecondary,
+                                                        color = if (isSelected) chipSelectedText else tableTextSecondary,
                                                         fontSize = 11.sp
                                                     )
                                                 }
@@ -3571,7 +3662,10 @@ private fun AssetFileSection(
                                     MeasurementTableCard(
                                         title = "Downstream Analogic Channels",
                                         headers = listOf("Canal", "Freq (MHz)", "M1"),
-                                        strokeColor = strokeColor,
+                                        containerColor = cardColor,
+                                        headerColor = headerColor,
+                                        borderColor = borderColor,
+                                        dividerColor = dividerColor,
                                         textPrimary = tableTextPrimary,
                                         textSecondary = tableTextSecondary,
                                         resetKey = entry.label
@@ -3590,14 +3684,17 @@ private fun AssetFileSection(
                                                 invalidCells = invalidCells,
                                                 textPrimary = tableTextPrimary,
                                                 errorColor = errorColor,
-                                                strokeColor = strokeColor
+                                                dividerColor = dividerColor
                                             )
                                         }
                                     }
                                     MeasurementTableCard(
                                         title = "Downstream Digital Channels",
                                         headers = listOf("Canal", "Freq (MHz)", "Nivel (dBmV)", "MER", "BER pre", "BER post", "ICFR"),
-                                        strokeColor = strokeColor,
+                                        containerColor = cardColor,
+                                        headerColor = headerColor,
+                                        borderColor = borderColor,
+                                        dividerColor = dividerColor,
                                         textPrimary = tableTextPrimary,
                                         textSecondary = tableTextSecondary,
                                         resetKey = entry.label
@@ -3622,7 +3719,7 @@ private fun AssetFileSection(
                                                 invalidCells = invalidCells,
                                                 textPrimary = tableTextPrimary,
                                                 errorColor = errorColor,
-                                                strokeColor = strokeColor
+                                                dividerColor = dividerColor
                                             )
                                         }
                                     }
@@ -3782,7 +3879,7 @@ private fun AssetFileSection(
                                 append("No se agregó la medición ")
                                 withStyle(
                                     SpanStyle(
-                                        color = anomalyColor,
+                                        color = MaterialTheme.colorScheme.error,
                                         fontWeight = FontWeight.Bold
                                     )
                                 ) {
@@ -3836,7 +3933,7 @@ private fun AssetFileSection(
                             Text(
                                 name,
                                 style = MaterialTheme.typography.bodySmall,
-                                color = anomalyColor,
+                                color = MaterialTheme.colorScheme.error,
                                 fontWeight = FontWeight.Bold,
                                 modifier = Modifier.weight(1f)
                             )
