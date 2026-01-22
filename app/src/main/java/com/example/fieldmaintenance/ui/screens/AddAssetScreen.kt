@@ -2482,8 +2482,30 @@ private fun AssetFileSection(
         }
     }
 
-    fun updateSwitchSelection(entryLabel: String, selection: String, isModule: Boolean, assetId: String) {
-        switchPrefs.edit().putString(switchKey(assetId, entryLabel), selection).apply()
+    fun updateSwitchSelection(
+        entryLabel: String,
+        selection: String,
+        isModule: Boolean,
+        assetId: String,
+        tabs: List<MeasurementTab>,
+        options: List<String>
+    ) {
+        val reserved = setOf("IN", "MAIN", "AUXDC")
+        val fallback = options.firstOrNull { it !in reserved } ?: options.firstOrNull().orEmpty()
+        val editor = switchPrefs.edit()
+        editor.putString(switchKey(assetId, entryLabel), selection)
+        if (selection in reserved && fallback.isNotBlank()) {
+            tabs.forEach { tab ->
+                if (tab.entry.label != entryLabel) {
+                    val key = switchKey(assetId, tab.entry.label)
+                    val stored = switchPrefs.getString(key, null)
+                    if (stored == selection) {
+                        editor.putString(key, fallback)
+                    }
+                }
+            }
+        }
+        editor.apply()
         refreshVerificationSummary(isModule)
     }
 
@@ -3027,7 +3049,9 @@ private fun AssetFileSection(
                                                                 entry.label,
                                                                 option,
                                                                 isModule,
-                                                                assetForDisplay.id
+                                                                assetForDisplay.id,
+                                                                channelTabs,
+                                                                channelSwitchOptions
                                                             )
                                                         }
                                                         .padding(horizontal = 10.dp, vertical = 4.dp)
@@ -3587,7 +3611,9 @@ private fun AssetFileSection(
                                                                 entry.label,
                                                                 option,
                                                                 isModule,
-                                                                assetForDisplay.id
+                                                                assetForDisplay.id,
+                                                                channelTabs,
+                                                                channelSwitchOptions
                                                             )
                                                         }
                                                         .padding(horizontal = 10.dp, vertical = 4.dp)
