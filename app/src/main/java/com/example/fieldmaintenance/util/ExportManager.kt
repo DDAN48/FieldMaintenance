@@ -1789,6 +1789,11 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     gap: 8px;
                     font-weight: 600;
                   }
+                  .measurement-name {
+                    text-align: center;
+                    color: var(--muted);
+                    font-size: 12px;
+                  }
                   .collapse {
                     border: 1px solid var(--border);
                     border-radius: 12px;
@@ -2081,10 +2086,13 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     header.className = 'measurement-title';
                     const discardLabel = entry.isDiscarded ? 'DESCARTADA' : '';
                     header.innerHTML = `
-                      <div>${'$'}{entry.label}</div>
-                      <span class="muted">${'$'}{entry.type} ${'$'}{discardLabel}</span>
+                      <div>${'$'}{entry.type}</div>
+                      <span class="muted">${'$'}{discardLabel}</span>
                     `;
                     entryEl.appendChild(header);
+                    const measurementName = document.createElement('div');
+                    measurementName.className = 'measurement-name';
+                    measurementName.textContent = entry.label.split('/').pop();
                     if (entry.type === 'docsisexpert') {
                       const chart = document.createElement('div');
                       chart.className = 'chart';
@@ -2094,6 +2102,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                         ok: row.Ok
                       })));
                       entryEl.appendChild(chart);
+                      entryEl.appendChild(measurementName);
                       entryEl.appendChild(buildCollapsible('Upstream Channels', buildTable(entry.docsisRows)));
                     } else if (entry.type === 'channelexpert') {
                       const chart = document.createElement('div');
@@ -2105,6 +2114,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                       }));
                       drawBarChart(chart, points);
                       entryEl.appendChild(chart);
+                      entryEl.appendChild(measurementName);
                       entryEl.appendChild(buildCollapsible('Downstream Analogic Channels', buildTable(entry.pilotRows)));
                       entryEl.appendChild(buildCollapsible('Downstream Digital Channels', buildTable(entry.digitalRows)));
                     }
@@ -2179,7 +2189,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                       const entryEls = group.entries.map((entry, index) => {
                         const tab = document.createElement('button');
                         tab.className = 'measurement-tab';
-                        tab.textContent = entry.label;
+                        tab.textContent = `M${'$'}{index + 1}`;
                         tab.addEventListener('click', () => {
                           entryEls.forEach((el) => el.classList.remove('active'));
                           tabs.querySelectorAll('.measurement-tab').forEach((t) => t.classList.remove('active'));
@@ -2244,7 +2254,8 @@ val assets = repository.getAssetsByReportId(report.id).first()
         val result = mutableMapOf<String, HtmlMeasurementBundle>()
         for (asset in assets) {
             val rxDir = File(measurementRoot, MaintenanceStorage.assetFolderName(asset))
-            val rxBundle = buildMeasurementGroup("RX", asset, rxDir)
+            val rxLabel = if (asset.type == AssetType.AMPLIFIER) "Módulo" else "RX"
+            val rxBundle = buildMeasurementGroup(rxLabel, asset, rxDir)
             val moduleBundle = if (asset.type == AssetType.NODE) {
                 val moduleAsset = asset.copy(type = AssetType.AMPLIFIER)
                 val moduleDir = File(measurementRoot, MaintenanceStorage.assetFolderName(moduleAsset))
