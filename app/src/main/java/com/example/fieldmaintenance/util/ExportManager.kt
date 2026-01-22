@@ -1121,20 +1121,21 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     entries.forEach { entry ->
                         document.add(Paragraph("$label - ${entry.label}").setBold().setFontSize(10f))
                         if (entry.type == "docsisexpert") {
-                            val rows = entry.docsisLevels.keys.sorted().map { freq ->
-                                val meta = entry.docsisMeta[freq]
-                                val channel = meta?.channel?.toString() ?: "—"
-                                val freqText = formatFreq(meta?.frequencyMHz ?: freq)
-                                val level = formatDbmv(entry.docsisLevels[freq])
-                                val icfr = formatDbmv(entry.docsisIcfr[freq])
-                                val ok = entry.docsisLevelOk[freq] != false
-                                listOf(
-                                    channel to null,
-                                    "$freqText MHz" to null,
-                                    level to if (ok) null else errorRed,
-                                    icfr to null
-                                )
-                            }
+                            val rows: List<List<Pair<String, com.itextpdf.kernel.colors.Color?>>> =
+                                entry.docsisLevels.keys.sorted().map { freq ->
+                                    val meta = entry.docsisMeta[freq]
+                                    val channel = meta?.channel?.toString() ?: "—"
+                                    val freqText = formatFreq(meta?.frequencyMHz ?: freq)
+                                    val level = formatDbmv(entry.docsisLevels[freq])
+                                    val icfr = formatDbmv(entry.docsisIcfr[freq])
+                                    val ok = entry.docsisLevelOk[freq] != false
+                                    listOf(
+                                        channel to null,
+                                        "$freqText MHz" to null,
+                                        level to if (ok) null else errorRed,
+                                        icfr to null
+                                    )
+                                }
                             addTable(
                                 document,
                                 title = "DOCSIS Expert - Upstream Channels",
@@ -1173,8 +1174,8 @@ val assets = repository.getAssetsByReportId(report.id).first()
                                         "${formatFreq(row.frequencyMHz)} MHz" to null,
                                         formatDbmv(row.levelDbmv) to null,
                                         formatDbmv(row.mer) to if (invalidMer) errorRed else null,
-                                        row.berPre?.toString() ?: "—" to if (invalidBerPre) errorRed else null,
-                                        row.berPost?.toString() ?: "—" to if (invalidBerPost) errorRed else null,
+                                        (row.berPre?.toString() ?: "—") to if (invalidBerPre) errorRed else null,
+                                        (row.berPost?.toString() ?: "—") to if (invalidBerPost) errorRed else null,
                                         formatDbmv(row.icfr) to if (invalidIcfr) errorRed else null
                                     )
                                 }
