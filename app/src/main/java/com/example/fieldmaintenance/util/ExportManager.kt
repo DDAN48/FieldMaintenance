@@ -1143,16 +1143,17 @@ val assets = repository.getAssetsByReportId(report.id).first()
                                 colWidths = floatArrayOf(15f, 30f, 30f, 25f)
                             )
                         } else if (entry.type == "channelexpert") {
-                            val pilotRows = entry.pilotLevels.entries.sortedBy { it.key }.map { (channel, level) ->
-                                val meta = entry.pilotMeta[channel]
-                                val freqText = formatFreq(meta?.frequencyMHz)
-                                val ok = entry.pilotLevelOk[channel] != false
-                                listOf(
-                                    channel.toString() to null,
-                                    "$freqText MHz" to null,
-                                    formatDbmv(level) to if (ok) null else errorRed
-                                )
-                            }
+                            val pilotRows: List<List<Pair<String, com.itextpdf.kernel.colors.Color?>>> =
+                                entry.pilotLevels.entries.sortedBy { it.key }.map { (channel, level) ->
+                                    val meta = entry.pilotMeta[channel]
+                                    val freqText = formatFreq(meta?.frequencyMHz)
+                                    val ok = entry.pilotLevelOk[channel] != false
+                                    listOf(
+                                        channel.toString() to null,
+                                        "$freqText MHz" to null,
+                                        formatDbmv(level) to if (ok) null else errorRed
+                                    )
+                                }
                             addTable(
                                 document,
                                 title = "Channel Expert - Downstream Analogic Channels",
@@ -1161,21 +1162,22 @@ val assets = repository.getAssetsByReportId(report.id).first()
                                 colWidths = floatArrayOf(20f, 35f, 45f)
                             )
 
-                            val digitalRows = entry.digitalRows.map { row ->
-                                val invalidMer = row.merOk == false
-                                val invalidBerPre = row.berPreOk == false
-                                val invalidBerPost = row.berPostOk == false
-                                val invalidIcfr = row.icfrOk == false
-                                listOf(
-                                    row.channel.toString() to null,
-                                    "${formatFreq(row.frequencyMHz)} MHz" to null,
-                                    formatDbmv(row.levelDbmv) to null,
-                                    formatDbmv(row.mer) to if (invalidMer) errorRed else null,
-                                    row.berPre?.toString() ?: "—" to if (invalidBerPre) errorRed else null,
-                                    row.berPost?.toString() ?: "—" to if (invalidBerPost) errorRed else null,
-                                    formatDbmv(row.icfr) to if (invalidIcfr) errorRed else null
-                                )
-                            }
+                            val digitalRows: List<List<Pair<String, com.itextpdf.kernel.colors.Color?>>> =
+                                entry.digitalRows.map { row ->
+                                    val invalidMer = row.merOk == false
+                                    val invalidBerPre = row.berPreOk == false
+                                    val invalidBerPost = row.berPostOk == false
+                                    val invalidIcfr = row.icfrOk == false
+                                    listOf(
+                                        row.channel.toString() to null,
+                                        "${formatFreq(row.frequencyMHz)} MHz" to null,
+                                        formatDbmv(row.levelDbmv) to null,
+                                        formatDbmv(row.mer) to if (invalidMer) errorRed else null,
+                                        row.berPre?.toString() ?: "—" to if (invalidBerPre) errorRed else null,
+                                        row.berPost?.toString() ?: "—" to if (invalidBerPost) errorRed else null,
+                                        formatDbmv(row.icfr) to if (invalidIcfr) errorRed else null
+                                    )
+                                }
                             addTable(
                                 document,
                                 title = "Channel Expert - Downstream Digital Channels",
