@@ -423,12 +423,8 @@ private fun validateMeasurementValues(
             val key = keys.next()
             val channel = key.toIntOrNull() ?: continue
             val rule = channels.optJSONObject(key) ?: continue
-            fun resolveTolerance(ruleTolerance: Double?, maxTolerance: Double?): Double? {
-                return when {
-                    maxTolerance == null -> ruleTolerance
-                    ruleTolerance == null -> maxTolerance
-                    else -> minOf(ruleTolerance, maxTolerance)
-                }
+            fun resolveTolerance(ruleTolerance: Double?, overrideTolerance: Double?): Double? {
+                return overrideTolerance ?: ruleTolerance
             }
             if (rule.has("source")) {
                 val target = amplifierTargets?.get(channel)
@@ -894,12 +890,18 @@ suspend fun verifyMeasurementFiles(
                 val docsisOk = mutableMapOf<Double, Boolean>()
                 val pilotOk = mutableMapOf<Int, Boolean>()
 
-                fun resolveTolerance(ruleTolerance: Double?, maxTolerance: Double?): Double? {
-                    return when {
-                        maxTolerance == null -> ruleTolerance
-                        ruleTolerance == null -> maxTolerance
-                        else -> minOf(ruleTolerance, maxTolerance)
-                    }
+                fun resolveTolerance(ruleTolerance: Double?, overrideTolerance: Double?): Double? {
+                    return overrideTolerance ?: ruleTolerance
+                }
+                fun applyPilotTolerance(
+                    channel: Int,
+                    adjusted: Double,
+                    target: Double?,
+                    ruleTolerance: Double?
+                ): Boolean {
+                    val tolerance = resolveTolerance(ruleTolerance, toleranceOverride)
+                    if (target == null || tolerance == null) return true
+                    return adjusted >= target - tolerance && adjusted <= target + tolerance
                 }
                 fun applyPilotTolerance(
                     channel: Int,
