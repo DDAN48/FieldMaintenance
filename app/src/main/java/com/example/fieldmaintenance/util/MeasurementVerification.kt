@@ -901,11 +901,39 @@ suspend fun verifyMeasurementFiles(
                         else -> minOf(ruleTolerance, maxTolerance)
                     }
                 }
+                fun applyPilotTolerance(
+                    channel: Int,
+                    adjusted: Double,
+                    target: Double?,
+                    ruleTolerance: Double?
+                ): Boolean {
+                    val tolerance = resolveTolerance(ruleTolerance, toleranceOverride)
+                    if (target == null || tolerance == null) return true
+                    return adjusted >= target - tolerance && adjusted <= target + tolerance
+                }
 
                 if (useInputValidation) {
                     val (ch50Ok, highOk) = ampInputStatus ?: (true to true)
                     pilotLevels.keys.forEach { channel ->
                         pilotOk[channel] = if (channel == 50) ch50Ok else highOk
+                    }
+                } else if (toleranceOverride != null) {
+                    pilotLevels.forEach { (channel, level) ->
+                        val adjusted = level + testPointOffset
+                        val rule = rules
+                            ?.optJSONObject("channelexpert")
+                            ?.optJSONObject(if (assetType == AssetType.NODE) "node" else "amplifier")
+                            ?.optJSONObject(equipmentKey)
+                            ?.optJSONObject("channels")
+                            ?.optJSONObject(channel.toString())
+                        val ruleTolerance = rule?.optDouble("tolerance", Double.NaN)
+                            ?.takeIf { !it.isNaN() }
+                        val target = if (rule?.has("source") == true) {
+                            amplifierTargets?.get(channel)
+                        } else {
+                            rule?.optDouble("target", Double.NaN)?.takeIf { !it.isNaN() }
+                        }
+                        pilotOk[channel] = applyPilotTolerance(channel, adjusted, target, ruleTolerance)
                     }
                 } else if (rules != null) {
                     val assetKey = if (assetType == AssetType.NODE) "node" else "amplifier"
@@ -928,19 +956,11 @@ suspend fun verifyMeasurementFiles(
                         if (rule?.has("source") == true) {
                             val target = amplifierTargets?.get(channel)
                             val ruleTolerance = rule.optDouble("tolerance", 1.5)
-                            val tolerance = resolveTolerance(ruleTolerance, toleranceOverride) ?: ruleTolerance
-                            pilotOk[channel] = target != null &&
-                                adjusted >= target - tolerance &&
-                                adjusted <= target + tolerance
+                            pilotOk[channel] = applyPilotTolerance(channel, adjusted, target, ruleTolerance)
                         } else {
                             val target = rule?.optDouble("target", Double.NaN)?.takeIf { !it.isNaN() }
                             val ruleTolerance = rule?.optDouble("tolerance", Double.NaN)?.takeIf { !it.isNaN() }
-                            val tolerance = resolveTolerance(ruleTolerance, toleranceOverride)
-                            pilotOk[channel] = if (target != null && tolerance != null) {
-                                adjusted >= target - tolerance && adjusted <= target + tolerance
-                            } else {
-                                true
-                            }
+                            pilotOk[channel] = applyPilotTolerance(channel, adjusted, target, ruleTolerance)
                         }
                     }
                 }
