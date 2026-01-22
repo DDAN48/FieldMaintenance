@@ -1734,14 +1734,85 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     flex-direction: column;
                     gap: 12px;
                   }
-                  .measurement-entry {
+                  .measurement-group {
                     background: var(--panel);
-                    border-radius: 12px;
+                    border-radius: 14px;
                     border: 1px solid var(--border);
                     padding: 12px;
                     display: flex;
                     flex-direction: column;
                     gap: 12px;
+                  }
+                  .measurement-header {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    gap: 12px;
+                    flex-wrap: wrap;
+                  }
+                  .measurement-tabs {
+                    display: flex;
+                    gap: 8px;
+                    flex-wrap: wrap;
+                  }
+                  .measurement-tab {
+                    border-radius: 999px;
+                    padding: 6px 14px;
+                    border: 1px solid var(--border);
+                    background: rgba(255,255,255,0.06);
+                    color: var(--text);
+                    cursor: pointer;
+                    font-size: 12px;
+                  }
+                  .measurement-tab.active {
+                    background: var(--accent);
+                    color: #101520;
+                    border-color: transparent;
+                    font-weight: 600;
+                  }
+                  .measurement-entry {
+                    background: transparent;
+                    border-radius: 12px;
+                    border: 1px solid var(--border);
+                    padding: 12px;
+                    display: none;
+                    flex-direction: column;
+                    gap: 12px;
+                  }
+                  .measurement-entry.active {
+                    display: flex;
+                  }
+                  .measurement-title {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    gap: 8px;
+                    font-weight: 600;
+                  }
+                  .collapse {
+                    border: 1px solid var(--border);
+                    border-radius: 12px;
+                    padding: 8px 12px;
+                    background: rgba(0,0,0,0.25);
+                  }
+                  .collapse summary {
+                    cursor: pointer;
+                    list-style: none;
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    gap: 8px;
+                    font-weight: 600;
+                  }
+                  .collapse summary::-webkit-details-marker {
+                    display: none;
+                  }
+                  .collapse summary::after {
+                    content: "▾";
+                    color: var(--muted);
+                  }
+                  .collapse[open] summary::after {
+                    transform: rotate(180deg);
                   }
                   .chart {
                     width: 100%;
@@ -2006,10 +2077,14 @@ val assets = repository.getAssetsByReportId(report.id).first()
                   function renderMeasurementEntry(entry) {
                     const entryEl = document.createElement('div');
                     entryEl.className = 'measurement-entry';
-                    const title = document.createElement('div');
+                    const header = document.createElement('div');
+                    header.className = 'measurement-title';
                     const discardLabel = entry.isDiscarded ? 'DESCARTADA' : '';
-                    title.innerHTML = `<strong>${'$'}{entry.label}</strong> <span class="muted">${'$'}{entry.type} ${'$'}{discardLabel}</span>`;
-                    entryEl.appendChild(title);
+                    header.innerHTML = `
+                      <div>${'$'}{entry.label}</div>
+                      <span class="muted">${'$'}{entry.type} ${'$'}{discardLabel}</span>
+                    `;
+                    entryEl.appendChild(header);
                     if (entry.type === 'docsisexpert') {
                       const chart = document.createElement('div');
                       chart.className = 'chart';
@@ -2019,7 +2094,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                         ok: row.Ok
                       })));
                       entryEl.appendChild(chart);
-                      entryEl.appendChild(buildTable(entry.docsisRows));
+                      entryEl.appendChild(buildCollapsible('Upstream Channels', buildTable(entry.docsisRows)));
                     } else if (entry.type === 'channelexpert') {
                       const chart = document.createElement('div');
                       chart.className = 'chart';
@@ -2030,23 +2105,17 @@ val assets = repository.getAssetsByReportId(report.id).first()
                       }));
                       drawBarChart(chart, points);
                       entryEl.appendChild(chart);
-                      entryEl.appendChild(buildTable(entry.pilotRows, 'Downstream Analogic Channels'));
-                      entryEl.appendChild(buildTable(entry.digitalRows, 'Downstream Digital Channels'));
+                      entryEl.appendChild(buildCollapsible('Downstream Analogic Channels', buildTable(entry.pilotRows)));
+                      entryEl.appendChild(buildCollapsible('Downstream Digital Channels', buildTable(entry.digitalRows)));
                     }
                     return entryEl;
                   }
 
-                  function buildTable(rows, title) {
+                  function buildTable(rows) {
                     const wrapper = document.createElement('div');
                     if (!rows || !rows.length) {
                       wrapper.innerHTML = `<div class="muted">Sin datos.</div>`;
                       return wrapper;
-                    }
-                    if (title) {
-                      const heading = document.createElement('div');
-                      heading.className = 'section-title';
-                      heading.textContent = title;
-                      wrapper.appendChild(heading);
                     }
                     const table = document.createElement('table');
                     table.className = 'table';
@@ -2072,6 +2141,16 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     return wrapper;
                   }
 
+                  function buildCollapsible(title, content) {
+                    const details = document.createElement('details');
+                    details.className = 'collapse';
+                    const summary = document.createElement('summary');
+                    summary.textContent = title;
+                    details.appendChild(summary);
+                    details.appendChild(content);
+                    return details;
+                  }
+
                   function renderMeasurements(assetId) {
                     measurementSection.innerHTML = '';
                     const bundle = data.measurements[assetId];
@@ -2085,13 +2164,39 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     const groups = [bundle.rx, bundle.module].filter(Boolean);
                     groups.forEach((group) => {
                       const groupEl = document.createElement('div');
+                      groupEl.className = 'measurement-group';
+                      const header = document.createElement('div');
+                      header.className = 'measurement-header';
                       const title = document.createElement('div');
                       title.className = 'section-title';
                       title.textContent = `Carga de Mediciones - ${'$'}{group.label}`;
-                      groupEl.appendChild(title);
-                      group.entries.forEach((entry) => {
-                        groupEl.appendChild(renderMeasurementEntry(entry));
+                      header.appendChild(title);
+                      const tabs = document.createElement('div');
+                      tabs.className = 'measurement-tabs';
+                      header.appendChild(tabs);
+                      groupEl.appendChild(header);
+
+                      const entryEls = group.entries.map((entry, index) => {
+                        const tab = document.createElement('button');
+                        tab.className = 'measurement-tab';
+                        tab.textContent = entry.label;
+                        tab.addEventListener('click', () => {
+                          entryEls.forEach((el) => el.classList.remove('active'));
+                          tabs.querySelectorAll('.measurement-tab').forEach((t) => t.classList.remove('active'));
+                          entryEls[index].classList.add('active');
+                          tab.classList.add('active');
+                        });
+                        tabs.appendChild(tab);
+                        const entryEl = renderMeasurementEntry(entry);
+                        groupEl.appendChild(entryEl);
+                        return entryEl;
                       });
+
+                      if (entryEls.length) {
+                        entryEls[0].classList.add('active');
+                        const firstTab = tabs.querySelector('.measurement-tab');
+                        if (firstTab) firstTab.classList.add('active');
+                      }
                       measurementSection.appendChild(groupEl);
                     });
                   }
