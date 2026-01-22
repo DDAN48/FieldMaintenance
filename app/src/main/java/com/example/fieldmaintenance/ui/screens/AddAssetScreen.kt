@@ -2660,15 +2660,17 @@ private fun AssetFileSection(
                             val normalized = fileLabel.uppercase(Locale.getDefault())
                             val cleaned = normalized.replace(Regex("[^A-Z0-9]"), "_")
                             val tokens = cleaned.split("_").filter { it.isNotBlank() }.toSet()
+                            val containsMain = cleaned.contains("MAIN") || cleaned.contains("PRINCIPAL")
+                            val containsAux = cleaned.contains("AUX") || cleaned.contains("AUXILIAR")
                             val auxdcMatch = cleaned.contains("AUXDC") ||
                                 cleaned.contains("AUX_DC") ||
                                 cleaned.contains("AUXILIARDC") ||
                                 cleaned.contains("AUXILIAR_DC")
                             return when {
-                                auxdcMatch && options.contains("AUXDC") -> "AUXDC"
-                                tokens.contains("MAIN") || tokens.contains("PRINCIPAL") -> "MAIN"
+                                containsMain || tokens.contains("MAIN") || tokens.contains("PRINCIPAL") -> "MAIN"
                                 tokens.contains("IN") || tokens.contains("ENTRADA") -> "IN"
-                                tokens.contains("AUX") || tokens.contains("AUXILIAR") -> "AUX"
+                                auxdcMatch && options.contains("AUXDC") -> "AUXDC"
+                                containsAux || tokens.contains("AUX") || tokens.contains("AUXILIAR") -> "AUX"
                                 else -> null
                             }
                         }
@@ -2684,28 +2686,32 @@ private fun AssetFileSection(
                             var auxdcUsed = false
                             tabs.forEachIndexed { index, tab ->
                                 val saved = savedSelections[tab.entry.label]?.uppercase(Locale.getDefault())
-                                val inferred = saved ?: inferSwitchSelection(tab.entry.label, options)
+                                val inferred = if (saved == null) inferSwitchSelection(tab.entry.label, options) else null
+                                val isExplicit = saved != null
                                 var selection = when {
+                                    saved != null && options.contains(saved) -> saved
                                     inferred != null -> inferred
                                     index == 0 -> "MAIN"
                                     index == 1 -> "IN"
                                     else -> "AUX"
                                 }
-                                if (selection == "MAIN" && mainUsed) {
-                                    selection = "AUX"
+                                if (!isExplicit) {
+                                    if (selection == "MAIN" && mainUsed) {
+                                        selection = "AUX"
+                                    }
+                                    if (selection == "IN" && inUsed) {
+                                        selection = "AUX"
+                                    }
+                                    if (selection == "AUXDC" && auxdcUsed) {
+                                        selection = "AUX"
+                                    }
+                                    if (selection == "AUXDC" && !options.contains("AUXDC")) {
+                                        selection = "AUX"
+                                    }
+                                    if (selection == "MAIN") mainUsed = true
+                                    if (selection == "IN") inUsed = true
+                                    if (selection == "AUXDC") auxdcUsed = true
                                 }
-                                if (selection == "IN" && inUsed) {
-                                    selection = "AUX"
-                                }
-                                if (selection == "AUXDC" && auxdcUsed) {
-                                    selection = "AUX"
-                                }
-                                if (selection == "AUXDC" && !options.contains("AUXDC")) {
-                                    selection = "AUX"
-                                }
-                                if (selection == "MAIN") mainUsed = true
-                                if (selection == "IN") inUsed = true
-                                if (selection == "AUXDC") auxdcUsed = true
                                 selections[tab.entry] = selection
                             }
                             return selections
@@ -2965,7 +2971,12 @@ private fun AssetFileSection(
                                     if (assetForDisplay.type == AssetType.AMPLIFIER && !isModule) {
                                         Spacer(Modifier.height(8.dp))
                                         val channelSwitchOptions = switchOptionsFor(assetForDisplay.amplifierMode)
-                                        val savedSelections = remember(channelTabs, assetForDisplay.id) {
+                                        val savedSelections = remember(
+                                            channelTabs,
+                                            assetForDisplay.id,
+                                            verificationSummaryRx,
+                                            verificationSummaryModule
+                                        ) {
                                             channelTabs.associate { tab ->
                                                 tab.entry.label to switchPrefs.getString(
                                                     switchKey(assetForDisplay.id, tab.entry.label),
@@ -3502,7 +3513,12 @@ private fun AssetFileSection(
                                     if (assetForDisplay.type == AssetType.AMPLIFIER && !isModule) {
                                         Spacer(Modifier.height(8.dp))
                                         val channelSwitchOptions = switchOptionsFor(assetForDisplay.amplifierMode)
-                                        val savedSelections = remember(channelTabs, assetForDisplay.id) {
+                                        val savedSelections = remember(
+                                            channelTabs,
+                                            assetForDisplay.id,
+                                            verificationSummaryRx,
+                                            verificationSummaryModule
+                                        ) {
                                             channelTabs.associate { tab ->
                                                 tab.entry.label to switchPrefs.getString(
                                                     switchKey(assetForDisplay.id, tab.entry.label),
