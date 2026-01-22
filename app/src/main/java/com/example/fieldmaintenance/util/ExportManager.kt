@@ -6,6 +6,7 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.content.ContentResolver
 import android.os.ParcelFileDescriptor
+import android.util.Base64
 import androidx.core.content.ContextCompat
 import com.example.fieldmaintenance.R
 import com.example.fieldmaintenance.data.model.*
@@ -50,6 +51,9 @@ import kotlin.math.abs
 
 class ExportManager(private val context: Context, private val repository: MaintenanceRepository) {
     private val gson: Gson = GsonBuilder().setPrettyPrinting().create()
+    private val switchPrefs by lazy {
+        context.getSharedPreferences("measurement_switch_positions", Context.MODE_PRIVATE)
+    }
 
     private fun safeFilePart(value: String): String {
         val v = value.trim().ifBlank { "NA" }
@@ -81,6 +85,61 @@ class ExportManager(private val context: Context, private val repository: Mainte
                 "1_AMP_${p}_${String.format("%03d", idx)}"
             }
         }
+    }
+
+    private fun collectSwitchSelections(assets: List<Asset>): Map<String, Map<String, String>> {
+        val allPrefs = switchPrefs.all
+        val result = mutableMapOf<String, MutableMap<String, String>>()
+        assets.forEach { asset ->
+            val prefix = "switch_${asset.id}_"
+            allPrefs.forEach { (key, value) ->
+                if (key.startsWith(prefix) && value is String) {
+                    val label = key.removePrefix(prefix)
+                    result.getOrPut(asset.id) { mutableMapOf() }[label] = value
+                }
+            }
+        }
+        return result
+    }
+
+    private fun applySwitchSelections(selections: Map<String, Map<String, String>>?) {
+        if (selections.isNullOrEmpty()) return
+        val editor = switchPrefs.edit()
+        selections.forEach { (assetId, values) ->
+            values.forEach { (label, value) ->
+                editor.putString("switch_${assetId}_$label", value)
+            }
+        }
+        editor.apply()
+    }
+
+    private fun collectMeasurementFiles(
+        reportFolderName: String,
+        asset: Asset
+    ): List<ExportMeasurementFile> {
+        val result = mutableListOf<ExportMeasurementFile>()
+        val assetDirs = buildList {
+            add(MaintenanceStorage.ensureAssetDir(context, reportFolderName, asset))
+            if (asset.type == AssetType.NODE) {
+                add(MaintenanceStorage.ensureAssetDir(context, reportFolderName, asset.copy(type = AssetType.AMPLIFIER)))
+            }
+        }
+        assetDirs.forEach { dir ->
+            dir.listFiles()
+                ?.filter { it.isFile }
+                ?.forEach { file ->
+                    val rel = File(dir.name, file.name).path.replace("\\", "/")
+                    val payload = Base64.encodeToString(file.readBytes(), Base64.NO_WRAP)
+                    result.add(ExportMeasurementFile(relativePath = rel, base64 = payload))
+                }
+        }
+        if (result.isEmpty()) {
+            assetDirs.forEach { dir ->
+                val rel = File(dir.name, ".keep").path.replace("\\", "/")
+                result.add(ExportMeasurementFile(relativePath = rel, base64 = ""))
+            }
+        }
+        return result
     }
 
     private fun photoSortKey(p: Photo): String {
@@ -226,6 +285,8 @@ val assets = repository.getAssetsByReportId(report.id).first()
         
         val photosMap = mutableMapOf<String, List<Photo>>()
         val nodeAdjustmentsMap = mutableMapOf<String, NodeAdjustment>()
+        val adjustmentsMap = mutableMapOf<String, AmplifierAdjustment>()
+        val measurementFiles = mutableListOf<ExportMeasurementFile>()
         assets.forEach { asset ->
             photosMap[asset.id] = repository.getPhotosByAssetId(asset.id).first()
                 .sortedBy { photoSortKey(it) }
@@ -235,10 +296,15 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     nodeAdjustmentsMap[asset.id] = it
                 }
             }
+            repository.getAmplifierAdjustment(asset.id).first()?.let {
+                adjustmentsMap[asset.id] = it
+            }
+            measurementFiles.addAll(collectMeasurementFiles(MaintenanceStorage.reportFolderName(report.eventName, report.id), asset))
         }
         
         val passives = repository.getPassivesByReportId(report.id).first()
         val reportPhotos = repository.getReportPhotosByReportId(report.id).first()
+        val switchSelections = collectSwitchSelections(assets)
 
         val exportData = ExportData(
             report = report,
@@ -246,7 +312,10 @@ val assets = repository.getAssetsByReportId(report.id).first()
             photos = photosMap,
             passives = passives,
             reportPhotos = reportPhotos,
-            nodeAdjustments = if (nodeAdjustmentsMap.isNotEmpty()) nodeAdjustmentsMap else null
+            nodeAdjustments = if (nodeAdjustmentsMap.isNotEmpty()) nodeAdjustmentsMap else null,
+            adjustments = if (adjustmentsMap.isNotEmpty()) adjustmentsMap else null,
+            measurementFiles = if (measurementFiles.isNotEmpty()) measurementFiles else null,
+            switchSelections = if (switchSelections.isNotEmpty()) switchSelections else null
         )
         
         val jsonString = gson.toJson(exportData)
@@ -511,6 +580,12 @@ val assets = repository.getAssetsByReportId(report.id).first()
                 else addImageBox(s.filePath, boxH)
             }
         }
+
+        val reportFolderName = MaintenanceStorage.reportFolderName(report.eventName, report.id)
+        val errorRed = DeviceRgb(183, 28, 28)
+        fun formatDbmv(value: Double?): String = value?.let { CiscoHfcAmpCalculator.format1(it) } ?: "—"
+        fun formatFreq(value: Double?): String =
+            value?.let { String.format(Locale.getDefault(), "%.1f", it) } ?: "—"
 
         assets.forEach { asset ->
             // Next page size depends on the section we're about to start.
@@ -855,21 +930,23 @@ val assets = repository.getAssetsByReportId(report.id).first()
 
                     addTable(
                         document,
-                        "Niveles ENTRADA medidos",
-                        headers = listOf("CANAL", "FREQ", "AMPLITUD (dBmV)"),
+                        "Niveles ENTRADA medido vs plano",
+                        headers = listOf("CANAL", "FREQ", "MEDIDO (dBmV)", "PLANO (dBmV)"),
                         rows = listOf(
                             listOf(
                                 "CH50" to null,
                                 "379 MHz" to null,
-                                (adj.inputCh50Dbmv?.let { CiscoHfcAmpCalculator.format1(it) } ?: "—") to null
+                                (adj.inputCh50Dbmv?.let { CiscoHfcAmpCalculator.format1(it) } ?: "—") to null,
+                                (adj.inputPlanCh50Dbmv?.let { CiscoHfcAmpCalculator.format1(it) } ?: "—") to null
                             ),
                             listOf(
                                 (if ((adj.inputHighFreqMHz ?: 750) == 870) "CH136" else "CH116") to null,
                                 "${adj.inputHighFreqMHz ?: 750} MHz" to null,
-                                (adj.inputCh116Dbmv?.let { CiscoHfcAmpCalculator.format1(it) } ?: "—") to null
+                                (adj.inputCh116Dbmv?.let { CiscoHfcAmpCalculator.format1(it) } ?: "—") to null,
+                                (adj.inputPlanHighDbmv?.let { CiscoHfcAmpCalculator.format1(it) } ?: "—") to null
                             )
                         ),
-                        colWidths = floatArrayOf(20f, 25f, 55f)
+                        colWidths = floatArrayOf(20f, 20f, 30f, 30f)
                     )
 
                     val entradaRows = listOf(
@@ -993,6 +1070,124 @@ val assets = repository.getAssetsByReportId(report.id).first()
                 document.add(AreaBreak(AreaBreakType.NEXT_PAGE))
                 document.add(Paragraph(headerLine).setBold())
                 document.add(Paragraph(" "))
+            }
+
+            // Carga de Mediciones (incluye RX + Módulo para NODO)
+            run {
+                val measurementAssets = buildList {
+                    add("RX" to asset)
+                    if (asset.type == AssetType.NODE) {
+                        add("Módulo" to asset.copy(type = AssetType.AMPLIFIER))
+                    }
+                }
+                val anyMeasurements = measurementAssets.any { (_, measurementAsset) ->
+                    val measurementDir = MaintenanceStorage.ensureAssetDir(context, reportFolderName, measurementAsset)
+                    measurementDir.listFiles()?.any { it.isFile } == true
+                }
+                if (anyMeasurements) {
+                    document.add(Paragraph("Carga de Mediciones").setBold())
+                }
+                measurementAssets.forEach { (label, measurementAsset) ->
+                    val measurementDir = MaintenanceStorage.ensureAssetDir(context, reportFolderName, measurementAsset)
+                    val files = measurementDir.listFiles()?.filter { it.isFile } ?: emptyList()
+                    val discardedLabels = loadDiscardedLabels(File(measurementDir, ".discarded_measurements.txt"))
+                    if (files.isEmpty()) {
+                        if (anyMeasurements) {
+                            document.add(Paragraph("$label: Sin mediciones cargadas.").setFontSize(9f))
+                            document.add(Paragraph(" "))
+                        }
+                        return@forEach
+                    }
+
+                    val required = requiredCounts(measurementAsset.type, isModule = measurementAsset.type == AssetType.AMPLIFIER && asset.type == AssetType.NODE)
+                    val summary = verifyMeasurementFiles(
+                        context = context,
+                        files = files,
+                        asset = measurementAsset,
+                        repository = repository,
+                        discardedLabels = discardedLabels,
+                        expectedDocsisOverride = required.expectedDocsis,
+                        expectedChannelOverride = required.expectedChannel
+                    )
+                    val entries = summary.result.measurementEntries
+                        .filter { !it.isDiscarded && (it.type == "docsisexpert" || it.type == "channelexpert") }
+
+                    if (entries.isEmpty()) {
+                        document.add(Paragraph("$label: Sin mediciones válidas.").setFontSize(9f))
+                        document.add(Paragraph(" "))
+                        return@forEach
+                    }
+
+                    entries.forEach { entry ->
+                        document.add(Paragraph("$label - ${entry.label}").setBold().setFontSize(10f))
+                        if (entry.type == "docsisexpert") {
+                            val rows = entry.docsisLevels.keys.sorted().map { freq ->
+                                val meta = entry.docsisMeta[freq]
+                                val channel = meta?.channel?.toString() ?: "—"
+                                val freqText = formatFreq(meta?.frequencyMHz ?: freq)
+                                val level = formatDbmv(entry.docsisLevels[freq])
+                                val icfr = formatDbmv(entry.docsisIcfr[freq])
+                                val ok = entry.docsisLevelOk[freq] != false
+                                listOf(
+                                    channel to null,
+                                    "$freqText MHz" to null,
+                                    level to if (ok) null else errorRed,
+                                    icfr to null
+                                )
+                            }
+                            addTable(
+                                document,
+                                title = "DOCSIS Expert - Upstream Channels",
+                                headers = listOf("UCD", "Frecuencia (MHz)", "Nivel (dBmV)", "ICFR (dB)"),
+                                rows = rows,
+                                colWidths = floatArrayOf(15f, 30f, 30f, 25f)
+                            )
+                        } else if (entry.type == "channelexpert") {
+                            val pilotRows: List<List<Pair<String, com.itextpdf.kernel.colors.Color?>>> =
+                                entry.pilotLevels.entries.sortedBy { it.key }.map { (channel, level) ->
+                                    val meta = entry.pilotMeta[channel]
+                                    val freqText = formatFreq(meta?.frequencyMHz)
+                                    val ok = entry.pilotLevelOk[channel] != false
+                                    listOf(
+                                        channel.toString() to null,
+                                        "$freqText MHz" to null,
+                                        formatDbmv(level) to if (ok) null else errorRed
+                                    )
+                                }
+                            addTable(
+                                document,
+                                title = "Channel Expert - Downstream Analogic Channels",
+                                headers = listOf("Canal", "Freq (MHz)", "Nivel (dBmV)"),
+                                rows = pilotRows,
+                                colWidths = floatArrayOf(20f, 35f, 45f)
+                            )
+
+                            val digitalRows: List<List<Pair<String, com.itextpdf.kernel.colors.Color?>>> =
+                                entry.digitalRows.map { row ->
+                                    val invalidMer = row.merOk == false
+                                    val invalidBerPre = row.berPreOk == false
+                                    val invalidBerPost = row.berPostOk == false
+                                    val invalidIcfr = row.icfrOk == false
+                                    listOf(
+                                        row.channel.toString() to null,
+                                        "${formatFreq(row.frequencyMHz)} MHz" to null,
+                                        formatDbmv(row.levelDbmv) to null,
+                                        formatDbmv(row.mer) to if (invalidMer) errorRed else null,
+                                        row.berPre?.toString() ?: "—" to if (invalidBerPre) errorRed else null,
+                                        row.berPost?.toString() ?: "—" to if (invalidBerPost) errorRed else null,
+                                        formatDbmv(row.icfr) to if (invalidIcfr) errorRed else null
+                                    )
+                                }
+                            addTable(
+                                document,
+                                title = "Channel Expert - Downstream Digital Channels",
+                                headers = listOf("Canal", "Freq (MHz)", "Nivel (dBmV)", "MER", "BER pre", "BER post", "ICFR"),
+                                rows = digitalRows,
+                                colWidths = floatArrayOf(12f, 18f, 18f, 12f, 12f, 12f, 16f)
+                            )
+                        }
+                    }
+                }
             }
 
             // From here on, photos pages should use the normal height.
@@ -1167,6 +1362,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
         val adjustmentsByAsset = mutableMapOf<String, AmplifierAdjustment>()
         val nodeAdjustmentsByAsset = mutableMapOf<String, NodeAdjustment>()
         val reportImageRefs = mutableListOf<ExportReportImageRef>()
+        val switchSelections = collectSwitchSelections(assets)
 
         val reportFolderName = MaintenanceStorage.reportFolderName(report.eventName, report.id)
         assets.forEach { asset ->
@@ -1205,14 +1401,23 @@ val assets = repository.getAssetsByReportId(report.id).first()
             }
             imagesByAsset[asset.id] = refs
 
-            val sourceMeasurementsDir = MaintenanceStorage.ensureAssetDir(context, reportFolderName, asset)
-            if (sourceMeasurementsDir.exists()) {
-                val measurementTargetDir = File(measurementsDir, MaintenanceStorage.assetFolderName(asset)).apply { mkdirs() }
-                sourceMeasurementsDir.listFiles()
-                    ?.filter { it.isFile }
-                    ?.forEach { file ->
-                        file.copyTo(File(measurementTargetDir, file.name), overwrite = true)
-                    }
+            val measurementAssets = buildList {
+                add(asset)
+                if (asset.type == AssetType.NODE) {
+                    add(asset.copy(type = AssetType.AMPLIFIER))
+                }
+            }
+            measurementAssets.forEach { measurementAsset ->
+                val sourceMeasurementsDir = MaintenanceStorage.ensureAssetDir(context, reportFolderName, measurementAsset)
+                if (sourceMeasurementsDir.exists()) {
+                    val measurementTargetDir = File(measurementsDir, MaintenanceStorage.assetFolderName(measurementAsset))
+                        .apply { mkdirs() }
+                    sourceMeasurementsDir.listFiles()
+                        ?.filter { it.isFile }
+                        ?.forEach { file ->
+                            file.copyTo(File(measurementTargetDir, file.name), overwrite = true)
+                        }
+                }
             }
         }
 
@@ -1242,7 +1447,8 @@ val assets = repository.getAssetsByReportId(report.id).first()
             reportImages = if (reportImageRefs.isEmpty()) null else reportImageRefs,
             adjustments = if (adjustmentsByAsset.isEmpty()) null else adjustmentsByAsset,
             nodeAdjustments = if (nodeAdjustmentsByAsset.isNotEmpty()) nodeAdjustmentsByAsset else null,
-            passives = passives
+            passives = passives,
+            switchSelections = if (switchSelections.isNotEmpty()) switchSelections else null
         )
         File(exportDir, "report.json").writeText(gson.toJson(exportData))
 
@@ -1383,10 +1589,30 @@ val assets = repository.getAssetsByReportId(report.id).first()
             exportData.reportPhotos?.forEach { rp ->
                 repository.upsertReportPhoto(rp)
             }
+            exportData.adjustments?.forEach { (assetId, adj) ->
+                repository.upsertAmplifierAdjustment(adj.copy(assetId = assetId))
+            }
             exportData.nodeAdjustments?.forEach { (assetId, adj) ->
                 // Ensure assetId and reportId are preserved from the imported data
                 repository.upsertNodeAdjustment(adj.copy(assetId = assetId, reportId = exportData.report.id))
             }
+
+            exportData.measurementFiles?.let { files ->
+                val reportFolderName = MaintenanceStorage.reportFolderName(exportData.report.eventName, exportData.report.id)
+                val reportDir = MaintenanceStorage.ensureReportDir(context, reportFolderName)
+                files.forEach { measurement ->
+                    val rel = measurement.relativePath.removePrefix("/").replace("\\", "/")
+                    val dest = File(reportDir, rel)
+                    dest.parentFile?.mkdirs()
+                    if (measurement.base64.isNotBlank()) {
+                        val bytes = Base64.decode(measurement.base64, Base64.DEFAULT)
+                        dest.writeBytes(bytes)
+                    } else {
+                        dest.writeText("")
+                    }
+                }
+            }
+            applySwitchSelections(exportData.switchSelections)
             
             exportData.report
         } catch (e: Exception) {
@@ -1458,6 +1684,8 @@ val assets = repository.getAssetsByReportId(report.id).first()
                 repository.insertPassive(p.copy(reportId = report.id))
             }
 
+            applySwitchSelections(exportData.switchSelections)
+
             // Restore report images (Monitoria y QR)
             exportData.reportImages?.forEach { ref ->
                 val rel = ref.fileName.removePrefix("/").replace("\\", "/")
@@ -1515,14 +1743,22 @@ val assets = repository.getAssetsByReportId(report.id).first()
             if (measurementsDir.exists()) {
                 val reportFolderName = MaintenanceStorage.reportFolderName(report.eventName, report.id)
                 exportData.assets.forEach { asset ->
-                    val sourceDir = File(measurementsDir, MaintenanceStorage.assetFolderName(asset))
-                    if (!sourceDir.exists()) return@forEach
-                    val destDir = MaintenanceStorage.ensureAssetDir(context, reportFolderName, asset)
-                    sourceDir.listFiles()
-                        ?.filter { it.isFile }
-                        ?.forEach { file ->
-                            file.copyTo(File(destDir, file.name), overwrite = true)
+                    val measurementAssets = buildList {
+                        add(asset)
+                        if (asset.type == AssetType.NODE) {
+                            add(asset.copy(type = AssetType.AMPLIFIER))
                         }
+                    }
+                    measurementAssets.forEach { measurementAsset ->
+                        val sourceDir = File(measurementsDir, MaintenanceStorage.assetFolderName(measurementAsset))
+                        if (!sourceDir.exists()) return@forEach
+                        val destDir = MaintenanceStorage.ensureAssetDir(context, reportFolderName, measurementAsset)
+                        sourceDir.listFiles()
+                            ?.filter { it.isFile }
+                            ?.forEach { file ->
+                                file.copyTo(File(destDir, file.name), overwrite = true)
+                            }
+                    }
                 }
             }
 
@@ -1539,7 +1775,15 @@ data class ExportData(
     val photos: Map<String, List<Photo>>,
     val passives: List<PassiveItem>? = null,
     val reportPhotos: List<ReportPhoto>? = null,
-    val nodeAdjustments: Map<String, NodeAdjustment>? = null
+    val nodeAdjustments: Map<String, NodeAdjustment>? = null,
+    val adjustments: Map<String, AmplifierAdjustment>? = null,
+    val measurementFiles: List<ExportMeasurementFile>? = null,
+    val switchSelections: Map<String, Map<String, String>>? = null
+)
+
+data class ExportMeasurementFile(
+    val relativePath: String,
+    val base64: String
 )
 
 data class ExportImageRef(
@@ -1559,7 +1803,8 @@ data class ExportDataV2(
     val reportImages: List<ExportReportImageRef>? = null,
     val adjustments: Map<String, AmplifierAdjustment>? = null,
     val nodeAdjustments: Map<String, NodeAdjustment>? = null,
-    val passives: List<PassiveItem>? = null
+    val passives: List<PassiveItem>? = null,
+    val switchSelections: Map<String, Map<String, String>>? = null
 )
 
 data class ExportReportImageRef(
