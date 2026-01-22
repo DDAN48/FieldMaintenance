@@ -2702,14 +2702,18 @@ private fun AssetFileSection(
                             val containsMain = cleaned.contains("MAIN") || cleaned.contains("PRINCIPAL")
                             val containsAux = cleaned.contains("AUX") || cleaned.contains("AUXILIAR")
                             val auxdcMatch = cleaned.contains("AUXDC") ||
+                                cleaned.contains("AXU_DC") ||
                                 cleaned.contains("AUX_DC") ||
                                 cleaned.contains("AUXILIARDC") ||
                                 cleaned.contains("AUXILIAR_DC")
+                            val hasInToken = tokens.contains("IN") || tokens.contains("ENTRADA")
+                            val hasInlineIn = !hasInToken && Regex("[A-Z]IN").containsMatchIn(cleaned)
                             return when {
                                 containsMain || tokens.contains("MAIN") || tokens.contains("PRINCIPAL") -> "MAIN"
-                                tokens.contains("IN") || tokens.contains("ENTRADA") -> "IN"
                                 auxdcMatch && options.contains("AUXDC") -> "AUXDC"
                                 containsAux || tokens.contains("AUX") || tokens.contains("AUXILIAR") -> "AUX"
+                                hasInToken -> "IN"
+                                hasInlineIn -> "MAIN"
                                 else -> null
                             }
                         }
