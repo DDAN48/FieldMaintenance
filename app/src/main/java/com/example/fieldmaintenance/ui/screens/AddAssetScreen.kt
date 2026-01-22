@@ -2487,7 +2487,7 @@ private fun AssetFileSection(
         selection: String,
         isModule: Boolean,
         assetId: String,
-        tabs: List<MeasurementTab>,
+        tabLabels: List<String>,
         options: List<String>
     ) {
         val reserved = setOf("IN", "MAIN", "AUXDC")
@@ -2495,9 +2495,9 @@ private fun AssetFileSection(
         val editor = switchPrefs.edit()
         editor.putString(switchKey(assetId, entryLabel), selection)
         if (selection in reserved && fallback.isNotBlank()) {
-            tabs.forEach { tab ->
-                if (tab.entry.label != entryLabel) {
-                    val key = switchKey(assetId, tab.entry.label)
+            tabLabels.forEach { label ->
+                if (label != entryLabel) {
+                    val key = switchKey(assetId, label)
                     val stored = switchPrefs.getString(key, null)
                     if (stored == selection) {
                         editor.putString(key, fallback)
@@ -3050,7 +3050,7 @@ private fun AssetFileSection(
                                                                 option,
                                                                 isModule,
                                                                 assetForDisplay.id,
-                                                                channelTabs,
+                                                                channelTabs.map { it.entry.label },
                                                                 channelSwitchOptions
                                                             )
                                                         }
@@ -3612,7 +3612,7 @@ private fun AssetFileSection(
                                                                 option,
                                                                 isModule,
                                                                 assetForDisplay.id,
-                                                                channelTabs,
+                                                                channelTabs.map { it.entry.label },
                                                                 channelSwitchOptions
                                                             )
                                                         }
