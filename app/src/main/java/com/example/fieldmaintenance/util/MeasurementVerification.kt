@@ -359,9 +359,12 @@ private fun validateMeasurementValues(
     equipmentKey: String,
     assetType: AssetType,
     amplifierTargets: Map<Int, Double>?,
-    nodeTxType: String?
+    nodeTxType: String?,
+    skipChannelValidation: Boolean,
+    toleranceOverride: Double?
 ): List<String> {
     if (rules == null) return listOf("No se pudo cargar la tabla de validación.")
+    if (type == "channelexpert" && skipChannelValidation) return emptyList()
     val issues = mutableListOf<String>()
     val assetKey = when (assetType) {
         AssetType.NODE -> "node"
@@ -418,6 +421,9 @@ private fun validateMeasurementValues(
             val key = keys.next()
             val channel = key.toIntOrNull() ?: continue
             val rule = channels.optJSONObject(key) ?: continue
+            fun resolveTolerance(ruleTolerance: Double?, overrideTolerance: Double?): Double? {
+                return overrideTolerance ?: ruleTolerance
+            }
             if (rule.has("source")) {
                 val target = amplifierTargets?.get(channel)
                 if (target == null) {
@@ -428,9 +434,9 @@ private fun validateMeasurementValues(
                     if (level == null) {
                         issues.add("No se encontró nivel para canal $channel.")
                     } else {
-                        val tolerance = rule.optDouble("tolerance", 1.5)
+                        val tolerance = resolveTolerance(rule.optDouble("tolerance", 1.5), toleranceOverride)
                         val adjusted = level + testPointOffset
-                        if (adjusted < target - tolerance || adjusted > target + tolerance) {
+                        if (tolerance != null && (adjusted < target - tolerance || adjusted > target + tolerance)) {
                             issues.add("Nivel fuera de rango en canal $channel.")
                         }
                     }
@@ -442,8 +448,11 @@ private fun validateMeasurementValues(
                     issues.add("No se encontró nivel para canal $channel.")
                 } else {
                     val target = rule.optDouble("target", Double.NaN)
-                    val tolerance = rule.optDouble("tolerance", Double.NaN)
-                    if (!target.isNaN() && !tolerance.isNaN()) {
+                    val tolerance = resolveTolerance(
+                        rule.optDouble("tolerance", Double.NaN).takeIf { !it.isNaN() },
+                        toleranceOverride
+                    )
+                    if (!target.isNaN() && tolerance != null) {
                         val adjusted = level + testPointOffset
                         if (adjusted < target - tolerance || adjusted > target + tolerance) {
                             issues.add("Nivel fuera de rango en canal $channel.")
@@ -932,7 +941,6 @@ suspend fun verifyMeasurementFiles(
                     pilotOk.keys.forEach { channel -> pilotOk[channel] = false }
                 }
 
-                val assetKey = if (assetType == AssetType.NODE) "node" else "amplifier"
                 val common = rules?.optJSONObject("channelexpert")?.optJSONObject("common")
                 val merMin = common?.optJSONObject("mer")?.optDouble("min", Double.NaN)?.takeIf { !it.isNaN() }
                 val berPreMax = common?.optJSONObject("berPre")?.optDouble("max", Double.NaN)?.takeIf { !it.isNaN() }
@@ -985,7 +993,9 @@ suspend fun verifyMeasurementFiles(
                         equipmentKey = equipmentKey,
                         assetType = assetType,
                         amplifierTargets = amplifierTargets,
-                        nodeTxType = nodeTxType
+                        nodeTxType = nodeTxType,
+                        skipChannelValidation = switchSelection == "IN",
+                        toleranceOverride = toleranceOverride
                     )
                     issues.forEach { issue ->
                         validationIssues.add(
