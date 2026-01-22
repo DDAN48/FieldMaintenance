@@ -2766,6 +2766,21 @@ private fun AssetFileSection(
                             return selections
                         }
 
+                        fun persistSwitchSelections(
+                            tabs: List<MeasurementTab>,
+                            selections: Map<MeasurementEntry, String>,
+                            assetId: String
+                        ) {
+                            val editor = switchPrefs.edit()
+                            tabs.forEach { tab ->
+                                val selection = selections[tab.entry]
+                                if (selection != null) {
+                                    editor.putString(switchKey(assetId, tab.entry.label), selection)
+                                }
+                            }
+                            editor.apply()
+                        }
+
                         @Composable
                         fun MeasurementTabChip(
                             label: String,
@@ -3034,6 +3049,9 @@ private fun AssetFileSection(
                                         }
                                         val channelSwitchSelections = remember(channelTabs, channelSwitchOptions, savedSelections) {
                                             buildSwitchSelections(channelTabs, channelSwitchOptions, savedSelections)
+                                        }
+                                        LaunchedEffect(channelSwitchSelections, assetForDisplay.id) {
+                                            persistSwitchSelections(channelTabs, channelSwitchSelections, assetForDisplay.id)
                                         }
                                         val initialSelection = channelSwitchSelections[entry] ?: "MAIN"
                                         var selected by remember(entry.label, initialSelection) {
@@ -3596,6 +3614,9 @@ private fun AssetFileSection(
                                         }
                                         val channelSwitchSelections = remember(channelTabs, channelSwitchOptions, savedSelections) {
                                             buildSwitchSelections(channelTabs, channelSwitchOptions, savedSelections)
+                                        }
+                                        LaunchedEffect(channelSwitchSelections, assetForDisplay.id) {
+                                            persistSwitchSelections(channelTabs, channelSwitchSelections, assetForDisplay.id)
                                         }
                                         val initialSelection = channelSwitchSelections[entry] ?: "MAIN"
                                         var selected by remember(entry.label, initialSelection) {
