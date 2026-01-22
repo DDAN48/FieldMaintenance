@@ -2698,21 +2698,27 @@ private fun AssetFileSection(
                             val fileLabel = label.substringAfterLast('/')
                             val normalized = fileLabel.uppercase(Locale.getDefault())
                             val cleaned = normalized.replace(Regex("[^A-Z0-9]"), "_")
+                            val normalizedNoSep = normalized.replace(Regex("[^A-Z0-9]"), "")
                             val tokens = cleaned.split("_").filter { it.isNotBlank() }.toSet()
-                            val containsMain = cleaned.contains("MAIN") || cleaned.contains("PRINCIPAL")
-                            val containsAux = cleaned.contains("AUX") || cleaned.contains("AUXILIAR")
+                            val containsMain = normalizedNoSep.contains("MAIN") || normalizedNoSep.contains("PRINCIPAL")
+                            val containsAux = normalizedNoSep.contains("AUXILIAR") || normalizedNoSep.contains("AUX")
                             val auxdcMatch = cleaned.contains("AUXDC") ||
                                 cleaned.contains("AXU_DC") ||
                                 cleaned.contains("AUX_DC") ||
                                 cleaned.contains("AUXILIARDC") ||
-                                cleaned.contains("AUXILIAR_DC")
+                                cleaned.contains("AUXILIAR_DC") ||
+                                normalizedNoSep.contains("AUXDC") ||
+                                normalizedNoSep.contains("AUXILIARDC") ||
+                                normalizedNoSep.contains("AXUDC")
+                            val hasEntrada = normalizedNoSep.contains("ENTRADA")
                             val hasInToken = tokens.contains("IN") || tokens.contains("ENTRADA")
-                            val hasInlineIn = !hasInToken && Regex("[A-Z]IN").containsMatchIn(cleaned)
+                            val hasInStandalone = Regex("(^|[0-9])IN").containsMatchIn(normalizedNoSep)
+                            val hasInlineIn = normalizedNoSep.contains("IN") && !hasInToken && !hasEntrada && !hasInStandalone
                             return when {
                                 containsMain || tokens.contains("MAIN") || tokens.contains("PRINCIPAL") -> "MAIN"
                                 auxdcMatch && options.contains("AUXDC") -> "AUXDC"
                                 containsAux || tokens.contains("AUX") || tokens.contains("AUXILIAR") -> "AUX"
-                                hasInToken -> "IN"
+                                hasEntrada || hasInToken || hasInStandalone -> "IN"
                                 hasInlineIn -> "MAIN"
                                 else -> null
                             }
