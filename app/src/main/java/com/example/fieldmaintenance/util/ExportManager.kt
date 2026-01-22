@@ -1523,6 +1523,17 @@ val assets = repository.getAssetsByReportId(report.id).first()
                         } else {
                             baseTitle
                         }
+                        val imageFile = File(exportDir, ref.fileName)
+                        val dataUri = if (imageFile.exists()) {
+                            val encoded = Base64.encodeToString(imageFile.readBytes(), Base64.NO_WRAP)
+                            "data:image/jpeg;base64,$encoded"
+                        } else {
+                            null
+                        }
+                        HtmlPhotoExport(
+                            title = title,
+                            fileName = ref.fileName,
+                            dataUri = dataUri,
                         HtmlPhotoExport(
                             title = title,
                             fileName = ref.fileName,
@@ -1841,7 +1852,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                       return;
                     }
                     const photo = currentPhotos[currentPhotoIndex];
-                    photoImage.src = photo.fileName;
+                    photoImage.src = photo.dataUri || photo.fileName;
                     photoTitle.textContent = photo.title;
                   }
 
@@ -2691,6 +2702,7 @@ data class HtmlAssetExport(
 data class HtmlPhotoExport(
     val title: String,
     val fileName: String,
+    val dataUri: String?,
     val photoType: String
 )
 
