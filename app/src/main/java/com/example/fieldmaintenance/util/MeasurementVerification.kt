@@ -365,7 +365,7 @@ private fun validateMeasurementValues(
     skipChannelValidation: Boolean,
     toleranceOverride: Double?
 ): List<String> {
-    if (rules == null) return listOf("No se pudo cargar la tabla de validación.")
+    if (rules == null) return listOf("No se pudo cargar la tabla de validaci?n.")
     if (type == "channelexpert" && skipChannelValidation) return emptyList()
     val issues = mutableListOf<String>()
     val assetKey = when (assetType) {
@@ -438,7 +438,7 @@ private fun validateMeasurementValues(
                     val row = rows.firstOrNull { it.channel == channel }
                     val level = row?.levelDbmv
                     if (level == null) {
-                        issues.add("No se encontró nivel para canal $channel.")
+                        issues.add("No se encontr? nivel para canal $channel.")
                     } else {
                         val tolerance = resolveTolerance(rule.optDouble("tolerance", 1.5), toleranceOverride)
                         val adjusted = level + testPointOffset
@@ -451,7 +451,7 @@ private fun validateMeasurementValues(
                 val row = rows.firstOrNull { it.channel == channel }
                 val level = row?.levelDbmv
                 if (level == null) {
-                    issues.add("No se encontró nivel para canal $channel.")
+                    issues.add("No se encontr? nivel para canal $channel.")
                 } else {
                     val target = rule.optDouble("target", Double.NaN)
                     val tolerance = resolveTolerance(
@@ -492,13 +492,13 @@ private fun parseGeoLocation(results: JSONObject?): GeoParseResult {
     val lat = geo.optDouble("latitude", Double.NaN)
     val lon = geo.optDouble("longitude", Double.NaN)
     if (lat.isNaN() || lon.isNaN()) {
-        return GeoParseResult(point = null, hasGeoField = true, issue = "Georreferencia inválida (valores vacíos)", rawLatitude = null, rawLongitude = null)
+        return GeoParseResult(point = null, hasGeoField = true, issue = "Georreferencia inv?lida (valores vac?os)", rawLatitude = null, rawLongitude = null)
     }
     if (lat == 0.0 && lon == 0.0) {
-        return GeoParseResult(point = null, hasGeoField = true, issue = "Georreferencia inválida (0,0)", rawLatitude = lat, rawLongitude = lon)
+        return GeoParseResult(point = null, hasGeoField = true, issue = "Georreferencia inv?lida (0,0)", rawLatitude = lat, rawLongitude = lon)
     }
     if (lat < -90.0 || lat > 90.0 || lon < -180.0 || lon > 180.0) {
-        return GeoParseResult(point = null, hasGeoField = true, issue = "Georreferencia inválida (fuera de rango)", rawLatitude = lat, rawLongitude = lon)
+        return GeoParseResult(point = null, hasGeoField = true, issue = "Georreferencia inv?lida (fuera de rango)", rawLatitude = lat, rawLongitude = lon)
     }
     return GeoParseResult(
         point = GeoPoint(latitude = lat, longitude = lon),
@@ -1210,7 +1210,7 @@ suspend fun verifyMeasurementFiles(
             add("Sobran mediciones ChannelExpert (${channelCount}/$expectedChannel). Elimine una.")
         }
         if (invalidTypeCount > 0) {
-            add("Se encontraron mediciones con tipo inválido ($invalidTypeCount). Elimine las que no correspondan.")
+            add("Se encontraron mediciones con tipo inv?lido ($invalidTypeCount). Elimine las que no correspondan.")
         }
         if (duplicateFileCount > 0) {
             add("Se detectaron duplicados y se eliminaron $duplicateFileCount archivo(s).")
