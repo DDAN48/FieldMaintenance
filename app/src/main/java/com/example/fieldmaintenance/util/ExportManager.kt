@@ -2083,6 +2083,15 @@ val assets = repository.getAssetsByReportId(report.id).first()
                       const table = document.createElement('table');
                       table.className = 'table';
                       const headers = Object.keys(tableData.rows[0]).filter((h) => h !== 'alert');
+                      const preferred = ['Canal', 'Frecuencia', 'Nivel', 'Medido', 'Plano', 'Calculado', 'DIF'];
+                      headers.sort((a, b) => {
+                        const ia = preferred.indexOf(a);
+                        const ib = preferred.indexOf(b);
+                        if (ia === -1 && ib === -1) return a.localeCompare(b);
+                        if (ia === -1) return 1;
+                        if (ib === -1) return -1;
+                        return ia - ib;
+                      });
                       table.innerHTML = `
                         <thead><tr>${'$'}{headers.map((h) => `<th>${'$'}{h}</th>`).join('')}</tr></thead>
                         <tbody></tbody>
@@ -2106,8 +2115,24 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     return container;
                   }
 
+                  function normalizeChartPoints(points) {
+                    const byFreq = new Map();
+                    points.forEach((point) => {
+                      if (point.frequencyMHz == null) return;
+                      const key = Number(point.frequencyMHz);
+                      const existing = byFreq.get(key);
+                      if (!existing) {
+                        byFreq.set(key, point);
+                      } else if (existing.ok !== false && point.ok === false) {
+                        byFreq.set(key, point);
+                      }
+                    });
+                    return Array.from(byFreq.values()).sort((a, b) => a.frequencyMHz - b.frequencyMHz);
+                  }
+
                   function drawBarChart(container, points, options = {}) {
-                    if (!points.length) {
+                    const normalizedPoints = normalizeChartPoints(points);
+                    if (!normalizedPoints.length) {
                       container.textContent = 'Sin datos para graficar.';
                       container.classList.add('muted');
                       return;
@@ -2115,7 +2140,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     const width = container.clientWidth || 600;
                     const height = 200;
                     const padding = 28;
-                    const levels = points.map((p) => p.levelDbmv).filter((v) => v != null);
+                    const levels = normalizedPoints.map((p) => p.levelDbmv).filter((v) => v != null);
                     if (!levels.length) {
                       container.textContent = 'Sin datos para graficar.';
                       container.classList.add('muted');
@@ -2124,7 +2149,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     const min = Math.min(...levels);
                     const max = Math.max(...levels);
                     const span = max - min || 1;
-                    const barWidth = (width - padding * 2) / points.length;
+                    const barWidth = (width - padding * 2) / normalizedPoints.length;
                     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
                     svg.setAttribute('width', width);
                     svg.setAttribute('height', height);
@@ -2140,7 +2165,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                       line.setAttribute('stroke-width', '1');
                       svg.appendChild(line);
                     }
-                    points.forEach((point, index) => {
+                    normalizedPoints.forEach((point, index) => {
                       const level = point.levelDbmv ?? 0;
                       const x = padding + index * barWidth + barWidth * 0.1;
                       const barHeight = ((level - min) / span) * (height - padding * 2);
@@ -2152,8 +2177,11 @@ val assets = repository.getAssetsByReportId(report.id).first()
                       rect.setAttribute('height', barHeight);
                       rect.setAttribute('rx', 4);
                       rect.setAttribute('fill', point.ok === false ? '#ef6b6b' : '#2b76ff');
+                      const tooltip = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+                      tooltip.textContent = `MHz: ${'$'}{point.frequencyMHz} | dBmV: ${'$'}{point.levelDbmv ?? '—'}`;
+                      rect.appendChild(tooltip);
                       svg.appendChild(rect);
-                      if (index % Math.ceil(points.length / 6) === 0) {
+                      if (index % Math.ceil(normalizedPoints.length / 6) === 0) {
                         const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
                         label.setAttribute('x', x + barWidth * 0.4);
                         label.setAttribute('y', height - 8);
@@ -2182,6 +2210,15 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     axis.setAttribute('font-size', '10');
                     axis.textContent = 'MHz';
                     svg.appendChild(axis);
+                    const axisY = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                    axisY.setAttribute('x', 12);
+                    axisY.setAttribute('y', height / 2);
+                    axisY.setAttribute('text-anchor', 'middle');
+                    axisY.setAttribute('fill', 'var(--muted)');
+                    axisY.setAttribute('font-size', '10');
+                    axisY.setAttribute('transform', `rotate(-90 12 ${'$'}{height / 2})`);
+                    axisY.textContent = 'dBmV';
+                    svg.appendChild(axisY);
                     container.innerHTML = '';
                     container.appendChild(svg);
                   }
