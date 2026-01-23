@@ -90,6 +90,7 @@ fun PassivesScreen(navController: NavController, reportId: String) {
     var editing by remember { mutableStateOf<PassiveItem?>(null) }
     var pendingDelete by remember { mutableStateOf<PassiveItem?>(null) }
     var showFinalizeDialog by remember { mutableStateOf(false) }
+    var isExporting by remember { mutableStateOf(false) }
 
     fun openNew() {
         editing = null
@@ -179,23 +180,42 @@ fun PassivesScreen(navController: NavController, reportId: String) {
     
     if (showFinalizeDialog && report != null) {
         FinalizeReportDialog(
-            onDismiss = { showFinalizeDialog = false },
+            onDismiss = {
+                if (!isExporting) {
+                    showFinalizeDialog = false
+                }
+            },
             onSendEmailPackage = {
                 scope.launch {
-                    val bundleFile = exportManager.exportToBundleZip(report!!)
-                    EmailManager.sendEmail(context, report!!.eventName, listOf(bundleFile))
+                    if (isExporting) return@launch
+                    isExporting = true
+                    try {
+                        val bundleFile = exportManager.exportToBundleZip(report!!)
+                        EmailManager.sendEmail(context, report!!.eventName, listOf(bundleFile))
+                    } finally {
+                        isExporting = false
+                        showFinalizeDialog = false
+                    }
                 }
             },
             onExportPackage = {
                 scope.launch {
-                    exportManager.exportBundleToDownloads(report!!)
-                    snackbarHostState.showSnackbar("ZIP guardado en Descargas/FieldMaintenance")
+                    if (isExporting) return@launch
+                    isExporting = true
+                    try {
+                        exportManager.exportBundleToDownloads(report!!)
+                        snackbarHostState.showSnackbar("ZIP guardado en Descargas/FieldMaintenance")
+                    } finally {
+                        isExporting = false
+                        showFinalizeDialog = false
+                    }
                 }
             },
             onGoHome = {
                 navController.navigate(Screen.Home.route) { popUpTo(0) }
             },
-            showMissingWarning = hasMissingAssets
+            showMissingWarning = hasMissingAssets,
+            isProcessing = isExporting
         )
     }
 
