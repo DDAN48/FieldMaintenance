@@ -736,6 +736,12 @@ suspend fun verifyMeasurementFiles(
 
     fun handleJsonBytes(bytes: ByteArray, sourceFile: File?, sourceLabel: String) {
         val isDiscarded = discardedLabels.contains(sourceLabel)
+        if (isDiscarded) {
+            if (sourceFile != null && sourceFile.exists()) {
+                sourceFile.delete()
+            }
+            return
+        }
         val jsonText = runCatching { String(bytes) }.getOrNull()
         if (jsonText.isNullOrBlank()) {
             if (!isDiscarded) {
@@ -803,65 +809,66 @@ suspend fun verifyMeasurementFiles(
             val useInputValidation = switchSelection == "IN" && ampInputStatus != null
             val id = hashId(type, testTime, testDurationMs, geoLocation)
             if (!seenIds.add(id)) {
-                if (!isDiscarded) {
-                    if (sourceFile != null) {
-                        fileHasDuplicate = true
-                    } else {
-                        duplicateEntryCount += 1
-                        duplicateEntryNames.add(sourceLabel)
-                    }
+                if (sourceFile != null) {
+                    fileHasDuplicate = true
+                } else {
+                    duplicateEntryCount += 1
+                    duplicateEntryNames.add(sourceLabel)
+                }
+                continue
+            }
+            val isSurplus = when (normalizedType) {
+                "docsisexpert" -> docsisCount >= expectedDocsis
+                "channelexpert" -> channelCount >= expectedChannel
+                else -> false
+            }
+            if (isSurplus) {
+                if (sourceFile != null && sourceFile.exists()) {
+                    sourceFile.delete()
                 }
                 continue
             }
             when (normalizedType) {
                 "docsisexpert" -> {
-                    if (!isDiscarded) {
-                        docsisCount += 1
-                        docsisNames.add(sourceLabel)
-                    }
+                    docsisCount += 1
+                    docsisNames.add(sourceLabel)
                 }
                 "channelexpert" -> {
-                    if (!isDiscarded) {
-                        channelCount += 1
-                        channelNames.add(sourceLabel)
-                    }
+                    channelCount += 1
+                    channelNames.add(sourceLabel)
                 }
                 else -> {
-                    if (!isDiscarded) {
-                        invalidTypeCount += 1
-                        invalidTypeNames.add(sourceLabel)
-                    }
+                    invalidTypeCount += 1
+                    invalidTypeNames.add(sourceLabel)
                 }
             }
             if (normalizedType == "docsisexpert" || normalizedType == "channelexpert") {
-                if (!isDiscarded) {
-                    if (geoResult.hasGeoField) {
-                        if (geoResult.point == null) {
-                            geoInvalidCount += 1
-                            val coords = rawGeoKey(geoResult)
-                            val detail = if (coords == null) {
-                                geoResult.issue ?: "Georreferencia inválida"
-                            } else {
-                                "${geoResult.issue ?: "Georreferencia inválida"} ($coords)"
-                            }
-                            geoIssueDetails.add(
-                                GeoIssueDetail(
-                                    type = normalizedType,
-                                    file = sourceLabel,
-                                    detail = detail
-                                )
-                            )
+                if (geoResult.hasGeoField) {
+                    if (geoResult.point == null) {
+                        geoInvalidCount += 1
+                        val coords = rawGeoKey(geoResult)
+                        val detail = if (coords == null) {
+                            geoResult.issue ?: "Georreferencia inválida"
+                        } else {
+                            "${geoResult.issue ?: "Georreferencia inválida"} ($coords)"
                         }
-                    } else {
-                        geoMissingCount += 1
                         geoIssueDetails.add(
                             GeoIssueDetail(
                                 type = normalizedType,
                                 file = sourceLabel,
-                                detail = geoResult.issue ?: "Georreferencia ausente"
+                                detail = detail
                             )
                         )
                     }
+                } else {
+                    geoMissingCount += 1
+                    geoIssueDetails.add(
+                        GeoIssueDetail(
+                            type = normalizedType,
+                            file = sourceLabel,
+                            detail = geoResult.issue ?: "Georreferencia ausente"
+                        )
+                    )
                 }
                 val testPointOffset = parseTestPointOffset(test)
                 val rows = collectChannelRows(results)
@@ -1009,32 +1016,30 @@ suspend fun verifyMeasurementFiles(
                     )
                 )
 
-                if (!isDiscarded) {
-                    val issues = validateMeasurementValues(
-                        rules = rules,
-                        test = test,
-                        type = normalizedType,
-                        equipmentKey = equipmentKey,
-                        assetType = assetType,
-                        amplifierTargets = amplifierTargets,
-                        nodeTxType = nodeTxType,
-                        skipChannelValidation = switchSelection == "IN",
-                        toleranceOverride = toleranceOverride
-                    )
-                    issues.forEach { issue ->
-                        validationIssues.add(
-                            ValidationIssue(
-                                type = normalizedType,
-                                label = sourceLabel,
-                                message = issue
-                            )
+                val issues = validateMeasurementValues(
+                    rules = rules,
+                    test = test,
+                    type = normalizedType,
+                    equipmentKey = equipmentKey,
+                    assetType = assetType,
+                    amplifierTargets = amplifierTargets,
+                    nodeTxType = nodeTxType,
+                    skipChannelValidation = switchSelection == "IN",
+                    toleranceOverride = toleranceOverride
+                )
+                issues.forEach { issue ->
+                    validationIssues.add(
+                        ValidationIssue(
+                            type = normalizedType,
+                            label = sourceLabel,
+                            message = issue
                         )
-                    }
+                    )
                 }
             }
         }
 
-        if (!isDiscarded && fileHasDuplicate && sourceFile != null) {
+        if (fileHasDuplicate && sourceFile != null) {
             if (sourceFile.exists() && sourceFile.delete()) {
                 duplicateFileCount += 1
                 duplicateFileNames.add(sourceLabel)

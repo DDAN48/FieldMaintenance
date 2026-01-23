@@ -464,6 +464,7 @@ fun AddAssetScreen(
     val isEdit = assetId != null
     val report by viewModel.report.collectAsState()
     var showFinalizeDialog by remember { mutableStateOf(false) }
+    var isExporting by remember { mutableStateOf(false) }
     var hasMissingAssets by remember { mutableStateOf(false) }
 
     // Mensaje emergente al ingresar al módulo de activos (SnackBar, para que no se corte el texto)
@@ -1424,23 +1425,42 @@ fun AddAssetScreen(
         val exportManager = remember { com.example.fieldmaintenance.util.ExportManager(context, repository) }
         val r = report ?: return
         FinalizeReportDialog(
-            onDismiss = { showFinalizeDialog = false },
+            onDismiss = {
+                if (!isExporting) {
+                    showFinalizeDialog = false
+                }
+            },
             onSendEmailPackage = {
                 scope.launch {
-                    val bundleFile = exportManager.exportToBundleZip(r)
-                    com.example.fieldmaintenance.util.EmailManager.sendEmail(context, r.eventName, listOf(bundleFile))
+                    if (isExporting) return@launch
+                    isExporting = true
+                    try {
+                        val bundleFile = exportManager.exportToBundleZip(r)
+                        com.example.fieldmaintenance.util.EmailManager.sendEmail(context, r.eventName, listOf(bundleFile))
+                    } finally {
+                        isExporting = false
+                        showFinalizeDialog = false
+                    }
                 }
             },
             onExportPackage = {
                 scope.launch {
-                    exportManager.exportBundleToDownloads(r)
-                    snackbarHostState.showSnackbar("ZIP guardado en Descargas/FieldMaintenance")
+                    if (isExporting) return@launch
+                    isExporting = true
+                    try {
+                        exportManager.exportBundleToDownloads(r)
+                        snackbarHostState.showSnackbar("ZIP guardado en Descargas/FieldMaintenance")
+                    } finally {
+                        isExporting = false
+                        showFinalizeDialog = false
+                    }
                 }
             },
             onGoHome = {
                 navController.navigate(Screen.Home.route) { popUpTo(0) }
             },
-            showMissingWarning = hasMissingAssets
+            showMissingWarning = hasMissingAssets,
+            isProcessing = isExporting
         )
     }
 }
