@@ -67,6 +67,10 @@ import com.example.fieldmaintenance.ui.navigation.PendingMeasurementAssetTypeKey
 import com.example.fieldmaintenance.ui.navigation.Screen
 import com.example.fieldmaintenance.util.DatabaseProvider
 import com.example.fieldmaintenance.util.MaintenanceStorage
+import com.example.fieldmaintenance.util.verifyMeasurementFiles
+import com.example.fieldmaintenance.util.loadDiscardedLabels
+import com.example.fieldmaintenance.util.MeasurementVerificationSummary
+import com.example.fieldmaintenance.util.ValidationIssueDetail
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -350,6 +354,21 @@ private fun AssetShareRow(
         MaintenanceStorage.ensureAssetDir(context, reportFolder, asset)
     }
     var files by remember(assetDir) { mutableStateOf(assetDir.listFiles()?.sortedBy { it.name } ?: emptyList()) }
+    var verificationSummary by remember { mutableStateOf<MeasurementVerificationSummary?>(null) }
+
+    LaunchedEffect(files) {
+        if (files.isNotEmpty()) {
+            withContext(Dispatchers.IO) {
+                val repo = DatabaseProvider.getRepository()
+                val discarded = loadDiscardedLabels(File(assetDir, ".discarded_measurements.txt"))
+                verificationSummary = verifyMeasurementFiles(
+                    context, files, asset, repo, discarded
+                )
+            }
+        } else {
+            verificationSummary = null
+        }
+    }
 
     Button(
         onClick = {
@@ -419,6 +438,39 @@ private fun AssetShareRow(
                     }
                 }
             }
+        }
+    }
+
+    if (verificationSummary != null) {
+        val summary = verificationSummary!!
+        val issues = (summary.geoIssueDetails.map {
+            ValidationIssueDetail(it.type, it.file, it.detail, false)
+        } + summary.validationIssueDetails)
+            .groupBy { it.file }
+
+        if (issues.isNotEmpty()) {
+             Spacer(modifier = Modifier.height(8.dp))
+             Text(
+                 text = "Observaciones en Mediciones - $assetLabel",
+                 style = MaterialTheme.typography.titleSmall,
+                 fontWeight = FontWeight.Bold
+             )
+             issues.forEach { (file, details) ->
+                 Text(
+                     text = file,
+                     style = MaterialTheme.typography.bodySmall,
+                     fontWeight = FontWeight.Bold,
+                     modifier = Modifier.padding(top = 4.dp)
+                 )
+                 details.forEach { detail ->
+                     Text(
+                         text = "- ${detail.detail}",
+                         style = MaterialTheme.typography.bodySmall,
+                         color = if (detail.isRuleViolation) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                         modifier = Modifier.padding(start = 8.dp)
+                     )
+                 }
+             }
         }
     }
 }

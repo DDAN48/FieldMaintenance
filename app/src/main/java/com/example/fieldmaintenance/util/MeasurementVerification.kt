@@ -593,6 +593,13 @@ data class DigitalChannelRow(
     val icfrOk: Boolean?
 )
 
+data class ValidationIssueDetail(
+    val type: String,
+    val file: String,
+    val detail: String,
+    val isRuleViolation: Boolean = true
+)
+
 data class MeasurementVerificationSummary(
     val expectedDocsis: Int,
     val expectedChannel: Int,
@@ -601,7 +608,8 @@ data class MeasurementVerificationSummary(
     val geoLocation: GeoPoint?,
     val observationTotal: Int,
     val observationGroups: List<ObservationGroup>,
-    val geoIssueDetails: List<GeoIssueDetail>
+    val geoIssueDetails: List<GeoIssueDetail>,
+    val validationIssueDetails: List<ValidationIssueDetail> = emptyList()
 )
 
 suspend fun verifyMeasurementFiles(
@@ -1246,12 +1254,20 @@ suspend fun verifyMeasurementFiles(
             duplicateFileNames = duplicateFileNames.toList(),
             duplicateEntryCount = duplicateEntryCount,
             duplicateEntryNames = duplicateEntryNames.toList(),
-            validationIssueNames = validationIssues.map { "${it.label}: ${it.message}" }
+            validationIssueNames = validationIssues.map { "${'$'}{it.label}: ${'$'}{it.message}" }
         ),
         warnings = warnings,
         geoLocation = representativeGeo,
         observationTotal = observationTotal,
         observationGroups = observationGroups,
-        geoIssueDetails = geoIssueDetails
+        geoIssueDetails = geoIssueDetails,
+        validationIssueDetails = validationIssues.map {
+            ValidationIssueDetail(
+                type = it.type,
+                file = it.label,
+                detail = it.message,
+                isRuleViolation = true
+            )
+        }
     )
 }

@@ -1769,19 +1769,23 @@ val assets = repository.getAssetsByReportId(report.id).first()
                   }
                   .photo-frame {
                     position: relative;
-                    background: #11111a;
-                    border-radius: 16px;
+                    background: #000;
+                    border-radius: 12px;
                     border: 1px solid var(--border);
-                    padding: 12px;
-                    min-height: 280px;
+                    padding: 0;
+                    height: 400px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    overflow: hidden;
                   }
                   .photo-frame img {
-                    width: 100%;
-                    height: auto;
-                    border-radius: 12px;
+                    max-width: 100%;
+                    max-height: 100%;
+                    object-fit: contain;
                     display: block;
-                    transition: transform 0.2s ease;
-                    transform-origin: center;
+                    transition: transform 0.1s ease;
+                    transform-origin: center center;
                   }
                   .photo-title {
                     position: absolute;
@@ -1808,6 +1812,8 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     border-radius: 50%;
                     cursor: pointer;
                     font-size: 24px;
+                    z-index: 10;
+                    user-select: none;
                   }
                   .photo-nav.prev { left: 8px; }
                   .photo-nav.next { right: 8px; }
@@ -1817,7 +1823,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     right: 12px;
                     display: flex;
                     gap: 6px;
-                    z-index: 2;
+                    z-index: 10;
                   }
                   .photo-zoom-controls button {
                     background: rgba(0,0,0,0.55);
@@ -2001,8 +2007,11 @@ val assets = repository.getAssetsByReportId(report.id).first()
                   }
                   .measurement-group-geo {
                     color: var(--muted);
-                    font-size: 12px;
-                    margin-left: 4px;
+                    font-size: 13px;
+                    text-align: right;
+                    width: 100%;
+                    margin-top: 4px;
+                    font-weight: 600;
                   }
                   .measurement-name-row {
                     display: flex;
@@ -2133,6 +2142,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                         <div class="map-search">
                           <input type="text" id="map-search-input" placeholder="Buscar dirección" />
                           <button type="button" id="map-search-button">Buscar</button>
+                          <button type="button" id="map-search-clear" title="Borrar búsqueda">✕</button>
                         </div>
                         <div class="summary-map" id="summary-map"></div>
                       </div>
@@ -2275,24 +2285,32 @@ val assets = repository.getAssetsByReportId(report.id).first()
                   }
 
                   function buildMapPoints() {
-                    return data.assets.map((asset) => {
+                    const points = [];
+                    data.assets.forEach((asset) => {
                       const bundle = data.measurements?.[asset.id];
-                      const groups = [bundle?.rx, bundle?.module].filter(Boolean);
-                      const point = groups.map((g) => g.geoLocation).find(Boolean);
-                      const observationTotal = groups.reduce((sum, g) => sum + (g?.observationTotal || 0), 0);
-                      return {
-                        id: asset.id,
-                        label: asset.header,
-                        geo: point,
-                        observations: observationTotal
-                      };
-                    }).filter((item) => item.geo);
+                      if (!bundle) return;
+                      const groups = [bundle.rx, bundle.module].filter(Boolean);
+                      // Try to find a valid location for the asset from its measurement groups
+                      const validGroup = groups.find((g) => g.geoLocation);
+                      if (validGroup) {
+                         const observationTotal = groups.reduce((sum, g) => sum + (g?.observationTotal || 0), 0);
+                         points.push({
+                           id: asset.id,
+                           label: asset.header,
+                           geo: validGroup.geoLocation,
+                           observations: observationTotal
+                         });
+                      }
+                    });
+                    return points;
                   }
 
                   const mapPoints = buildMapPoints();
                   const mapEl = document.getElementById('summary-map');
+                  const mapSearchClear = document.getElementById('map-search-clear');
                   let mapInstance = null;
                   let mapSearchMarker = null;
+
                   if (mapEl && mapPoints.length && window.L) {
                     const avgLat = mapPoints.reduce((sum, p) => sum + p.geo.latitude, 0) / mapPoints.length;
                     const avgLng = mapPoints.reduce((sum, p) => sum + p.geo.longitude, 0) / mapPoints.length;
@@ -2329,23 +2347,38 @@ val assets = repository.getAssetsByReportId(report.id).first()
                   async function searchAddress(query) {
                     if (!query || !mapInstance) return;
                     const url = `https://nominatim.openstreetmap.org/search?format=json&q=${'$'}{encodeURIComponent(query)}`;
-                    const response = await fetch(url);
-                    const results = await response.json();
-                    if (!results.length) return;
-                    const result = results[0];
-                    const lat = Number(result.lat);
-                    const lon = Number(result.lon);
-                    mapInstance.setView([lat, lon], 15);
-                    if (mapSearchMarker) {
-                      mapInstance.removeLayer(mapSearchMarker);
+                    try {
+                      const response = await fetch(url);
+                      const results = await response.json();
+                      if (!results.length) return;
+                      const result = results[0];
+                      const lat = Number(result.lat);
+                      const lon = Number(result.lon);
+                      mapInstance.setView([lat, lon], 15);
+                      if (mapSearchMarker) {
+                        mapInstance.removeLayer(mapSearchMarker);
+                      }
+                      mapSearchMarker = L.marker([lat, lon]).addTo(mapInstance);
+                      mapSearchMarker.bindPopup(`<strong>${'$'}{result.display_name}</strong>`).openPopup();
+                      if (mapSearchClear) mapSearchClear.style.display = 'inline-block';
+                    } catch (e) {
+                      console.error(e);
                     }
-                    mapSearchMarker = L.marker([lat, lon]).addTo(mapInstance);
-                    mapSearchMarker.bindPopup(`<strong>${'$'}{result.display_name}</strong>`).openPopup();
                   }
 
                   if (mapSearchButton) {
                     mapSearchButton.addEventListener('click', () => {
                       searchAddress(mapSearchInput?.value || '');
+                    });
+                  }
+                  if (mapSearchClear) {
+                    mapSearchClear.addEventListener('click', () => {
+                        if (mapSearchInput) mapSearchInput.value = '';
+                        if (mapSearchMarker && mapInstance) {
+                            mapInstance.removeLayer(mapSearchMarker);
+                            mapSearchMarker = null;
+                        }
+                        mapSearchClear.style.display = 'none';
                     });
                   }
                   if (mapSearchInput) {
@@ -2587,7 +2620,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     tooltip.className = 'chart-tooltip';
                     const width = container.clientWidth || 600;
                     const height = 200;
-                    const padding = 44;
+                    const padding = 60;
                     const levels = normalizedPoints.map((p) => p.levelDbmv).filter((v) => v != null);
                     if (!levels.length) {
                       container.textContent = 'Sin datos para graficar.';
@@ -2697,8 +2730,42 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     axisY.setAttribute('transform', `rotate(-90 16 ${'$'}{height / 2})`);
                     axisY.textContent = 'dBmV';
                     svg.appendChild(axisY);
+
+                    // Zoom support
+                    const wrapper = document.createElement('div');
+                    wrapper.style.overflow = 'hidden';
+                    wrapper.style.height = '100%';
+                    wrapper.style.position = 'relative';
+                    wrapper.appendChild(svg);
+                    
+                    svg.style.transition = 'transform 0.1s ease';
+                    svg.style.transformOrigin = 'center center';
+
+                    const controls = document.createElement('div');
+                    controls.className = 'photo-zoom-controls';
+                    controls.innerHTML = `
+                        <button type="button" class="zoom-in">+</button>
+                        <button type="button" class="zoom-out">−</button>
+                        <button type="button" class="zoom-reset">Reset</button>
+                    `;
+                    
+                    let scale = 1;
+                    controls.querySelector('.zoom-in').addEventListener('click', () => {
+                        scale = Math.min(3, scale + 0.2);
+                        svg.style.transform = `scale(${'$'}{scale})`;
+                    });
+                    controls.querySelector('.zoom-out').addEventListener('click', () => {
+                        scale = Math.max(1, scale - 0.2);
+                        svg.style.transform = `scale(${'$'}{scale})`;
+                    });
+                    controls.querySelector('.zoom-reset').addEventListener('click', () => {
+                        scale = 1;
+                        svg.style.transform = `scale(${'$'}{scale})`;
+                    });
+
+                    container.appendChild(controls);
                     container.appendChild(tooltip);
-                    container.appendChild(svg);
+                    container.appendChild(wrapper);
                   }
 
                   function renderMeasurementEntry(entry) {
@@ -2887,19 +2954,44 @@ val assets = repository.getAssetsByReportId(report.id).first()
                         if (firstTab) firstTab.classList.add('active');
                       }
                       if (group.observationDetails && group.observationDetails.length) {
-                        const panel = document.createElement('div');
-                        panel.className = 'observation-panel';
-                        const title = document.createElement('strong');
-                        title.textContent = `Observaciones en Mediciones - ${'$'}{asset?.header || ''}`;
-                        panel.appendChild(title);
+                        const details = document.createElement('details');
+                        details.className = 'collapse';
+                        const summary = document.createElement('summary');
+                        summary.innerHTML = `<strong>Observaciones en Mediciones - ${'$'}{asset?.header || ''}</strong>`;
+                        details.appendChild(summary);
+
                         const list = document.createElement('ul');
-                        group.observationDetails.forEach((detail) => {
-                          const li = document.createElement('li');
-                          li.innerHTML = `<strong>${'$'}{detail.assetHeader}</strong> - ${'$'}{detail.detail}`;
-                          list.appendChild(li);
+                        list.style.paddingLeft = '20px';
+                        list.style.marginTop = '10px';
+                        
+                        // Group observations by file
+                        const byFile = {};
+                        group.observationDetails.forEach((d) => {
+                            const f = d.file || 'General';
+                            if (!byFile[f]) byFile[f] = [];
+                            byFile[f].push(d);
                         });
-                        panel.appendChild(list);
-                        groupEl.appendChild(panel);
+
+                        Object.keys(byFile).forEach((fileName) => {
+                            const fileObs = byFile[fileName];
+                            const fileLi = document.createElement('li');
+                            fileLi.style.marginBottom = '8px';
+                            fileLi.innerHTML = `<strong>${'$'}{fileName}</strong>`;
+                            const subUl = document.createElement('ul');
+                            fileObs.forEach((d) => {
+                                const subLi = document.createElement('li');
+                                subLi.textContent = d.detail;
+                                if (d.type === 'rule_violation' || d.detail.toLowerCase().includes('fuera de rango')) {
+                                     subLi.style.color = 'var(--bad)';
+                                }
+                                subUl.appendChild(subLi);
+                            });
+                            fileLi.appendChild(subUl);
+                            list.appendChild(fileLi);
+                        });
+                        
+                        details.appendChild(list);
+                        groupEl.appendChild(details);
                       }
                       measurementSection.appendChild(groupEl);
                     });
@@ -3006,15 +3098,25 @@ val assets = repository.getAssetsByReportId(report.id).first()
             label = label,
             geoLocation = summary.geoLocation,
             observationTotal = summary.observationTotal,
-            observationDetails = summary.geoIssueDetails.map { detail ->
+            observationDetails = (summary.geoIssueDetails.map { detail ->
                 HtmlObservationDetail(
                     assetId = asset.id,
                     assetHeader = assetHeader,
                     type = detail.type,
                     file = detail.file,
-                    detail = detail.detail
+                    detail = detail.detail,
+                    isRuleViolation = false
                 )
-            },
+            } + summary.validationIssueDetails.map { detail ->
+                HtmlObservationDetail(
+                    assetId = asset.id,
+                    assetHeader = assetHeader,
+                    type = detail.type,
+                    file = detail.file,
+                    detail = detail.detail,
+                    isRuleViolation = detail.isRuleViolation
+                )
+            }),
             entries = entries
         )
     }
@@ -3631,7 +3733,8 @@ data class HtmlObservationDetail(
     val assetHeader: String,
     val type: String,
     val file: String,
-    val detail: String
+    val detail: String,
+    val isRuleViolation: Boolean = false
 )
 
 data class HtmlMeasurementEntry(
