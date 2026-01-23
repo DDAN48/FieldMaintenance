@@ -2409,7 +2409,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     const photo = currentPhotos[currentPhotoIndex];
                     photoImage.src = photo.dataUri || photo.fileName;
                     currentPhotoScale = 1;
-                    photoImage.style.transform = `scale(${currentPhotoScale})`;
+                    photoImage.style.transform = `scale(${'$'}{currentPhotoScale})`;
                     const coords = photo.latitude != null && photo.longitude != null
                       ? `${'$'}{photo.latitude.toFixed(5)}, ${'$'}{photo.longitude.toFixed(5)}`
                       : null;
@@ -2429,7 +2429,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
 
                   function applyPhotoZoom(delta) {
                     currentPhotoScale = Math.min(3, Math.max(1, currentPhotoScale + delta));
-                    photoImage.style.transform = `scale(${currentPhotoScale})`;
+                    photoImage.style.transform = `scale(${'$'}{currentPhotoScale})`;
                   }
 
                   if (photoZoomIn) {
@@ -2441,7 +2441,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                   if (photoZoomReset) {
                     photoZoomReset.addEventListener('click', () => {
                       currentPhotoScale = 1;
-                      photoImage.style.transform = `scale(${currentPhotoScale})`;
+                      photoImage.style.transform = `scale(${'$'}{currentPhotoScale})`;
                     });
                   }
 
