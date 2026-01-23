@@ -108,6 +108,7 @@ import com.example.fieldmaintenance.util.PlanRepository
 import com.example.fieldmaintenance.util.hasIncompleteAssets
 import com.example.fieldmaintenance.util.MeasurementEntry
 import com.example.fieldmaintenance.util.MeasurementVerificationSummary
+import com.example.fieldmaintenance.util.ValidationIssueDetail
 import com.example.fieldmaintenance.util.loadDiscardedLabels
 import com.example.fieldmaintenance.util.meetsRequired
 import com.example.fieldmaintenance.util.requiredCounts
@@ -2602,31 +2603,48 @@ private fun AssetFileSection(
             if (showObservationsDialog) {
                 AlertDialog(
                     onDismissRequest = { showObservationsDialog = false },
-                    title = { Text("Fallas Detectadas") },
+                    title = { Text("Observaciones en Mediciones") },
                     text = {
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            val (rxSummary, moduleSummary, _) = observationSummary
-                            val geoIssues = buildList {
-                                rxSummary?.geoIssueDetails?.let { addAll(it) }
-                                if (isNodeAsset) {
-                                    moduleSummary?.geoIssueDetails?.let { addAll(it) }
+                        val (rxSummary, moduleSummary, _) = observationSummary
+                        val allIssues = buildList {
+                            rxSummary?.let { s ->
+                                addAll(s.geoIssueDetails.map { ValidationIssueDetail(it.type, it.file, it.detail, false) })
+                                addAll(s.validationIssueDetails)
+                            }
+                            if (isNodeAsset) {
+                                moduleSummary?.let { s ->
+                                    addAll(s.geoIssueDetails.map { ValidationIssueDetail(it.type, it.file, it.detail, false) })
+                                    addAll(s.validationIssueDetails)
                                 }
                             }
-                            if (observationSummary.third == 0) {
-                                Text("Sin observaciones.")
-                            } else {
-                                Text("Observaciones detectadas: ${observationSummary.third}", fontWeight = FontWeight.SemiBold)
-                                if (geoIssues.isNotEmpty()) {
-                                    Text(
-                                        "Problemas de Georeferencia",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-                                    geoIssues.forEach { detail ->
+                        }.groupBy { it.file }
+
+                        if (allIssues.isEmpty()) {
+                            Text("Sin observaciones.")
+                        } else {
+                            LazyColumn(
+                                verticalArrangement = Arrangement.spacedBy(12.dp),
+                                modifier = Modifier.heightIn(max = 400.dp)
+                            ) {
+                                items(allIssues.toList()) { (file, details) ->
+                                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                         Text(
-                                            "${detail.file}: ${detail.detail}",
-                                            style = MaterialTheme.typography.bodySmall
+                                            text = file,
+                                            style = MaterialTheme.typography.titleSmall,
+                                            fontWeight = FontWeight.Bold
                                         )
+                                        details.forEach { detail ->
+                                            Text(
+                                                text = "- ${detail.detail}",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = if (detail.isRuleViolation || detail.detail.contains("fuera de rango", ignoreCase = true)) {
+                                                    MaterialTheme.colorScheme.error
+                                                } else {
+                                                    MaterialTheme.colorScheme.onSurface
+                                                },
+                                                modifier = Modifier.padding(start = 8.dp)
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -2634,7 +2652,7 @@ private fun AssetFileSection(
                     },
                     confirmButton = {
                         TextButton(onClick = { showObservationsDialog = false }) {
-                            Text("Aceptar")
+                            Text("Cerrar")
                         }
                     }
                 )

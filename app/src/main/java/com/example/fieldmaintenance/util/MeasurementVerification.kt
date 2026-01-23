@@ -1163,33 +1163,36 @@ suspend fun verifyMeasurementFiles(
     val meetsMeasurementCounts = docsisCount >= expectedDocsis && channelCount >= expectedChannel
     var representativeGeo: GeoPoint? = null
     val geoWarnings = mutableListOf<String>()
+
+    val geoPoints = measurementEntries
+        .filter { !it.isDiscarded && (it.type == "docsisexpert" || it.type == "channelexpert") }
+        .mapNotNull { it.geoLocation }
+
+    if (geoPoints.isNotEmpty()) {
+        val buckets = mutableMapOf<Pair<Int, Int>, MutableList<GeoPoint>>()
+        geoPoints.forEach { point ->
+            val key = bucketKey(point, cellMeters = 50.0)
+            buckets.getOrPut(key) { mutableListOf() }.add(point)
+        }
+        val bestBucket = buckets.entries.maxByOrNull { it.value.size }
+        if (buckets.size > 1) {
+            geoWarnings.add("Las georreferencias no concuerdan (se detectaron ${buckets.size} ubicaciones distintas).")
+        }
+        bestBucket?.value?.let { points ->
+            val avgLat = points.map { it.latitude }.average()
+            val avgLon = points.map { it.longitude }.average()
+            representativeGeo = GeoPoint(latitude = avgLat, longitude = avgLon)
+        }
+    } else if (meetsMeasurementCounts) {
+        geoWarnings.add("No se encontraron georreferencias v?lidas para las mediciones.")
+    }
+
     if (meetsMeasurementCounts) {
         if (geoMissingCount > 0) {
-            geoWarnings.add("Faltan georreferencias en $geoMissingCount medición(es).")
+            geoWarnings.add("Faltan georreferencias en $geoMissingCount medici?n(es).")
         }
         if (geoInvalidCount > 0) {
-            geoWarnings.add("Se detectaron $geoInvalidCount georreferencia(s) inválida(s).")
-        }
-        val geoPoints = measurementEntries
-            .filter { !it.isDiscarded && (it.type == "docsisexpert" || it.type == "channelexpert") }
-            .mapNotNull { it.geoLocation }
-        if (geoPoints.isEmpty()) {
-            geoWarnings.add("No se encontraron georreferencias válidas para las mediciones.")
-        } else {
-            val buckets = mutableMapOf<Pair<Int, Int>, MutableList<GeoPoint>>()
-            geoPoints.forEach { point ->
-                val key = bucketKey(point, cellMeters = 50.0)
-                buckets.getOrPut(key) { mutableListOf() }.add(point)
-            }
-            val bestBucket = buckets.entries.maxByOrNull { it.value.size }
-            if (buckets.size > 1) {
-                geoWarnings.add("Las georreferencias no concuerdan (se detectaron ${buckets.size} ubicaciones distintas).")
-            }
-            bestBucket?.value?.let { points ->
-                val avgLat = points.map { it.latitude }.average()
-                val avgLon = points.map { it.longitude }.average()
-                representativeGeo = GeoPoint(latitude = avgLat, longitude = avgLon)
-            }
+            geoWarnings.add("Se detectaron $geoInvalidCount georreferencia(s) inv?lida(s).")
         }
     }
 
