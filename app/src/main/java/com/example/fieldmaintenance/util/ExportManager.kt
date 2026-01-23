@@ -1460,6 +1460,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
             passives = passives,
             adjustedCount = adjustedCount,
             imagesByAsset = imagesByAsset,
+            photosByAsset = photosByAsset,
             adjustmentsByAsset = adjustmentsByAsset,
             nodeAdjustmentsByAsset = nodeAdjustmentsByAsset
         )
@@ -1481,6 +1482,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
         passives: List<PassiveItem>,
         adjustedCount: Int,
         imagesByAsset: Map<String, List<ExportImageRef>>,
+        photosByAsset: Map<String, List<Photo>>,
         adjustmentsByAsset: Map<String, AmplifierAdjustment>,
         nodeAdjustmentsByAsset: Map<String, NodeAdjustment>
     ): File {
@@ -1489,6 +1491,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
         val passiveCounts = passives.groupingBy { it.type }.eachCount()
 
         fun countOf(t: PassiveType) = passiveCounts[t] ?: 0
+        val photosById = photosByAsset.values.flatten().associateBy { it.id }
 
         val htmlData = HtmlExportData(
             report = report,
@@ -1534,6 +1537,8 @@ val assets = repository.getAssetsByReportId(report.id).first()
                             title = title,
                             fileName = ref.fileName,
                             dataUri = dataUri,
+                            latitude = photosById[ref.photoId]?.latitude,
+                            longitude = photosById[ref.photoId]?.longitude,
                             photoType = ref.photoType.name
                         )
                     },
@@ -1844,6 +1849,15 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     color: var(--muted);
                     font-size: 12px;
                   }
+                  .measurement-geo {
+                    text-align: center;
+                    color: var(--muted);
+                    font-size: 11px;
+                  }
+                  .measurement-group-geo {
+                    color: var(--muted);
+                    font-size: 12px;
+                  }
                   .collapse {
                     border: 1px solid var(--border);
                     border-radius: 12px;
@@ -1876,9 +1890,25 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     border-radius: 12px;
                     border: 1px solid var(--border);
                     padding: 8px;
+                    position: relative;
                   }
                   .chart svg text {
                     font-family: inherit;
+                  }
+                  .chart-tooltip {
+                    position: absolute;
+                    pointer-events: none;
+                    background: var(--panel);
+                    border: 1px solid var(--border);
+                    color: var(--text);
+                    font-size: 11px;
+                    padding: 6px 8px;
+                    border-radius: 8px;
+                    box-shadow: 0 6px 16px rgba(0,0,0,0.25);
+                    opacity: 0;
+                    transition: opacity 0.1s ease;
+                    transform: translate(-50%, -100%);
+                    white-space: nowrap;
                   }
                   .muted {
                     color: var(--muted);
@@ -2001,7 +2031,10 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     }
                     const photo = currentPhotos[currentPhotoIndex];
                     photoImage.src = photo.dataUri || photo.fileName;
-                    photoTitle.textContent = photo.title;
+                    const coords = photo.latitude != null && photo.longitude != null
+                      ? `${'$'}{photo.latitude.toFixed(5)}, ${'$'}{photo.longitude.toFixed(5)}`
+                      : null;
+                    photoTitle.textContent = coords ? `${'$'}{photo.title} · ${'$'}{coords}` : photo.title;
                   }
 
                   photoPrev.addEventListener('click', () => {
@@ -2093,7 +2126,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                         return ia - ib;
                       });
                       table.innerHTML = `
-                        <thead><tr>${'$'}{headers.map((h) => `<th>${'$'}{h}</th>`).join('')}</tr></thead>
+                        <thead><tr>${'$'}{headers.map((h) => `<th>${'$'}{formatHeader(h)}</th>`).join('')}</tr></thead>
                         <tbody></tbody>
                       `;
                       const body = table.querySelector('tbody');
@@ -2137,6 +2170,9 @@ val assets = repository.getAssetsByReportId(report.id).first()
                       container.classList.add('muted');
                       return;
                     }
+                    const tooltip = document.createElement('div');
+                    tooltip.className = 'chart-tooltip';
+                    container.appendChild(tooltip);
                     const width = container.clientWidth || 600;
                     const height = 200;
                     const padding = 28;
@@ -2149,7 +2185,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     const min = Math.min(...levels);
                     const max = Math.max(...levels);
                     const span = max - min || 1;
-                    const barWidth = (width - padding * 2) / normalizedPoints.length;
+                    const barWidth = options.barWidth || (width - padding * 2) / normalizedPoints.length;
                     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
                     svg.setAttribute('width', width);
                     svg.setAttribute('height', height);
@@ -2177,9 +2213,20 @@ val assets = repository.getAssetsByReportId(report.id).first()
                       rect.setAttribute('height', barHeight);
                       rect.setAttribute('rx', 4);
                       rect.setAttribute('fill', point.ok === false ? '#ef6b6b' : '#2b76ff');
-                      const tooltip = document.createElementNS('http://www.w3.org/2000/svg', 'title');
-                      tooltip.textContent = `MHz: ${'$'}{point.frequencyMHz} | dBmV: ${'$'}{point.levelDbmv ?? '—'}`;
-                      rect.appendChild(tooltip);
+                      const showTooltip = (event) => {
+                        const rectBox = container.getBoundingClientRect();
+                        const xPos = event.clientX - rectBox.left;
+                        const yPos = event.clientY - rectBox.top;
+                        tooltip.textContent = `MHz: ${'$'}{point.frequencyMHz} · dBmV: ${'$'}{point.levelDbmv ?? '—'}`;
+                        tooltip.style.left = `${'$'}{xPos}px`;
+                        tooltip.style.top = `${'$'}{yPos}px`;
+                        tooltip.style.opacity = '1';
+                      };
+                      rect.addEventListener('mouseenter', showTooltip);
+                      rect.addEventListener('mousemove', showTooltip);
+                      rect.addEventListener('mouseleave', () => {
+                        tooltip.style.opacity = '0';
+                      });
                       svg.appendChild(rect);
                       if (index % Math.ceil(normalizedPoints.length / 6) === 0) {
                         const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
@@ -2237,6 +2284,11 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     const measurementName = document.createElement('div');
                     measurementName.className = 'measurement-name';
                     measurementName.textContent = entry.label.split('/').pop();
+                    const measurementGeo = document.createElement('div');
+                    measurementGeo.className = 'measurement-geo';
+                    if (entry.geoLocation) {
+                      measurementGeo.textContent = `${'$'}{entry.geoLocation.latitude.toFixed(5)}, ${'$'}{entry.geoLocation.longitude.toFixed(5)}`;
+                    }
                     if (entry.type === 'docsisexpert') {
                       const chart = document.createElement('div');
                       chart.className = 'chart';
@@ -2247,6 +2299,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                       })), { title: 'Upstream Channels Chart' });
                       entryEl.appendChild(chart);
                       entryEl.appendChild(measurementName);
+                      if (measurementGeo.textContent) entryEl.appendChild(measurementGeo);
                       entryEl.appendChild(buildCollapsible('Upstream Channels', buildTable(entry.docsisRows)));
                     } else if (entry.type === 'channelexpert') {
                       const chart = document.createElement('div');
@@ -2256,13 +2309,31 @@ val assets = repository.getAssetsByReportId(report.id).first()
                         levelDbmv: row.Nivel,
                         ok: row.Ok
                       }));
-                      drawBarChart(chart, points, { title: 'Downstream Channels Chart' });
+                      drawBarChart(chart, points, { title: 'Downstream Channels Chart', barWidth: 3 });
                       entryEl.appendChild(chart);
                       entryEl.appendChild(measurementName);
+                      if (measurementGeo.textContent) entryEl.appendChild(measurementGeo);
                       entryEl.appendChild(buildCollapsible('Downstream Analogic Channels', buildTable(entry.pilotRows)));
                       entryEl.appendChild(buildCollapsible('Downstream Digital Channels', buildTable(entry.digitalRows)));
                     }
                     return entryEl;
+                  }
+
+                  function formatHeader(label) {
+                    const withUnits = {
+                      Frecuencia: 'Frecuencia (MHz)',
+                      Nivel: 'Nivel (dBmV)',
+                      Medido: 'Medido (dBmV)',
+                      Plano: 'Plano (dBmV)',
+                      Calculado: 'Calculado (dBmV)',
+                      ICFR: 'ICFR (dB)',
+                      MER: 'MER (dB)',
+                      BERPre: 'BER Pre',
+                      BERPost: 'BER Post',
+                      DIF: 'DIF (dB)',
+                      Valor: 'Valor (dB)'
+                    };
+                    return withUnits[label] || label;
                   }
 
                   function buildTable(rows) {
@@ -2284,7 +2355,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                       return ia - ib;
                     });
                     table.innerHTML = `
-                      <thead><tr>${'$'}{headers.map((h) => `<th>${'$'}{h}</th>`).join('')}</tr></thead>
+                      <thead><tr>${'$'}{headers.map((h) => `<th>${'$'}{formatHeader(h)}</th>`).join('')}</tr></thead>
                       <tbody></tbody>
                     `;
                     const body = table.querySelector('tbody');
@@ -2334,6 +2405,12 @@ val assets = repository.getAssetsByReportId(report.id).first()
                       title.className = 'section-title';
                       title.textContent = `Carga de Mediciones - ${'$'}{group.label}`;
                       header.appendChild(title);
+                      if (group.geoLocation) {
+                        const geo = document.createElement('div');
+                        geo.className = 'measurement-group-geo';
+                        geo.textContent = `${'$'}{group.geoLocation.latitude.toFixed(5)}, ${'$'}{group.geoLocation.longitude.toFixed(5)}`;
+                        header.appendChild(geo);
+                      }
                       const tabs = document.createElement('div');
                       tabs.className = 'measurement-tabs';
                       header.appendChild(tabs);
@@ -2443,7 +2520,11 @@ val assets = repository.getAssetsByReportId(report.id).first()
             .filter { it.type == "docsisexpert" || it.type == "channelexpert" }
             .map { entry -> entry.toHtmlMeasurementEntry() }
         if (entries.isEmpty()) return null
-        return HtmlMeasurementGroup(label = label, entries = entries)
+        return HtmlMeasurementGroup(
+            label = label,
+            geoLocation = summary.geoLocation,
+            entries = entries
+        )
     }
 
     private fun MeasurementEntry.toHtmlMeasurementEntry(): HtmlMeasurementEntry {
@@ -2482,6 +2563,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
             label = label,
             type = type,
             isDiscarded = isDiscarded,
+            geoLocation = geoLocation,
             docsisRows = docsisRows,
             pilotRows = pilotRows,
             digitalRows = digitalRows,
@@ -2969,6 +3051,8 @@ data class HtmlPhotoExport(
     val title: String,
     val fileName: String,
     val dataUri: String? = null,
+    val latitude: Double? = null,
+    val longitude: Double? = null,
     val photoType: String
 )
 
@@ -3035,6 +3119,7 @@ data class HtmlMeasurementBundle(
 
 data class HtmlMeasurementGroup(
     val label: String,
+    val geoLocation: GeoPoint? = null,
     val entries: List<HtmlMeasurementEntry>
 )
 
@@ -3042,6 +3127,7 @@ data class HtmlMeasurementEntry(
     val label: String,
     val type: String,
     val isDiscarded: Boolean,
+    val geoLocation: GeoPoint? = null,
     val docsisRows: List<HtmlDocsisRow>,
     val pilotRows: List<HtmlPilotRow>,
     val digitalRows: List<HtmlDigitalRow>,
