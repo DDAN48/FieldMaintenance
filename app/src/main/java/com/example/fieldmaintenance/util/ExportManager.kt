@@ -1826,13 +1826,15 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     z-index: 10;
                   }
                   .photo-zoom-controls button {
-                    background: rgba(0,0,0,0.55);
+                    background: rgba(255,255,255,0.9);
                     border: 1px solid var(--border);
-                    color: var(--text);
-                    padding: 6px 8px;
+                    color: #000;
+                    padding: 6px 10px;
                     border-radius: 8px;
                     cursor: pointer;
-                    font-size: 12px;
+                    font-size: 14px;
+                    font-weight: bold;
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
                   }
                   .adjustment-panel {
                     background: var(--panel);
@@ -2433,6 +2435,46 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     assetSelect.appendChild(option);
                   });
 
+                  let currentPhotos = [];
+                  let currentPhotoIndex = 0;
+                  let currentPhotoScale = 1;
+                  let currentPhotoPanX = 0;
+                  let currentPhotoPanY = 0;
+                  let isPhotoDragging = false;
+                  let photoStartX = 0;
+                  let photoStartY = 0;
+
+                  function updatePhotoTransform() {
+                    photoImage.style.transform = `translate(${'$'}{currentPhotoPanX}px, ${'$'}{currentPhotoPanY}px) scale(${'$'}{currentPhotoScale})`;
+                  }
+
+                  const photoFrame = document.querySelector('.photo-frame');
+                  
+                  photoFrame.addEventListener('mousedown', (e) => {
+                    if (currentPhotoScale > 1) {
+                        isPhotoDragging = true;
+                        photoStartX = e.clientX - currentPhotoPanX;
+                        photoStartY = e.clientY - currentPhotoPanY;
+                        photoFrame.style.cursor = 'grabbing';
+                        e.preventDefault();
+                    }
+                  });
+                  
+                  window.addEventListener('mousemove', (e) => {
+                    if (!isPhotoDragging) return;
+                    e.preventDefault();
+                    currentPhotoPanX = e.clientX - photoStartX;
+                    currentPhotoPanY = e.clientY - photoStartY;
+                    updatePhotoTransform();
+                  });
+                  
+                  window.addEventListener('mouseup', () => {
+                    if (isPhotoDragging) {
+                        isPhotoDragging = false;
+                        photoFrame.style.cursor = 'default';
+                    }
+                  });
+
                   function updatePhoto() {
                     if (!currentPhotos.length) {
                       photoImage.src = '';
@@ -2442,39 +2484,51 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     const photo = currentPhotos[currentPhotoIndex];
                     photoImage.src = photo.dataUri || photo.fileName;
                     currentPhotoScale = 1;
-                    photoImage.style.transform = `scale(${'$'}{currentPhotoScale})`;
+                    currentPhotoPanX = 0;
+                    currentPhotoPanY = 0;
+                    updatePhotoTransform();
                     const coords = photo.latitude != null && photo.longitude != null
                       ? `${'$'}{photo.latitude.toFixed(5)}, ${'$'}{photo.longitude.toFixed(5)}`
                       : null;
                     photoTitle.textContent = coords ? `${'$'}{photo.title} · ${'$'}{coords}` : photo.title;
                   }
 
-                  photoPrev.addEventListener('click', () => {
+                  photoPrev.addEventListener('click', (e) => {
+                    e.stopPropagation(); // Prevent drag interference
                     if (!currentPhotos.length) return;
                     currentPhotoIndex = (currentPhotoIndex - 1 + currentPhotos.length) % currentPhotos.length;
                     updatePhoto();
                   });
-                  photoNext.addEventListener('click', () => {
+                  photoNext.addEventListener('click', (e) => {
+                    e.stopPropagation();
                     if (!currentPhotos.length) return;
                     currentPhotoIndex = (currentPhotoIndex + 1) % currentPhotos.length;
                     updatePhoto();
                   });
 
                   function applyPhotoZoom(delta) {
-                    currentPhotoScale = Math.min(3, Math.max(1, currentPhotoScale + delta));
-                    photoImage.style.transform = `scale(${'$'}{currentPhotoScale})`;
+                    const newScale = Math.min(5, Math.max(1, currentPhotoScale + delta));
+                    if (newScale === 1) {
+                        currentPhotoPanX = 0;
+                        currentPhotoPanY = 0;
+                    }
+                    currentPhotoScale = newScale;
+                    updatePhotoTransform();
                   }
-
+                  
                   if (photoZoomIn) {
-                    photoZoomIn.addEventListener('click', () => applyPhotoZoom(0.2));
+                    photoZoomIn.addEventListener('click', (e) => { e.stopPropagation(); applyPhotoZoom(0.5); });
                   }
                   if (photoZoomOut) {
-                    photoZoomOut.addEventListener('click', () => applyPhotoZoom(-0.2));
+                    photoZoomOut.addEventListener('click', (e) => { e.stopPropagation(); applyPhotoZoom(-0.5); });
                   }
                   if (photoZoomReset) {
-                    photoZoomReset.addEventListener('click', () => {
+                    photoZoomReset.addEventListener('click', (e) => {
+                      e.stopPropagation();
                       currentPhotoScale = 1;
-                      photoImage.style.transform = `scale(${'$'}{currentPhotoScale})`;
+                      currentPhotoPanX = 0;
+                      currentPhotoPanY = 0;
+                      updatePhotoTransform();
                     });
                   }
 
@@ -2620,7 +2674,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     tooltip.className = 'chart-tooltip';
                     const width = container.clientWidth || 600;
                     const height = 200;
-                    const padding = 60;
+                    const padding = 80;
                     const levels = normalizedPoints.map((p) => p.levelDbmv).filter((v) => v != null);
                     if (!levels.length) {
                       container.textContent = 'Sin datos para graficar.';
@@ -2722,12 +2776,12 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     axis.textContent = 'MHz';
                     svg.appendChild(axis);
                     const axisY = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-                    axisY.setAttribute('x', 16);
+                    axisY.setAttribute('x', 24);
                     axisY.setAttribute('y', height / 2);
                     axisY.setAttribute('text-anchor', 'middle');
                     axisY.setAttribute('fill', 'var(--muted)');
                     axisY.setAttribute('font-size', '10');
-                    axisY.setAttribute('transform', `rotate(-90 16 ${'$'}{height / 2})`);
+                    axisY.setAttribute('transform', `rotate(-90 24 ${'$'}{height / 2})`);
                     axisY.textContent = 'dBmV';
                     svg.appendChild(axisY);
 
@@ -2750,17 +2804,65 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     `;
                     
                     let scale = 1;
-                    controls.querySelector('.zoom-in').addEventListener('click', () => {
-                        scale = Math.min(3, scale + 0.2);
-                        svg.style.transform = `scale(${'$'}{scale})`;
+                    let pannedX = 0;
+                    let pannedY = 0;
+                    let isDragging = false;
+                    let startX = 0;
+                    let startY = 0;
+
+                    function updateTransform() {
+                        svg.style.transform = `translate(${'$'}{pannedX}px, ${'$'}{pannedY}px) scale(${'$'}{scale})`;
+                    }
+
+                    wrapper.addEventListener('mousedown', (e) => {
+                        if (scale > 1) {
+                            isDragging = true;
+                            startX = e.clientX - pannedX;
+                            startY = e.clientY - pannedY;
+                            wrapper.style.cursor = 'grabbing';
+                            e.preventDefault();
+                        }
                     });
-                    controls.querySelector('.zoom-out').addEventListener('click', () => {
-                        scale = Math.max(1, scale - 0.2);
-                        svg.style.transform = `scale(${'$'}{scale})`;
+
+                    wrapper.addEventListener('mousemove', (e) => {
+                        if (!isDragging) return;
+                        e.preventDefault();
+                        pannedX = e.clientX - startX;
+                        pannedY = e.clientY - startY;
+                        updateTransform();
                     });
-                    controls.querySelector('.zoom-reset').addEventListener('click', () => {
+
+                    wrapper.addEventListener('mouseup', () => {
+                        if (isDragging) {
+                            isDragging = false;
+                            wrapper.style.cursor = 'default';
+                        }
+                    });
+                    
+                    wrapper.addEventListener('mouseleave', () => {
+                        if (isDragging) {
+                            isDragging = false;
+                            wrapper.style.cursor = 'default';
+                        }
+                    });
+
+                    controls.querySelector('.zoom-in').addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        scale = Math.min(5, scale + 0.5);
+                        updateTransform();
+                    });
+                    controls.querySelector('.zoom-out').addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        scale = Math.max(1, scale - 0.5);
+                        if (scale === 1) { pannedX = 0; pannedY = 0; }
+                        updateTransform();
+                    });
+                    controls.querySelector('.zoom-reset').addEventListener('click', (e) => {
+                        e.stopPropagation();
                         scale = 1;
-                        svg.style.transform = `scale(${'$'}{scale})`;
+                        pannedX = 0;
+                        pannedY = 0;
+                        updateTransform();
                     });
 
                     container.appendChild(controls);
