@@ -1499,6 +1499,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
             val encoded = Base64.encodeToString(bytes, Base64.NO_WRAP)
             "data:image/png;base64,$encoded"
         }
+        val logoUrl = "https://upload.wikimedia.org/wikipedia/commons/2/23/Telecentro.png"
         val htmlData = HtmlExportData(
             report = report,
             info = HtmlInfoCounts(
@@ -1958,7 +1959,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                   <div class="card">
                     <div class="header-bar">
                       <div class="asset-toolbar">
-                        ${'$'}{if (logoDataUri != null) "<img class=\"header-logo\" src=\"$logoDataUri\" alt=\"Telecentro\" />" else ""}
+                        <img class="header-logo" src="$logoUrl" alt="Telecentro" ${'$'}{if (logoDataUri != null) "onerror=\"this.onerror=null;this.src='$logoDataUri';\"" else ""} />
                         <div class="section-title">Informe de mantenimiento</div>
                       </div>
                       <div class="header-meta">
