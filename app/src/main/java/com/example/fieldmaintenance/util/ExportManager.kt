@@ -2126,7 +2126,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                         return ia - ib;
                       });
                       table.innerHTML = `
-                        <thead><tr>${'$'}{headers.map((h) => `<th>${'$'}{h}</th>`).join('')}</tr></thead>
+                        <thead><tr>${'$'}{headers.map((h) => `<th>${'$'}{formatHeader(h)}</th>`).join('')}</tr></thead>
                         <tbody></tbody>
                       `;
                       const body = table.querySelector('tbody');
@@ -2185,7 +2185,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     const min = Math.min(...levels);
                     const max = Math.max(...levels);
                     const span = max - min || 1;
-                    const barWidth = (width - padding * 2) / normalizedPoints.length;
+                    const barWidth = options.barWidth || (width - padding * 2) / normalizedPoints.length;
                     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
                     svg.setAttribute('width', width);
                     svg.setAttribute('height', height);
@@ -2213,7 +2213,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                       rect.setAttribute('height', barHeight);
                       rect.setAttribute('rx', 4);
                       rect.setAttribute('fill', point.ok === false ? '#ef6b6b' : '#2b76ff');
-                      rect.addEventListener('mousemove', (event) => {
+                      const showTooltip = (event) => {
                         const rectBox = container.getBoundingClientRect();
                         const xPos = event.clientX - rectBox.left;
                         const yPos = event.clientY - rectBox.top;
@@ -2221,7 +2221,9 @@ val assets = repository.getAssetsByReportId(report.id).first()
                         tooltip.style.left = `${'$'}{xPos}px`;
                         tooltip.style.top = `${'$'}{yPos}px`;
                         tooltip.style.opacity = '1';
-                      });
+                      };
+                      rect.addEventListener('mouseenter', showTooltip);
+                      rect.addEventListener('mousemove', showTooltip);
                       rect.addEventListener('mouseleave', () => {
                         tooltip.style.opacity = '0';
                       });
@@ -2307,7 +2309,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                         levelDbmv: row.Nivel,
                         ok: row.Ok
                       }));
-                      drawBarChart(chart, points, { title: 'Downstream Channels Chart' });
+                      drawBarChart(chart, points, { title: 'Downstream Channels Chart', barWidth: 3 });
                       entryEl.appendChild(chart);
                       entryEl.appendChild(measurementName);
                       if (measurementGeo.textContent) entryEl.appendChild(measurementGeo);
@@ -2315,6 +2317,23 @@ val assets = repository.getAssetsByReportId(report.id).first()
                       entryEl.appendChild(buildCollapsible('Downstream Digital Channels', buildTable(entry.digitalRows)));
                     }
                     return entryEl;
+                  }
+
+                  function formatHeader(label) {
+                    const withUnits = {
+                      Frecuencia: 'Frecuencia (MHz)',
+                      Nivel: 'Nivel (dBmV)',
+                      Medido: 'Medido (dBmV)',
+                      Plano: 'Plano (dBmV)',
+                      Calculado: 'Calculado (dBmV)',
+                      ICFR: 'ICFR (dB)',
+                      MER: 'MER (dB)',
+                      BERPre: 'BER Pre',
+                      BERPost: 'BER Post',
+                      DIF: 'DIF (dB)',
+                      Valor: 'Valor (dB)'
+                    };
+                    return withUnits[label] || label;
                   }
 
                   function buildTable(rows) {
@@ -2336,7 +2355,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                       return ia - ib;
                     });
                     table.innerHTML = `
-                      <thead><tr>${'$'}{headers.map((h) => `<th>${'$'}{h}</th>`).join('')}</tr></thead>
+                      <thead><tr>${'$'}{headers.map((h) => `<th>${'$'}{formatHeader(h)}</th>`).join('')}</tr></thead>
                       <tbody></tbody>
                     `;
                     const body = table.querySelector('tbody');
