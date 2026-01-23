@@ -2323,14 +2323,16 @@ val assets = repository.getAssetsByReportId(report.id).first()
                       });
                       svg.appendChild(rect);
                     });
-                    const xTicks = [0, 200, 400, 600, 800, 1000];
+                    const xTicks = xMax <= 100
+                      ? [0, 20, 40, 60, 80]
+                      : [0, 200, 400, 600, 800, 1000];
                     xTicks.forEach((tick) => {
                       if (tick < xMin || tick > xMax) return;
                       const ratio = (tick - xMin) / (xMax - xMin);
                       const x = padding + ratio * (width - padding * 2);
                       const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
                       label.setAttribute('x', x);
-                      label.setAttribute('y', height - 8);
+                      label.setAttribute('y', height - 12);
                       label.setAttribute('text-anchor', 'middle');
                       label.setAttribute('fill', 'var(--muted)');
                       label.setAttribute('font-size', '10');
@@ -2349,7 +2351,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     }
                     const axis = document.createElementNS('http://www.w3.org/2000/svg', 'text');
                     axis.setAttribute('x', width - padding);
-                    axis.setAttribute('y', height - 6);
+                    axis.setAttribute('y', height - 2);
                     axis.setAttribute('text-anchor', 'end');
                     axis.setAttribute('fill', 'var(--muted)');
                     axis.setAttribute('font-size', '10');
@@ -2394,7 +2396,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                         frequencyMHz: row.Frecuencia,
                         levelDbmv: row.Nivel,
                         ok: row.Ok
-                      })), { title: 'Upstream Channels Chart', xMin: 0, xMax: 1000 });
+                      })), { title: 'Upstream Channels Chart', xMin: 0, xMax: 85, barWidth: 11 });
                       entryEl.appendChild(chart);
                       entryEl.appendChild(measurementName);
                       if (measurementGeo.textContent) entryEl.appendChild(measurementGeo);
