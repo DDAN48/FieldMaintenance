@@ -1452,6 +1452,18 @@ val assets = repository.getAssetsByReportId(report.id).first()
             switchSelections = if (switchSelections.isNotEmpty()) switchSelections else null
         )
         File(exportDir, "report.json").writeText(gson.toJson(exportData))
+        val adjustedCount = countAdjustedAssets(report, assets)
+        exportToHtml(
+            exportDir = exportDir,
+            report = report,
+            assets = assets,
+            passives = passives,
+            adjustedCount = adjustedCount,
+            imagesByAsset = imagesByAsset,
+            photosByAsset = photosByAsset,
+            adjustmentsByAsset = adjustmentsByAsset,
+            nodeAdjustmentsByAsset = nodeAdjustmentsByAsset
+        )
 
         val zipFile = File(context.getExternalFilesDir(null), "maintenance_${report.id}.zip")
         if (zipFile.exists()) zipFile.delete()
@@ -1461,6 +1473,1694 @@ val assets = repository.getAssetsByReportId(report.id).first()
         }
         
         zipFile
+    }
+
+    private suspend fun exportToHtml(
+        exportDir: File,
+        report: MaintenanceReport,
+        assets: List<Asset>,
+        passives: List<PassiveItem>,
+        adjustedCount: Int,
+        imagesByAsset: Map<String, List<ExportImageRef>>,
+        photosByAsset: Map<String, List<Photo>>,
+        adjustmentsByAsset: Map<String, AmplifierAdjustment>,
+        nodeAdjustmentsByAsset: Map<String, NodeAdjustment>
+    ): File {
+        val measurementRoot = File(exportDir, "measurements")
+        val switchSelections = collectSwitchSelections(assets)
+        val measurements = buildHtmlMeasurementMap(report, assets, measurementRoot, switchSelections)
+        val passiveCounts = passives.groupingBy { it.type }.eachCount()
+
+        fun countOf(t: PassiveType) = passiveCounts[t] ?: 0
+        val photosById = photosByAsset.values.flatten().associateBy { it.id }
+
+        val exportDate = Date()
+        val exportDateLabel = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(exportDate)
+        val logoDataUri = drawableToPngBytes(R.drawable.telecentro_logo, targetW = 140, targetH = 70)?.let { bytes ->
+            val encoded = Base64.encodeToString(bytes, Base64.NO_WRAP)
+            "data:image/png;base64,$encoded"
+        }
+        val logoUrl = "https://upload.wikimedia.org/wikipedia/commons/2/23/Telecentro.png"
+        val htmlData = HtmlExportData(
+            report = report,
+            info = HtmlInfoCounts(
+                tapsSpliteado = countOf(PassiveType.TAPS_SPLITEADO_A_REFORMA),
+                acometidasCortadas = countOf(PassiveType.ACOMETIDAS_CORTADAS),
+                antirroboColocado = countOf(PassiveType.COLOCA_ANTIRROBO_A_TAP),
+                pasivosNormalizados = countOf(PassiveType.PASIVO_NORMALIZADO_O_REPARADO),
+                activosAjustados = adjustedCount
+            ),
+            assets = assets.map { asset ->
+                val assetPhotos = imagesByAsset[asset.id].orEmpty()
+                val photoTypeCounts = assetPhotos.groupingBy { it.photoType }.eachCount()
+                val photoTypeIndex = mutableMapOf<PhotoType, Int>()
+                HtmlAssetExport(
+                    id = asset.id,
+                    header = assetHeaderLine(report, asset),
+                    type = asset.type.name,
+                    frequencyMHz = asset.frequencyMHz,
+                    amplifierMode = asset.amplifierMode?.label,
+                    portLabel = if (asset.port != null && asset.portIndex != null) {
+                        "${asset.port.name}${String.format("%02d", asset.portIndex)}"
+                    } else {
+                        null
+                    },
+                    photos = assetPhotos.map { ref ->
+                        val baseTitle = photoSectionTitle(ref.photoType)
+                        val currentIndex = photoTypeIndex.getOrPut(ref.photoType) { 0 } + 1
+                        photoTypeIndex[ref.photoType] = currentIndex
+                        val title = if ((photoTypeCounts[ref.photoType] ?: 0) > 1) {
+                            "$baseTitle $currentIndex"
+                        } else {
+                            baseTitle
+                        }
+                        val imageFile = File(exportDir, ref.fileName)
+                        val dataUri = if (imageFile.exists()) {
+                            val encoded = Base64.encodeToString(imageFile.readBytes(), Base64.NO_WRAP)
+                            "data:image/jpeg;base64,$encoded"
+                        } else {
+                            null
+                        }
+                        HtmlPhotoExport(
+                            title = title,
+                            fileName = ref.fileName,
+                            dataUri = dataUri,
+                            latitude = photosById[ref.photoId]?.latitude,
+                            longitude = photosById[ref.photoId]?.longitude,
+                            photoType = ref.photoType.name
+                        )
+                    },
+                    adjustment = HtmlAdjustmentExport(
+                        node = nodeAdjustmentsByAsset[asset.id]?.let { nodeAdj ->
+                            HtmlNodeAdjustmentExport(
+                                planNode = nodeAdj.planNode,
+                                planContractor = nodeAdj.planContractor,
+                                planTechnology = nodeAdj.planTechnology,
+                                planPoDirecta = nodeAdj.planPoDirecta,
+                                planPoRetorno = nodeAdj.planPoRetorno,
+                                planDistanciaSfp = nodeAdj.planDistanciaSfp,
+                                tx1310Confirmed = nodeAdj.tx1310Confirmed,
+                                tx1550Confirmed = nodeAdj.tx1550Confirmed,
+                                poConfirmed = nodeAdj.poConfirmed,
+                                rxPadSelection = nodeAdj.rxPadSelection,
+                                measurementConfirmed = nodeAdj.measurementConfirmed,
+                                spectrumConfirmed = nodeAdj.spectrumConfirmed,
+                                nonLegacyConfirmed = nodeAdj.nonLegacyConfirmed,
+                                sfpDistance = nodeAdj.sfpDistance,
+                                poDirectaConfirmed = nodeAdj.poDirectaConfirmed,
+                                poRetornoConfirmed = nodeAdj.poRetornoConfirmed,
+                                docsisConfirmed = nodeAdj.docsisConfirmed
+                            )
+                        },
+                        amplifier = adjustmentsByAsset[asset.id]?.let { adj ->
+                            buildHtmlAmplifierAdjustment(asset, adj)
+                        }
+                    )
+                )
+            },
+            measurements = measurements,
+            passives = passives.map { passive ->
+                HtmlPassiveEntry(
+                    type = passive.type.label,
+                    address = passive.address,
+                    observation = passive.observation,
+                    createdAt = passive.createdAt
+                )
+            }
+        )
+        val json = gson.toJson(htmlData)
+        val html = """
+            <!doctype html>
+            <html lang="es">
+              <head>
+                <meta charset="utf-8" />
+                <meta name="viewport" content="width=device-width, initial-scale=1" />
+                <title>Informe de Mantenimiento</title>
+                <link
+                  rel="stylesheet"
+                  href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+                  integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+                  crossorigin=""
+                />
+                <style>
+                  :root {
+                    color-scheme: dark;
+                    --bg: #1b1b26;
+                    --panel: #232334;
+                    --panel-2: #2b2b3f;
+                    --border: #3b3b55;
+                    --text: #f4f4f7;
+                    --muted: #b7b7c5;
+                    --accent: #8ab4ff;
+                    --ok: #62c370;
+                    --warn: #f6c56f;
+                    --bad: #ef6b6b;
+                    --chart-grid: rgba(255,255,255,0.12);
+                  }
+                  [data-theme="light"] {
+                    color-scheme: light;
+                    --bg: #f6f7fb;
+                    --panel: #ffffff;
+                    --panel-2: #eef1f6;
+                    --border: #d6dbe6;
+                    --text: #1b1b26;
+                    --muted: #5a5f6d;
+                    --accent: #2b76ff;
+                    --ok: #2f9e44;
+                    --warn: #e9a93a;
+                    --bad: #e03131;
+                    --chart-grid: rgba(0,0,0,0.12);
+                  }
+                  * { box-sizing: border-box; }
+                  body {
+                    margin: 0;
+                    background: var(--bg);
+                    color: var(--text);
+                    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+                  }
+                  .container {
+                    max-width: 1200px;
+                    margin: 0 auto;
+                    padding: 24px;
+                    display: flex;
+                    flex-direction: column;
+                    gap: 24px;
+                  }
+                  .card {
+                    background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.02));
+                    border: 1px solid var(--border);
+                    border-radius: 16px;
+                    padding: 18px;
+                    box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+                  }
+                  .title {
+                    text-align: center;
+                    font-size: 20px;
+                    font-weight: 700;
+                    padding: 16px;
+                    background: #40bdeb;
+                    color: #0b2233;
+                    border-radius: 12px;
+                  }
+                  .info-grid {
+                    display: grid;
+                    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+                    gap: 12px;
+                  }
+                  .info-item {
+                    background: var(--panel);
+                    padding: 12px;
+                    border-radius: 12px;
+                    border: 1px solid var(--border);
+                  }
+                  .info-item span {
+                    display: block;
+                    font-size: 12px;
+                    color: var(--muted);
+                  }
+                  .info-item strong {
+                    font-size: 14px;
+                  }
+                  .section-title {
+                    font-weight: 700;
+                    margin-bottom: 8px;
+                  }
+                  .asset-toolbar {
+                    display: flex;
+                    align-items: center;
+                    gap: 12px;
+                    flex-wrap: wrap;
+                  }
+                  .header-bar {
+                    display: grid;
+                    grid-template-columns: auto 1fr auto;
+                    align-items: center;
+                    gap: 16px;
+                    flex-wrap: wrap;
+                    padding-bottom: 12px;
+                  }
+                  .header-title {
+                    text-align: center;
+                    font-weight: 700;
+                  }
+                  .header-meta {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 4px;
+                    font-size: 12px;
+                    color: var(--muted);
+                    align-items: flex-end;
+                  }
+                  .header-logo {
+                    height: 48px;
+                    object-fit: contain;
+                    margin-bottom: 8px;
+                  }
+                  .theme-toggle {
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 6px;
+                    background: var(--panel-2);
+                    border: 1px solid var(--border);
+                    border-radius: 999px;
+                    padding: 4px 8px;
+                  }
+                  .theme-toggle input {
+                    appearance: none;
+                    width: 40px;
+                    height: 22px;
+                    background: var(--border);
+                    border-radius: 999px;
+                    position: relative;
+                    cursor: pointer;
+                    outline: none;
+                  }
+                  .theme-toggle input::after {
+                    content: "";
+                    position: absolute;
+                    top: 2px;
+                    left: 2px;
+                    width: 18px;
+                    height: 18px;
+                    border-radius: 50%;
+                    background: var(--text);
+                    transition: transform 0.2s ease;
+                  }
+                  .theme-toggle input:checked {
+                    background: var(--accent);
+                  }
+                  .theme-toggle input:checked::after {
+                    transform: translateX(18px);
+                  }
+                  .theme-icon {
+                    font-size: 14px;
+                  }
+                  select {
+                    background: var(--panel-2);
+                    color: var(--text);
+                    border: 1px solid var(--border);
+                    padding: 8px 12px;
+                    border-radius: 8px;
+                  }
+                  .asset-grid {
+                    display: grid;
+                    grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr);
+                    gap: 18px;
+                  }
+                  .photo-frame {
+                    position: relative;
+                    background: #11111a;
+                    border-radius: 16px;
+                    border: 1px solid var(--border);
+                    padding: 12px;
+                    min-height: 280px;
+                  }
+                  .photo-frame img {
+                    width: 100%;
+                    height: auto;
+                    border-radius: 12px;
+                    display: block;
+                    transition: transform 0.2s ease;
+                    transform-origin: center;
+                  }
+                  .photo-title {
+                    position: absolute;
+                    top: 10px;
+                    left: 12px;
+                    right: 12px;
+                    text-align: center;
+                    color: #fff;
+                    font-size: 13px;
+                    font-weight: 600;
+                    text-shadow: 0 2px 6px rgba(0,0,0,0.6);
+                    background: rgba(0,0,0,0.45);
+                    padding: 4px 8px;
+                    border-radius: 8px;
+                  }
+                  .photo-nav {
+                    position: absolute;
+                    top: 50%;
+                    transform: translateY(-50%);
+                    background: rgba(0,0,0,0.55);
+                    border: 1px solid var(--border);
+                    color: var(--text);
+                    padding: 12px 16px;
+                    border-radius: 50%;
+                    cursor: pointer;
+                    font-size: 24px;
+                  }
+                  .photo-nav.prev { left: 8px; }
+                  .photo-nav.next { right: 8px; }
+                  .photo-zoom-controls {
+                    position: absolute;
+                    top: 12px;
+                    right: 12px;
+                    display: flex;
+                    gap: 6px;
+                    z-index: 2;
+                  }
+                  .photo-zoom-controls button {
+                    background: rgba(0,0,0,0.55);
+                    border: 1px solid var(--border);
+                    color: var(--text);
+                    padding: 6px 8px;
+                    border-radius: 8px;
+                    cursor: pointer;
+                    font-size: 12px;
+                  }
+                  .adjustment-panel {
+                    background: var(--panel);
+                    border-radius: 16px;
+                    border: 1px solid var(--border);
+                    padding: 14px;
+                    display: flex;
+                    flex-direction: column;
+                    gap: 12px;
+                  }
+                  .adjustment-panel h3 {
+                    margin: 0;
+                    font-size: 16px;
+                  }
+                  .table {
+                    width: 100%;
+                    border-collapse: collapse;
+                    font-size: 12px;
+                  }
+                  .table th, .table td {
+                    border: 1px solid var(--border);
+                    padding: 6px;
+                    text-align: left;
+                  }
+                  .table th {
+                    background: rgba(255,255,255,0.06);
+                  }
+                  [data-theme="light"] .table th {
+                    background: rgba(0,0,0,0.04);
+                  }
+                  .table tbody tr:nth-child(odd) td {
+                    background: rgba(255,255,255,0.02);
+                  }
+                  [data-theme="light"] .table tbody tr:nth-child(odd) td {
+                    background: rgba(0,0,0,0.02);
+                  }
+                  .badge {
+                    padding: 2px 6px;
+                    border-radius: 999px;
+                    font-size: 11px;
+                    background: rgba(255,255,255,0.1);
+                    display: inline-block;
+                  }
+                  .badge.ok { background: rgba(98,195,112,0.2); color: var(--ok); }
+                  .badge.bad { background: rgba(239,107,107,0.2); color: var(--bad); }
+                  .measurement-section {
+                    margin-top: 16px;
+                    display: flex;
+                    flex-direction: column;
+                    gap: 12px;
+                  }
+                  .measurement-group {
+                    background: var(--panel);
+                    border-radius: 14px;
+                    border: 1px solid var(--border);
+                    padding: 12px;
+                    display: flex;
+                    flex-direction: column;
+                    gap: 12px;
+                  }
+                  .summary-grid {
+                    display: grid;
+                    grid-template-columns: minmax(0, 1fr) minmax(280px, 1.2fr);
+                    gap: 16px;
+                    align-items: start;
+                  }
+                  .summary-map {
+                    height: 320px;
+                    border-radius: 12px;
+                    border: 1px solid var(--border);
+                    overflow: hidden;
+                  }
+                  .summary-map-wrapper {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 8px;
+                  }
+                  .map-search {
+                    display: flex;
+                    gap: 8px;
+                  }
+                  .map-search input {
+                    flex: 1;
+                    background: var(--panel-2);
+                    color: var(--text);
+                    border: 1px solid var(--border);
+                    padding: 8px 12px;
+                    border-radius: 8px;
+                  }
+                  .map-search button {
+                    background: var(--accent);
+                    color: #101520;
+                    border: none;
+                    padding: 8px 12px;
+                    border-radius: 8px;
+                    cursor: pointer;
+                    font-weight: 600;
+                  }
+                  .copy-coords {
+                    background: var(--panel-2);
+                    color: var(--text);
+                    border: 1px solid var(--border);
+                    padding: 4px 8px;
+                    border-radius: 6px;
+                    cursor: pointer;
+                    font-size: 11px;
+                  }
+                  .summary-observations {
+                    margin-top: 12px;
+                  }
+                  .measurement-header {
+                    display: flex;
+                    flex-direction: column;
+                    align-items: stretch;
+                    gap: 8px;
+                  }
+                  .measurement-header-top {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    gap: 12px;
+                    flex-wrap: wrap;
+                  }
+                  .measurement-tabs {
+                    display: flex;
+                    gap: 8px;
+                    flex-wrap: wrap;
+                  }
+                  .measurement-tab {
+                    border-radius: 999px;
+                    padding: 6px 14px;
+                    border: 1px solid var(--border);
+                    background: rgba(255,255,255,0.06);
+                    color: var(--text);
+                    cursor: pointer;
+                    font-size: 12px;
+                  }
+                  .measurement-tab.active {
+                    background: var(--accent);
+                    color: #101520;
+                    border-color: transparent;
+                    font-weight: 600;
+                  }
+                  .measurement-entry {
+                    background: transparent;
+                    border-radius: 12px;
+                    border: 1px solid var(--border);
+                    padding: 12px;
+                    display: none;
+                    flex-direction: column;
+                    gap: 12px;
+                  }
+                  .measurement-entry.active {
+                    display: flex;
+                  }
+                  .measurement-title {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    gap: 8px;
+                    font-weight: 600;
+                  }
+                  .measurement-name {
+                    text-align: center;
+                    color: var(--muted);
+                    font-size: 12px;
+                  }
+                  .measurement-geo {
+                    text-align: center;
+                    color: var(--muted);
+                    font-size: 11px;
+                  }
+                  .measurement-group-geo {
+                    color: var(--muted);
+                    font-size: 12px;
+                    margin-left: 4px;
+                  }
+                  .measurement-name-row {
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    justify-content: center;
+                    flex-wrap: wrap;
+                  }
+                  .switch-pill {
+                    background: var(--accent);
+                    color: #101520;
+                    font-weight: 700;
+                    border-radius: 999px;
+                    padding: 2px 8px;
+                    font-size: 11px;
+                  }
+                  .observation-panel {
+                    margin-top: 8px;
+                    border: 1px solid var(--border);
+                    border-radius: 12px;
+                    padding: 10px 12px;
+                    background: rgba(0,0,0,0.2);
+                  }
+                  .observation-panel strong {
+                    display: block;
+                    margin-bottom: 6px;
+                  }
+                  .collapse {
+                    border: 1px solid var(--border);
+                    border-radius: 12px;
+                    padding: 8px 12px;
+                    background: rgba(0,0,0,0.25);
+                  }
+                  .collapse summary {
+                    cursor: pointer;
+                    list-style: none;
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    gap: 8px;
+                    font-weight: 600;
+                  }
+                  .collapse summary::-webkit-details-marker {
+                    display: none;
+                  }
+                  .collapse summary::after {
+                    content: "▾";
+                    color: var(--muted);
+                  }
+                  .collapse[open] summary::after {
+                    transform: rotate(180deg);
+                  }
+                  .chart {
+                    width: 100%;
+                    height: 220px;
+                    background: linear-gradient(180deg, rgba(0,0,0,0.18), rgba(0,0,0,0.08));
+                    border-radius: 12px;
+                    border: 1px solid var(--border);
+                    padding: 8px;
+                    position: relative;
+                  }
+                  .chart svg text {
+                    font-family: inherit;
+                  }
+                  .chart-tooltip {
+                    position: absolute;
+                    pointer-events: none;
+                    background: var(--panel);
+                    border: 1px solid var(--border);
+                    color: var(--text);
+                    font-size: 11px;
+                    padding: 6px 8px;
+                    border-radius: 8px;
+                    box-shadow: 0 6px 16px rgba(0,0,0,0.25);
+                    opacity: 0;
+                    transition: opacity 0.1s ease;
+                    transform: translate(-50%, -100%);
+                    white-space: nowrap;
+                    z-index: 2;
+                  }
+                  .muted {
+                    color: var(--muted);
+                    font-size: 12px;
+                  }
+                  @media (max-width: 900px) {
+                    .asset-grid {
+                      grid-template-columns: 1fr;
+                    }
+                    .summary-grid {
+                      grid-template-columns: 1fr;
+                    }
+                  }
+                </style>
+              </head>
+              <body>
+                <div class="container">
+                  <div class="card">
+                    <div class="header-bar">
+                      <div class="asset-toolbar">
+                        <img class="header-logo" src="$logoUrl" alt="Telecentro" ${'$'}{if (logoDataUri != null) "onerror=\"this.onerror=null;this.src='$logoDataUri';\"" else ""} />
+                      </div>
+                      <div class="header-title">Informe de mantenimiento</div>
+                      <div class="header-meta">
+                        <div class="theme-toggle">
+                          <span class="theme-icon">🌙</span>
+                          <input type="checkbox" id="theme-toggle" aria-label="Cambiar tema" />
+                          <span class="theme-icon">☀️</span>
+                        </div>
+                        <div>Exportado: $exportDateLabel</div>
+                      </div>
+                    </div>
+                    <div class="info-grid" id="header-info"></div>
+                  </div>
+                  <div class="card">
+                    <div class="title">Resumen del Mantenimiento Preventivo</div>
+                    <div class="summary-grid" style="margin-top:16px;">
+                      <div>
+                        <div class="section-title">Información General</div>
+                        <div class="info-grid" id="general-info"></div>
+                        <div class="summary-observations">
+                          <details class="collapse" id="observations-details">
+                            <summary>Observaciones en Mediciones: <span id="observations-count">0</span></summary>
+                            <div id="observations-list"></div>
+                          </details>
+                        </div>
+                      </div>
+                      <div class="summary-map-wrapper">
+                        <div class="map-search">
+                          <input type="text" id="map-search-input" placeholder="Buscar dirección" />
+                          <button type="button" id="map-search-button">Buscar</button>
+                        </div>
+                        <div class="summary-map" id="summary-map"></div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="card">
+                    <div class="asset-toolbar">
+                      <select id="asset-select"></select>
+                      <strong id="asset-header"></strong>
+                    </div>
+                    <div class="asset-grid" style="margin-top:16px;">
+                      <div>
+                        <div class="photo-frame">
+                          <button class="photo-nav prev" id="photo-prev">‹</button>
+                          <button class="photo-nav next" id="photo-next">›</button>
+                          <div class="photo-zoom-controls">
+                            <button type="button" id="photo-zoom-in">+</button>
+                            <button type="button" id="photo-zoom-out">−</button>
+                            <button type="button" id="photo-zoom-reset">Reset</button>
+                          </div>
+                          <img id="photo-image" alt="Foto del activo" />
+                          <div class="photo-title" id="photo-title"></div>
+                        </div>
+                        <div class="measurement-section" id="measurement-section"></div>
+                      </div>
+                      <aside class="adjustment-panel" id="adjustment-panel"></aside>
+                    </div>
+                  </div>
+                  <div class="card">
+                    <div class="section-title">Detalle de intervención de pasivos</div>
+                    <details class="collapse" open>
+                      <summary>Ver detalle</summary>
+                      <div id="passive-section"></div>
+                    </details>
+                  </div>
+                </div>
+                <script
+                  src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+                  integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+                  crossorigin=""
+                ></script>
+                <script id="report-data" type="application/json">
+                $json
+                </script>
+                <script>
+                  const data = JSON.parse(document.getElementById('report-data').textContent);
+                  const assetSelect = document.getElementById('asset-select');
+                  const assetHeader = document.getElementById('asset-header');
+                  const photoImage = document.getElementById('photo-image');
+                  const photoTitle = document.getElementById('photo-title');
+                  const photoPrev = document.getElementById('photo-prev');
+                  const photoNext = document.getElementById('photo-next');
+                  const adjustmentPanel = document.getElementById('adjustment-panel');
+                  const measurementSection = document.getElementById('measurement-section');
+                  const passiveSection = document.getElementById('passive-section');
+                  const themeToggle = document.getElementById('theme-toggle');
+                  const mapSearchInput = document.getElementById('map-search-input');
+                  const mapSearchButton = document.getElementById('map-search-button');
+                  const photoZoomIn = document.getElementById('photo-zoom-in');
+                  const photoZoomOut = document.getElementById('photo-zoom-out');
+                  const photoZoomReset = document.getElementById('photo-zoom-reset');
+                  let currentPhotos = [];
+                  let currentPhotoIndex = 0;
+                  let currentPhotoScale = 1;
+
+                  function applyTheme(theme) {
+                    document.documentElement.setAttribute('data-theme', theme);
+                    if (themeToggle) {
+                      themeToggle.checked = theme === 'light';
+                    }
+                    localStorage.setItem('reportTheme', theme);
+                  }
+
+                  const savedTheme = localStorage.getItem('reportTheme') || 'dark';
+                  applyTheme(savedTheme);
+                  if (themeToggle) {
+                    themeToggle.addEventListener('change', () => {
+                      applyTheme(themeToggle.checked ? 'light' : 'dark');
+                    });
+                  }
+
+                  function createInfoItem(label, value) {
+                    const div = document.createElement('div');
+                    div.className = 'info-item';
+                    div.innerHTML = `<span>${'$'}{label}</span><strong>${'$'}{value || '—'}</strong>`;
+                    return div;
+                  }
+
+                  const headerInfo = document.getElementById('header-info');
+                  headerInfo.append(
+                    createInfoItem('CONTRATISTA', data.report.contractor),
+                    createInfoItem('GERENCIA', 'Mantenimiento Red de Acceso'),
+                    createInfoItem('NODO', data.report.nodeName),
+                    createInfoItem('Evento', data.report.eventName)
+                  );
+
+                  const generalInfo = document.getElementById('general-info');
+                  generalInfo.append(
+                    createInfoItem('Responsable', data.report.responsible),
+                    createInfoItem('Contratista', data.report.contractor),
+                    createInfoItem('Número del Medidor', data.report.meterNumber),
+                    createInfoItem('Taps Spliteado a reforma', data.info.tapsSpliteado),
+                    createInfoItem('Acometidas cortadas', data.info.acometidasCortadas),
+                    createInfoItem('Antirrobo Colocado', data.info.antirroboColocado),
+                    createInfoItem('Pasivos normalizado o reparado', data.info.pasivosNormalizados),
+                    createInfoItem('Activos ajustados', data.info.activosAjustados)
+                  );
+
+                  function collectObservationDetails() {
+                    const details = [];
+                    Object.values(data.measurements || {}).forEach((bundle) => {
+                      [bundle.rx, bundle.module].filter(Boolean).forEach((group) => {
+                        (group.observationDetails || []).forEach((detail) => {
+                          details.push(detail);
+                        });
+                      });
+                    });
+                    return details;
+                  }
+
+                  const observationDetails = collectObservationDetails();
+                  const observationCount = observationDetails.length;
+                  const observationCountEl = document.getElementById('observations-count');
+                  const observationListEl = document.getElementById('observations-list');
+                  if (observationCountEl) {
+                    observationCountEl.textContent = observationCount.toString();
+                  }
+                  if (observationListEl) {
+                    if (!observationDetails.length) {
+                      observationListEl.innerHTML = `<div class="muted">Sin observaciones.</div>`;
+                    } else {
+                      const list = document.createElement('ul');
+                      observationDetails.forEach((detail) => {
+                        const li = document.createElement('li');
+                        li.innerHTML = `<strong>${'$'}{detail.assetHeader}</strong> - ${'$'}{detail.detail}`;
+                        list.appendChild(li);
+                      });
+                      observationListEl.appendChild(list);
+                    }
+                  }
+
+                  function buildMapPoints() {
+                    return data.assets.map((asset) => {
+                      const bundle = data.measurements?.[asset.id];
+                      const groups = [bundle?.rx, bundle?.module].filter(Boolean);
+                      const point = groups.map((g) => g.geoLocation).find(Boolean);
+                      const observationTotal = groups.reduce((sum, g) => sum + (g?.observationTotal || 0), 0);
+                      return {
+                        id: asset.id,
+                        label: asset.header,
+                        geo: point,
+                        observations: observationTotal
+                      };
+                    }).filter((item) => item.geo);
+                  }
+
+                  const mapPoints = buildMapPoints();
+                  const mapEl = document.getElementById('summary-map');
+                  let mapInstance = null;
+                  let mapSearchMarker = null;
+                  if (mapEl && mapPoints.length && window.L) {
+                    const avgLat = mapPoints.reduce((sum, p) => sum + p.geo.latitude, 0) / mapPoints.length;
+                    const avgLng = mapPoints.reduce((sum, p) => sum + p.geo.longitude, 0) / mapPoints.length;
+                    mapInstance = L.map(mapEl).setView([avgLat, avgLng], 13);
+                    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                      maxZoom: 18,
+                      attribution: '&copy; OpenStreetMap'
+                    }).addTo(mapInstance);
+                    mapPoints.forEach((point) => {
+                      const marker = L.marker([point.geo.latitude, point.geo.longitude]).addTo(mapInstance);
+                      const obsLabel = point.observations ? ` - ${'$'}{point.observations} obs.` : '';
+                      const coords = `${'$'}{point.geo.latitude.toFixed(5)}, ${'$'}{point.geo.longitude.toFixed(5)}`;
+                      marker.bindPopup(`
+                        <div>
+                          <strong>${'$'}{point.label}</strong>${'$'}{obsLabel}<br/>
+                          <span class="muted">${'$'}{coords}</span>
+                          <div style="margin-top:6px;">
+                            <button type="button" class="copy-coords" data-coords="${'$'}{coords}">Copiar coordenadas</button>
+                          </div>
+                        </div>
+                      `);
+                    });
+                    mapInstance.on('popupopen', (event) => {
+                      const button = event.popup.getElement()?.querySelector('.copy-coords');
+                      if (button) {
+                        button.addEventListener('click', () => {
+                          const coords = button.getAttribute('data-coords') || '';
+                          navigator.clipboard?.writeText(coords);
+                        });
+                      }
+                    });
+                  }
+
+                  async function searchAddress(query) {
+                    if (!query || !mapInstance) return;
+                    const url = `https://nominatim.openstreetmap.org/search?format=json&q=${'$'}{encodeURIComponent(query)}`;
+                    const response = await fetch(url);
+                    const results = await response.json();
+                    if (!results.length) return;
+                    const result = results[0];
+                    const lat = Number(result.lat);
+                    const lon = Number(result.lon);
+                    mapInstance.setView([lat, lon], 15);
+                    if (mapSearchMarker) {
+                      mapInstance.removeLayer(mapSearchMarker);
+                    }
+                    mapSearchMarker = L.marker([lat, lon]).addTo(mapInstance);
+                    mapSearchMarker.bindPopup(`<strong>${'$'}{result.display_name}</strong>`).openPopup();
+                  }
+
+                  if (mapSearchButton) {
+                    mapSearchButton.addEventListener('click', () => {
+                      searchAddress(mapSearchInput?.value || '');
+                    });
+                  }
+                  if (mapSearchInput) {
+                    mapSearchInput.addEventListener('keydown', (event) => {
+                      if (event.key === 'Enter') {
+                        event.preventDefault();
+                        searchAddress(mapSearchInput.value || '');
+                      }
+                    });
+                  }
+
+                  if (passiveSection) {
+                    if (!data.passives || !data.passives.length) {
+                      passiveSection.innerHTML = `<div class="muted">Sin pasivos cargados.</div>`;
+                    } else {
+                      const table = document.createElement('table');
+                      table.className = 'table';
+                      table.innerHTML = `
+                        <thead>
+                          <tr>
+                            <th>Tipo</th>
+                            <th>Dirección</th>
+                            <th>Observación</th>
+                            <th>Fecha</th>
+                          </tr>
+                        </thead>
+                        <tbody></tbody>
+                      `;
+                      const body = table.querySelector('tbody');
+                      data.passives.forEach((item) => {
+                        const tr = document.createElement('tr');
+                        const date = item.createdAt
+                          ? new Date(item.createdAt).toLocaleString()
+                          : '—';
+                        tr.innerHTML = `
+                          <td>${'$'}{item.type || '—'}</td>
+                          <td>${'$'}{item.address || '—'}</td>
+                          <td>${'$'}{item.observation || '—'}</td>
+                          <td>${'$'}{date}</td>
+                        `;
+                        body.appendChild(tr);
+                      });
+                      passiveSection.appendChild(table);
+                    }
+                  }
+
+                  data.assets.forEach((asset, index) => {
+                    const option = document.createElement('option');
+                    option.value = asset.id;
+                    option.textContent = asset.header;
+                    if (index === 0) option.selected = true;
+                    assetSelect.appendChild(option);
+                  });
+
+                  function updatePhoto() {
+                    if (!currentPhotos.length) {
+                      photoImage.src = '';
+                      photoTitle.textContent = 'Sin fotos cargadas';
+                      return;
+                    }
+                    const photo = currentPhotos[currentPhotoIndex];
+                    photoImage.src = photo.dataUri || photo.fileName;
+                    currentPhotoScale = 1;
+                    photoImage.style.transform = `scale(${currentPhotoScale})`;
+                    const coords = photo.latitude != null && photo.longitude != null
+                      ? `${'$'}{photo.latitude.toFixed(5)}, ${'$'}{photo.longitude.toFixed(5)}`
+                      : null;
+                    photoTitle.textContent = coords ? `${'$'}{photo.title} · ${'$'}{coords}` : photo.title;
+                  }
+
+                  photoPrev.addEventListener('click', () => {
+                    if (!currentPhotos.length) return;
+                    currentPhotoIndex = (currentPhotoIndex - 1 + currentPhotos.length) % currentPhotos.length;
+                    updatePhoto();
+                  });
+                  photoNext.addEventListener('click', () => {
+                    if (!currentPhotos.length) return;
+                    currentPhotoIndex = (currentPhotoIndex + 1) % currentPhotos.length;
+                    updatePhoto();
+                  });
+
+                  function applyPhotoZoom(delta) {
+                    currentPhotoScale = Math.min(3, Math.max(1, currentPhotoScale + delta));
+                    photoImage.style.transform = `scale(${currentPhotoScale})`;
+                  }
+
+                  if (photoZoomIn) {
+                    photoZoomIn.addEventListener('click', () => applyPhotoZoom(0.2));
+                  }
+                  if (photoZoomOut) {
+                    photoZoomOut.addEventListener('click', () => applyPhotoZoom(-0.2));
+                  }
+                  if (photoZoomReset) {
+                    photoZoomReset.addEventListener('click', () => {
+                      currentPhotoScale = 1;
+                      photoImage.style.transform = `scale(${currentPhotoScale})`;
+                    });
+                  }
+
+                  function badge(value) {
+                    const span = document.createElement('span');
+                    span.className = `badge ${'$'}{value ? 'ok' : 'bad'}`;
+                    span.textContent = value ? 'OK' : 'Pendiente';
+                    return span;
+                  }
+
+                  function renderNodeAdjustment(node) {
+                    const container = document.createElement('div');
+                    container.innerHTML = `<h3>Ajuste de Nodo</h3>`;
+                    if (!node) {
+                      container.append(document.createTextNode('Sin datos de ajuste.'));
+                      return container;
+                    }
+                    const info = document.createElement('div');
+                    info.className = 'muted';
+                    info.innerHTML = `
+                      Plan: ${'$'}{node.planNode || '—'}<br />
+                      Contratista: ${'$'}{node.planContractor || '—'}<br />
+                      Tecnología: ${'$'}{node.planTechnology || '—'}
+                    `;
+                    container.append(info);
+                    const table = document.createElement('table');
+                    table.className = 'table';
+                    table.innerHTML = `
+                      <thead><tr><th>Item</th><th>Estado</th></tr></thead>
+                      <tbody>
+                        <tr><td>TX 1310</td><td></td></tr>
+                        <tr><td>TX 1550</td><td></td></tr>
+                        <tr><td>PO Directa</td><td></td></tr>
+                        <tr><td>PO Retorno</td><td></td></tr>
+                        <tr><td>Medición RX</td><td></td></tr>
+                        <tr><td>Espectro</td><td></td></tr>
+                      </tbody>
+                    `;
+                    const rows = table.querySelectorAll('tbody tr');
+                    rows[0].children[1].appendChild(badge(node.tx1310Confirmed));
+                    rows[1].children[1].appendChild(badge(node.tx1550Confirmed));
+                    rows[2].children[1].appendChild(badge(node.poDirectaConfirmed || node.poConfirmed));
+                    rows[3].children[1].appendChild(badge(node.poRetornoConfirmed));
+                    rows[4].children[1].appendChild(badge(node.measurementConfirmed));
+                    rows[5].children[1].appendChild(badge(node.spectrumConfirmed));
+                    container.append(table);
+                    return container;
+                  }
+
+                  function renderAmplifierAdjustment(amp) {
+                    const container = document.createElement('div');
+                    container.innerHTML = `<h3>Ajuste de Amplificador</h3>`;
+                    if (!amp) {
+                      container.append(document.createTextNode('Sin datos de ajuste.'));
+                      return container;
+                    }
+                    const tables = [
+                      { title: 'FWD IN PAD/ EQ /AGC PAD', rows: amp.pads },
+                      { title: 'Niveles ENTRADA medido vs plano', rows: amp.inputMeasured },
+                      { title: 'Niveles ENTRADA calculados', rows: amp.inputCalculated },
+                      { title: 'Niveles SALIDA por plano', rows: amp.outputPlan },
+                      { title: 'Niveles SALIDA calculados', rows: amp.outputCalculated },
+                      { title: 'Niveles SALIDA calculado vs medido', rows: amp.outputMeasured }
+                    ];
+                    const collapsibleTitles = new Set([
+                      'Niveles ENTRADA calculados',
+                      'Niveles SALIDA calculados'
+                    ]);
+                    tables.forEach((tableData) => {
+                      if (!tableData.rows || !tableData.rows.length) return;
+                      const section = document.createElement('div');
+                      section.innerHTML = `<div class="section-title">${'$'}{tableData.title}</div>`;
+                      const table = document.createElement('table');
+                      table.className = 'table';
+                      const headers = Object.keys(tableData.rows[0]).filter((h) => h !== 'alert');
+                      const preferred = ['Canal', 'Frecuencia', 'Nivel', 'Medido', 'Plano', 'Calculado', 'DIF'];
+                      headers.sort((a, b) => {
+                        const ia = preferred.indexOf(a);
+                        const ib = preferred.indexOf(b);
+                        if (ia === -1 && ib === -1) return a.localeCompare(b);
+                        if (ia === -1) return 1;
+                        if (ib === -1) return -1;
+                        return ia - ib;
+                      });
+                      table.innerHTML = `
+                        <thead><tr>${'$'}{headers.map((h) => `<th>${'$'}{formatHeader(h)}</th>`).join('')}</tr></thead>
+                        <tbody></tbody>
+                      `;
+                      const body = table.querySelector('tbody');
+                      tableData.rows.forEach((row) => {
+                        const tr = document.createElement('tr');
+                        headers.forEach((h) => {
+                          const td = document.createElement('td');
+                          td.textContent = row[h] ?? '—';
+                          if (row.alert && h === 'DIF') {
+                            td.style.color = 'var(--bad)';
+                          }
+                          tr.appendChild(td);
+                        });
+                        body.appendChild(tr);
+                      });
+                      if (collapsibleTitles.has(tableData.title)) {
+                        const details = document.createElement('details');
+                        details.className = 'collapse';
+                        const summary = document.createElement('summary');
+                        summary.textContent = tableData.title;
+                        details.appendChild(summary);
+                        details.appendChild(table);
+                        container.appendChild(details);
+                      } else {
+                        section.appendChild(table);
+                        container.appendChild(section);
+                      }
+                    });
+                    return container;
+                  }
+
+                  function normalizeChartPoints(points) {
+                    const byFreq = new Map();
+                    points.forEach((point) => {
+                      if (point.frequencyMHz == null) return;
+                      const key = Number(point.frequencyMHz);
+                      const existing = byFreq.get(key);
+                      if (!existing) {
+                        byFreq.set(key, point);
+                      } else if (existing.ok !== false && point.ok === false) {
+                        byFreq.set(key, point);
+                      }
+                    });
+                    return Array.from(byFreq.values()).sort((a, b) => a.frequencyMHz - b.frequencyMHz);
+                  }
+
+                  function drawBarChart(container, points, options = {}) {
+                    const normalizedPoints = normalizeChartPoints(points);
+                    if (!normalizedPoints.length) {
+                      container.textContent = 'Sin datos para graficar.';
+                      container.classList.add('muted');
+                      return;
+                    }
+                    container.innerHTML = '';
+                    container.classList.remove('muted');
+                    const tooltip = document.createElement('div');
+                    tooltip.className = 'chart-tooltip';
+                    const width = container.clientWidth || 600;
+                    const height = 200;
+                    const padding = 44;
+                    const levels = normalizedPoints.map((p) => p.levelDbmv).filter((v) => v != null);
+                    if (!levels.length) {
+                      container.textContent = 'Sin datos para graficar.';
+                      container.classList.add('muted');
+                      return;
+                    }
+                    const min = Math.min(...levels);
+                    const max = Math.max(...levels);
+                    const span = max - min || 1;
+                    const barWidth = options.barWidth || (width - padding * 2) / normalizedPoints.length;
+                    const xMin = options.xMin ?? 0;
+                    const xMax = options.xMax ?? 1000;
+                    const yTicks = 4;
+                    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                    svg.setAttribute('width', width);
+                    svg.setAttribute('height', height);
+                    for (let i = 0; i <= yTicks; i += 1) {
+                      const y = padding + (height - padding * 2) * (i / yTicks);
+                      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                      line.setAttribute('x1', padding);
+                      line.setAttribute('x2', width - padding);
+                      line.setAttribute('y1', y);
+                      line.setAttribute('y2', y);
+                      line.setAttribute('stroke', 'var(--chart-grid)');
+                      line.setAttribute('stroke-width', '1');
+                      svg.appendChild(line);
+                      const value = (max - (span * i) / yTicks).toFixed(1);
+                      const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                      label.setAttribute('x', padding - 10);
+                      label.setAttribute('y', y + 4);
+                      label.setAttribute('text-anchor', 'end');
+                      label.setAttribute('fill', 'var(--muted)');
+                      label.setAttribute('font-size', '10');
+                      label.textContent = value;
+                      svg.appendChild(label);
+                    }
+                    normalizedPoints.forEach((point, index) => {
+                      const level = point.levelDbmv ?? 0;
+                      const freq = Number(point.frequencyMHz);
+                      const ratio = (freq - xMin) / (xMax - xMin);
+                      const x = padding + ratio * (width - padding * 2) - barWidth / 2;
+                      const barHeight = ((level - min) / span) * (height - padding * 2);
+                      const y = height - padding - barHeight;
+                      const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                      rect.setAttribute('x', x);
+                      rect.setAttribute('y', y);
+                      rect.setAttribute('width', barWidth);
+                      rect.setAttribute('height', barHeight);
+                      rect.setAttribute('rx', 4);
+                      rect.setAttribute('fill', point.ok === false ? '#ef6b6b' : '#2b76ff');
+                      const showTooltip = (event) => {
+                        const rectBox = container.getBoundingClientRect();
+                        const xPos = event.clientX - rectBox.left;
+                        const yPos = event.clientY - rectBox.top;
+                        tooltip.textContent = `MHz: ${'$'}{point.frequencyMHz} · dBmV: ${'$'}{point.levelDbmv ?? '—'}`;
+                        tooltip.style.left = `${'$'}{xPos}px`;
+                        tooltip.style.top = `${'$'}{yPos}px`;
+                        tooltip.style.opacity = '1';
+                      };
+                      rect.addEventListener('mouseenter', showTooltip);
+                      rect.addEventListener('mousemove', showTooltip);
+                      rect.addEventListener('mouseleave', () => {
+                        tooltip.style.opacity = '0';
+                      });
+                      svg.appendChild(rect);
+                    });
+                    const xTicks = xMax <= 100
+                      ? [0, 20, 40, 60, 80]
+                      : [0, 200, 400, 600, 800, 1000];
+                    xTicks.forEach((tick) => {
+                      if (tick < xMin || tick > xMax) return;
+                      const ratio = (tick - xMin) / (xMax - xMin);
+                      const x = padding + ratio * (width - padding * 2);
+                      const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                      label.setAttribute('x', x);
+                      label.setAttribute('y', height - 12);
+                      label.setAttribute('text-anchor', 'middle');
+                      label.setAttribute('fill', 'var(--muted)');
+                      label.setAttribute('font-size', '10');
+                      label.textContent = tick.toString();
+                      svg.appendChild(label);
+                    });
+                    if (options.title) {
+                      const title = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                      title.setAttribute('x', padding);
+                      title.setAttribute('y', 16);
+                      title.setAttribute('fill', 'var(--text)');
+                      title.setAttribute('font-size', '12');
+                      title.setAttribute('font-weight', '600');
+                      title.textContent = options.title;
+                      svg.appendChild(title);
+                    }
+                    const axis = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                    axis.setAttribute('x', padding + (width - padding * 2) / 2);
+                    axis.setAttribute('y', height - 2);
+                    axis.setAttribute('text-anchor', 'middle');
+                    axis.setAttribute('fill', 'var(--muted)');
+                    axis.setAttribute('font-size', '10');
+                    axis.textContent = 'MHz';
+                    svg.appendChild(axis);
+                    const axisY = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                    axisY.setAttribute('x', 16);
+                    axisY.setAttribute('y', height / 2);
+                    axisY.setAttribute('text-anchor', 'middle');
+                    axisY.setAttribute('fill', 'var(--muted)');
+                    axisY.setAttribute('font-size', '10');
+                    axisY.setAttribute('transform', `rotate(-90 16 ${'$'}{height / 2})`);
+                    axisY.textContent = 'dBmV';
+                    svg.appendChild(axisY);
+                    container.appendChild(tooltip);
+                    container.appendChild(svg);
+                  }
+
+                  function renderMeasurementEntry(entry) {
+                    const entryEl = document.createElement('div');
+                    entryEl.className = 'measurement-entry';
+                    const header = document.createElement('div');
+                    header.className = 'measurement-title';
+                    const discardLabel = entry.isDiscarded ? 'DESCARTADA' : '';
+                    header.innerHTML = `
+                      <div>${'$'}{entry.type}</div>
+                      <span class="muted">${'$'}{discardLabel}</span>
+                    `;
+                    entryEl.appendChild(header);
+                    const measurementName = document.createElement('div');
+                    measurementName.className = 'measurement-name';
+                    measurementName.textContent = entry.label.split('/').pop();
+                    const measurementGeo = document.createElement('div');
+                    measurementGeo.className = 'measurement-geo';
+                    if (entry.geoLocation) {
+                      measurementGeo.textContent = `${'$'}{entry.geoLocation.latitude.toFixed(5)}, ${'$'}{entry.geoLocation.longitude.toFixed(5)}`;
+                    }
+                    if (entry.type === 'docsisexpert') {
+                      const chart = document.createElement('div');
+                      chart.className = 'chart';
+                      drawBarChart(chart, entry.docsisRows.map((row) => ({
+                        frequencyMHz: row.Frecuencia,
+                        levelDbmv: row.Nivel,
+                        ok: row.Ok
+                      })), { title: 'Upstream Channels Chart', xMin: 0, xMax: 85, barWidth: 11 });
+                      entryEl.appendChild(chart);
+                      entryEl.appendChild(measurementName);
+                      if (measurementGeo.textContent) entryEl.appendChild(measurementGeo);
+                      entryEl.appendChild(buildCollapsible('Upstream Channels', buildTable(entry.docsisRows)));
+                    } else if (entry.type === 'channelexpert') {
+                      const chart = document.createElement('div');
+                      chart.className = 'chart';
+                      const points = [...entry.pilotRows, ...entry.digitalRows].map((row) => ({
+                        frequencyMHz: row.Frecuencia,
+                        levelDbmv: row.Nivel,
+                        ok: row.Ok
+                      }));
+                      drawBarChart(chart, points, {
+                        title: 'Downstream Channels Chart',
+                        barWidth: 3,
+                        xMin: 0,
+                        xMax: 1000
+                      });
+                      entryEl.appendChild(chart);
+                      const nameRow = document.createElement('div');
+                      nameRow.className = 'measurement-name-row';
+                      if (entry.switchSelection) {
+                        const pill = document.createElement('span');
+                        pill.className = 'switch-pill';
+                        pill.textContent = entry.switchSelection;
+                        nameRow.appendChild(pill);
+                      }
+                      nameRow.appendChild(measurementName);
+                      entryEl.appendChild(nameRow);
+                      if (measurementGeo.textContent) entryEl.appendChild(measurementGeo);
+                      entryEl.appendChild(buildCollapsible('Downstream Analogic Channels', buildTable(entry.pilotRows)));
+                      entryEl.appendChild(buildCollapsible('Downstream Digital Channels', buildTable(entry.digitalRows)));
+                    }
+                    return entryEl;
+                  }
+
+                  function formatHeader(label) {
+                    const withUnits = {
+                      Frecuencia: 'Frecuencia (MHz)',
+                      Nivel: 'Nivel (dBmV)',
+                      Medido: 'Medido (dBmV)',
+                      Plano: 'Plano (dBmV)',
+                      Calculado: 'Calculado (dBmV)',
+                      ICFR: 'ICFR (dB)',
+                      MER: 'MER (dB)',
+                      BERPre: 'BER Pre',
+                      BERPost: 'BER Post',
+                      DIF: 'DIF (dB)',
+                      Valor: 'Valor (dB)'
+                    };
+                    return withUnits[label] || label;
+                  }
+
+                  function buildTable(rows) {
+                    const wrapper = document.createElement('div');
+                    if (!rows || !rows.length) {
+                      wrapper.innerHTML = `<div class="muted">Sin datos.</div>`;
+                      return wrapper;
+                    }
+                    const table = document.createElement('table');
+                    table.className = 'table';
+                    const headers = Object.keys(rows[0]).filter((h) => h !== 'Ok');
+                    const preferred = ['Canal', 'UCD', 'Frecuencia', 'Nivel'];
+                    headers.sort((a, b) => {
+                      const ia = preferred.indexOf(a);
+                      const ib = preferred.indexOf(b);
+                      if (ia === -1 && ib === -1) return a.localeCompare(b);
+                      if (ia === -1) return 1;
+                      if (ib === -1) return -1;
+                      return ia - ib;
+                    });
+                    table.innerHTML = `
+                      <thead><tr>${'$'}{headers.map((h) => `<th>${'$'}{formatHeader(h)}</th>`).join('')}</tr></thead>
+                      <tbody></tbody>
+                    `;
+                    const body = table.querySelector('tbody');
+                    rows.forEach((row) => {
+                      const tr = document.createElement('tr');
+                      headers.forEach((h) => {
+                        const td = document.createElement('td');
+                        td.textContent = row[h] ?? '—';
+                        if (row.Ok === false) {
+                          td.style.color = 'var(--bad)';
+                        }
+                        tr.appendChild(td);
+                      });
+                      body.appendChild(tr);
+                    });
+                    wrapper.appendChild(table);
+                    return wrapper;
+                  }
+
+                  function buildCollapsible(title, content) {
+                    const details = document.createElement('details');
+                    details.className = 'collapse';
+                    const summary = document.createElement('summary');
+                    summary.textContent = title;
+                    details.appendChild(summary);
+                    details.appendChild(content);
+                    return details;
+                  }
+
+                  function renderMeasurements(assetId) {
+                    measurementSection.innerHTML = '';
+                    const asset = data.assets.find((a) => a.id === assetId);
+                    const bundle = data.measurements[assetId];
+                    if (!bundle || (!bundle.rx?.entries.length && !bundle.module?.entries.length)) {
+                      const empty = document.createElement('div');
+                      empty.className = 'muted';
+                      empty.textContent = 'Sin mediciones cargadas.';
+                      measurementSection.appendChild(empty);
+                      return;
+                    }
+                    const groups = [bundle.rx, bundle.module].filter(Boolean);
+                    groups.forEach((group) => {
+                      const groupEl = document.createElement('div');
+                      groupEl.className = 'measurement-group';
+                      const header = document.createElement('div');
+                      header.className = 'measurement-header';
+                      const headerTop = document.createElement('div');
+                      headerTop.className = 'measurement-header-top';
+                      const title = document.createElement('div');
+                      title.className = 'section-title';
+                      title.textContent = `Carga de Mediciones - ${'$'}{group.label}`;
+                      headerTop.appendChild(title);
+                      const tabs = document.createElement('div');
+                      tabs.className = 'measurement-tabs';
+                      headerTop.appendChild(tabs);
+                      header.appendChild(headerTop);
+                      if (group.geoLocation) {
+                        const geo = document.createElement('div');
+                        geo.className = 'measurement-group-geo';
+                        geo.textContent = `${'$'}{group.geoLocation.latitude.toFixed(5)}, ${'$'}{group.geoLocation.longitude.toFixed(5)}`;
+                        header.appendChild(geo);
+                      }
+                      groupEl.appendChild(header);
+
+                      const entryEls = group.entries.map((entry, index) => {
+                        const tab = document.createElement('button');
+                        tab.className = 'measurement-tab';
+                        tab.textContent = `M${'$'}{index + 1}`;
+                        tab.addEventListener('click', () => {
+                          entryEls.forEach((el) => el.classList.remove('active'));
+                          tabs.querySelectorAll('.measurement-tab').forEach((t) => t.classList.remove('active'));
+                          entryEls[index].classList.add('active');
+                          tab.classList.add('active');
+                        });
+                        tabs.appendChild(tab);
+                        const entryEl = renderMeasurementEntry(entry);
+                        groupEl.appendChild(entryEl);
+                        return entryEl;
+                      });
+
+                      if (entryEls.length) {
+                        entryEls[0].classList.add('active');
+                        const firstTab = tabs.querySelector('.measurement-tab');
+                        if (firstTab) firstTab.classList.add('active');
+                      }
+                      if (group.observationDetails && group.observationDetails.length) {
+                        const panel = document.createElement('div');
+                        panel.className = 'observation-panel';
+                        const title = document.createElement('strong');
+                        title.textContent = `Observaciones en Mediciones - ${'$'}{asset?.header || ''}`;
+                        panel.appendChild(title);
+                        const list = document.createElement('ul');
+                        group.observationDetails.forEach((detail) => {
+                          const li = document.createElement('li');
+                          li.innerHTML = `<strong>${'$'}{detail.assetHeader}</strong> - ${'$'}{detail.detail}`;
+                          list.appendChild(li);
+                        });
+                        panel.appendChild(list);
+                        groupEl.appendChild(panel);
+                      }
+                      measurementSection.appendChild(groupEl);
+                    });
+                  }
+
+                  function setAsset(assetId) {
+                    const asset = data.assets.find((a) => a.id === assetId);
+                    if (!asset) return;
+                    assetHeader.textContent = asset.header;
+                    currentPhotos = asset.photos || [];
+                    currentPhotoIndex = 0;
+                    updatePhoto();
+                    adjustmentPanel.innerHTML = '';
+                    if (asset.adjustment?.node) {
+                      adjustmentPanel.appendChild(renderNodeAdjustment(asset.adjustment.node));
+                    }
+                    if (asset.adjustment?.amplifier) {
+                      adjustmentPanel.appendChild(renderAmplifierAdjustment(asset.adjustment.amplifier));
+                    }
+                    if (!asset.adjustment?.node && !asset.adjustment?.amplifier) {
+                      adjustmentPanel.textContent = 'Sin ajustes cargados.';
+                    }
+                    renderMeasurements(asset.id);
+                  }
+
+                  assetSelect.addEventListener('change', (event) => {
+                    setAsset(event.target.value);
+                  });
+
+                  if (data.assets.length) {
+                    setAsset(data.assets[0].id);
+                  }
+                </script>
+              </body>
+            </html>
+        """.trimIndent()
+        val output = File(exportDir, "report.html")
+        output.writeText(html)
+        return output
+    }
+
+    private suspend fun buildHtmlMeasurementMap(
+        report: MaintenanceReport,
+        assets: List<Asset>,
+        measurementRoot: File,
+        switchSelections: Map<String, Map<String, String>>
+    ): Map<String, HtmlMeasurementBundle> {
+        val result = mutableMapOf<String, HtmlMeasurementBundle>()
+        for (asset in assets) {
+            val rxDir = File(measurementRoot, MaintenanceStorage.assetFolderName(asset))
+            val rxLabel = if (asset.type == AssetType.AMPLIFIER) "Módulo" else "RX"
+            val rxBundle = buildMeasurementGroup(
+                rxLabel,
+                asset,
+                assetHeaderLine(report, asset),
+                rxDir,
+                switchSelections[asset.id].orEmpty()
+            )
+            val moduleBundle = if (asset.type == AssetType.NODE) {
+                val moduleAsset = asset.copy(type = AssetType.AMPLIFIER)
+                val moduleDir = File(measurementRoot, MaintenanceStorage.assetFolderName(moduleAsset))
+                buildMeasurementGroup(
+                    "Módulo",
+                    moduleAsset,
+                    assetHeaderLine(report, asset),
+                    moduleDir,
+                    switchSelections[moduleAsset.id].orEmpty()
+                )
+            } else {
+                null
+            }
+            result[asset.id] = HtmlMeasurementBundle(rx = rxBundle, module = moduleBundle)
+        }
+        return result
+    }
+
+    private suspend fun buildMeasurementGroup(
+        label: String,
+        asset: Asset,
+        assetHeader: String,
+        dir: File,
+        switchSelections: Map<String, String>
+    ): HtmlMeasurementGroup? {
+        val files = dir.listFiles()?.filter { it.isFile } ?: emptyList()
+        if (files.isEmpty()) return null
+        val discardedLabels = loadDiscardedLabels(File(dir, ".discarded_measurements.txt"))
+        val required = requiredCounts(asset.type, isModule = label == "Módulo")
+        val summary = verifyMeasurementFiles(
+            context = context,
+            files = files,
+            asset = asset,
+            repository = repository,
+            discardedLabels = discardedLabels,
+            expectedDocsisOverride = required.expectedDocsis,
+            expectedChannelOverride = required.expectedChannel
+        )
+        val entries = summary.result.measurementEntries
+            .filter { it.type == "docsisexpert" || it.type == "channelexpert" }
+            .map { entry ->
+                entry.toHtmlMeasurementEntry(switchSelections[entry.label])
+            }
+        if (entries.isEmpty()) return null
+        return HtmlMeasurementGroup(
+            label = label,
+            geoLocation = summary.geoLocation,
+            observationTotal = summary.observationTotal,
+            observationDetails = summary.geoIssueDetails.map { detail ->
+                HtmlObservationDetail(
+                    assetId = asset.id,
+                    assetHeader = assetHeader,
+                    type = detail.type,
+                    file = detail.file,
+                    detail = detail.detail
+                )
+            },
+            entries = entries
+        )
+    }
+
+    private fun MeasurementEntry.toHtmlMeasurementEntry(switchSelection: String?): HtmlMeasurementEntry {
+        val docsisRows = docsisLevels.keys.sorted().map { freq ->
+            val meta = docsisMeta[freq]
+            HtmlDocsisRow(
+                UCD = meta?.channel?.toString() ?: "—",
+                Frecuencia = meta?.frequencyMHz ?: freq,
+                Nivel = docsisLevels[freq],
+                ICFR = docsisIcfr[freq],
+                Ok = docsisLevelOk[freq] != false
+            )
+        }
+        val pilotRows = pilotLevels.keys.sorted().map { channel ->
+            val meta = pilotMeta[channel]
+            HtmlPilotRow(
+                Canal = channel.toString(),
+                Frecuencia = meta?.frequencyMHz,
+                Nivel = pilotLevels[channel],
+                Ok = pilotLevelOk[channel] != false
+            )
+        }
+        val digitalRows = digitalRows.map { row ->
+            HtmlDigitalRow(
+                Canal = row.channel.toString(),
+                Frecuencia = row.frequencyMHz,
+                Nivel = row.levelDbmv,
+                MER = row.mer,
+                BERPre = row.berPre,
+                BERPost = row.berPost,
+                ICFR = row.icfr,
+                Ok = listOf(row.merOk, row.berPreOk, row.berPostOk, row.icfrOk).all { it != false }
+            )
+        }
+        return HtmlMeasurementEntry(
+            label = label,
+            type = type,
+            isDiscarded = isDiscarded,
+            geoLocation = geoLocation,
+            switchSelection = switchSelection,
+            docsisRows = docsisRows,
+            pilotRows = pilotRows,
+            digitalRows = digitalRows,
+            ofdmPoints = ofdmSeries?.points?.map { HtmlPoint(it.first, it.second) }
+        )
+    }
+
+    private fun buildHtmlAmplifierAdjustment(asset: Asset, adj: AmplifierAdjustment): HtmlAmplifierAdjustmentExport {
+        val bw = freqEnumFromMHz(asset.frequencyMHz)
+        val entradaCalc = CiscoHfcAmpCalculator.nivelesEntradaCalculados(adj)
+        val salidaCalc = CiscoHfcAmpCalculator.nivelesSalidaCalculados(adj)
+        val pad = CiscoHfcAmpCalculator.fwdInPad(adj, bw, asset.amplifierMode)
+        val tilt = CiscoHfcAmpCalculator.fwdInEqTilt(adj, bw)
+        val agc = CiscoHfcAmpCalculator.agcPad(adj, bw, asset.amplifierMode)
+        val inputMeasured = listOf(
+            HtmlAmpRow(
+                Canal = "CH50",
+                Frecuencia = 379,
+                Medido = adj.inputCh50Dbmv?.let { CiscoHfcAmpCalculator.format1(it) },
+                Plano = adj.inputPlanCh50Dbmv?.let { CiscoHfcAmpCalculator.format1(it) }
+            ),
+            HtmlAmpRow(
+                Canal = if ((adj.inputHighFreqMHz ?: 750) == 870) "CH136" else "CH116",
+                Frecuencia = adj.inputHighFreqMHz ?: 750,
+                Medido = adj.inputCh116Dbmv?.let { CiscoHfcAmpCalculator.format1(it) },
+                Plano = adj.inputPlanHighDbmv?.let { CiscoHfcAmpCalculator.format1(it) }
+            )
+        )
+        val inputCalculated = listOf(
+            "L 54" to 54,
+            "L102" to 102,
+            "CH3" to 61,
+            "CH50" to 379,
+            "CH70" to 495,
+            "CH116" to 750,
+            "CH136" to 870,
+            "CH158" to 1000
+        ).map { (c, f) ->
+            HtmlAmpRow(
+                Canal = c,
+                Frecuencia = f,
+                Calculado = entradaCalc?.get(c)?.let { CiscoHfcAmpCalculator.format1(it) }
+            )
+        }
+        val outputPlan = listOf(
+            HtmlAmpRow(
+                Canal = "L output",
+                Frecuencia = adj.planLowFreqMHz ?: 54,
+                Plano = adj.planLowDbmv?.let { CiscoHfcAmpCalculator.format1(it) }
+            ),
+            HtmlAmpRow(
+                Canal = "H output",
+                Frecuencia = adj.planHighFreqMHz ?: 750,
+                Plano = adj.planHighDbmv?.let { CiscoHfcAmpCalculator.format1(it) }
+            )
+        )
+        val outputCalculated = listOf(
+            "L54" to 54,
+            "L102" to 102,
+            "CH3" to 61,
+            "CH50" to 379,
+            "CH70" to 495,
+            "CH110" to 711,
+            "CH116" to 750,
+            "CH136" to 870,
+            "CH158" to 1000
+        ).map { (c, f) ->
+            HtmlAmpRow(
+                Canal = c,
+                Frecuencia = f,
+                Calculado = salidaCalc?.get(c)?.let { CiscoHfcAmpCalculator.format1(it) }
+            )
+        }
+        val outputMeasured = listOf(
+            Triple("CH50", 379, adj.outCh50Dbmv),
+            Triple("CH70", 495, adj.outCh70Dbmv),
+            Triple("CH110", 711, adj.outCh110Dbmv),
+            Triple("CH116", 750, adj.outCh116Dbmv),
+            Triple("CH136", 870, adj.outCh136Dbmv),
+        ).map { (c, f, med) ->
+            val calc = salidaCalc?.get(c)
+            val diff = if (calc != null && med != null) med - calc else null
+            HtmlAmpOutputRow(
+                Canal = c,
+                Frecuencia = f,
+                Calculado = calc?.let { CiscoHfcAmpCalculator.format1(it) },
+                Medido = med?.let { CiscoHfcAmpCalculator.format1(it) },
+                DIF = diff?.let { (if (it >= 0) "+" else "") + CiscoHfcAmpCalculator.format1(it) },
+                alert = diff?.let { kotlin.math.abs(it) > 1.2 } == true
+            )
+        }
+        val pads = listOf(
+            HtmlAmpPadRow("FWD IN PAD", pad?.let { CiscoHfcAmpCalculator.format1(it) }),
+            HtmlAmpPadRow("FWD IN EQ (TILT)", tilt?.let { CiscoHfcAmpCalculator.format1(it) }),
+            HtmlAmpPadRow("AGC IN PAD", agc?.let { CiscoHfcAmpCalculator.format1(it) })
+        )
+        return HtmlAmplifierAdjustmentExport(
+            inputMeasured = inputMeasured,
+            inputCalculated = inputCalculated,
+            outputPlan = outputPlan,
+            outputCalculated = outputCalculated,
+            outputMeasured = outputMeasured,
+            pads = pads
+        )
     }
 
     suspend fun exportToBundleZip(report: MaintenanceReport): File = withContext(Dispatchers.IO) {
@@ -1812,4 +3512,167 @@ data class ExportReportImageRef(
     val photoId: String,
     val type: ReportPhotoType,
     val fileName: String
+)
+
+data class HtmlExportData(
+    val report: MaintenanceReport,
+    val info: HtmlInfoCounts,
+    val assets: List<HtmlAssetExport>,
+    val measurements: Map<String, HtmlMeasurementBundle>,
+    val passives: List<HtmlPassiveEntry> = emptyList()
+)
+
+data class HtmlInfoCounts(
+    val tapsSpliteado: Int,
+    val acometidasCortadas: Int,
+    val antirroboColocado: Int,
+    val pasivosNormalizados: Int,
+    val activosAjustados: Int
+)
+
+data class HtmlPassiveEntry(
+    val type: String,
+    val address: String,
+    val observation: String,
+    val createdAt: Long
+)
+
+data class HtmlAssetExport(
+    val id: String,
+    val header: String,
+    val type: String,
+    val frequencyMHz: Int,
+    val amplifierMode: String?,
+    val portLabel: String?,
+    val photos: List<HtmlPhotoExport>,
+    val adjustment: HtmlAdjustmentExport
+)
+
+data class HtmlPhotoExport(
+    val title: String,
+    val fileName: String,
+    val dataUri: String? = null,
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+    val photoType: String
+)
+
+data class HtmlAdjustmentExport(
+    val node: HtmlNodeAdjustmentExport? = null,
+    val amplifier: HtmlAmplifierAdjustmentExport? = null
+)
+
+data class HtmlNodeAdjustmentExport(
+    val planNode: String?,
+    val planContractor: String?,
+    val planTechnology: String?,
+    val planPoDirecta: String?,
+    val planPoRetorno: String?,
+    val planDistanciaSfp: String?,
+    val tx1310Confirmed: Boolean,
+    val tx1550Confirmed: Boolean,
+    val poConfirmed: Boolean,
+    val rxPadSelection: String?,
+    val measurementConfirmed: Boolean,
+    val spectrumConfirmed: Boolean,
+    val nonLegacyConfirmed: Boolean,
+    val sfpDistance: Int?,
+    val poDirectaConfirmed: Boolean,
+    val poRetornoConfirmed: Boolean,
+    val docsisConfirmed: Boolean
+)
+
+data class HtmlAmplifierAdjustmentExport(
+    val inputMeasured: List<HtmlAmpRow>,
+    val inputCalculated: List<HtmlAmpRow>,
+    val outputPlan: List<HtmlAmpRow>,
+    val outputCalculated: List<HtmlAmpRow>,
+    val outputMeasured: List<HtmlAmpOutputRow>,
+    val pads: List<HtmlAmpPadRow>
+)
+
+data class HtmlAmpRow(
+    val Canal: String,
+    val Frecuencia: Int,
+    val Medido: String? = null,
+    val Plano: String? = null,
+    val Calculado: String? = null
+)
+
+data class HtmlAmpOutputRow(
+    val Canal: String,
+    val Frecuencia: Int,
+    val Calculado: String? = null,
+    val Medido: String? = null,
+    val DIF: String? = null,
+    val alert: Boolean = false
+)
+
+data class HtmlAmpPadRow(
+    val Item: String,
+    val Valor: String?
+)
+
+data class HtmlMeasurementBundle(
+    val rx: HtmlMeasurementGroup?,
+    val module: HtmlMeasurementGroup?
+)
+
+data class HtmlMeasurementGroup(
+    val label: String,
+    val geoLocation: GeoPoint? = null,
+    val observationTotal: Int = 0,
+    val observationDetails: List<HtmlObservationDetail> = emptyList(),
+    val entries: List<HtmlMeasurementEntry>
+)
+
+data class HtmlObservationDetail(
+    val assetId: String,
+    val assetHeader: String,
+    val type: String,
+    val file: String,
+    val detail: String
+)
+
+data class HtmlMeasurementEntry(
+    val label: String,
+    val type: String,
+    val isDiscarded: Boolean,
+    val geoLocation: GeoPoint? = null,
+    val switchSelection: String? = null,
+    val docsisRows: List<HtmlDocsisRow>,
+    val pilotRows: List<HtmlPilotRow>,
+    val digitalRows: List<HtmlDigitalRow>,
+    val ofdmPoints: List<HtmlPoint>?
+)
+
+data class HtmlDocsisRow(
+    val UCD: String,
+    val Frecuencia: Double,
+    val Nivel: Double?,
+    val ICFR: Double?,
+    val Ok: Boolean
+)
+
+data class HtmlPilotRow(
+    val Canal: String,
+    val Frecuencia: Double?,
+    val Nivel: Double?,
+    val Ok: Boolean
+)
+
+data class HtmlDigitalRow(
+    val Canal: String,
+    val Frecuencia: Double?,
+    val Nivel: Double?,
+    val MER: Double?,
+    val BERPre: Double?,
+    val BERPost: Double?,
+    val ICFR: Double?,
+    val Ok: Boolean
+)
+
+data class HtmlPoint(
+    val x: Double,
+    val y: Double
 )

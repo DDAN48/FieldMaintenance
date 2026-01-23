@@ -63,6 +63,7 @@ fun AssetSummaryScreen(navController: NavController, reportId: String) {
     val assets by viewModel.assets.collectAsState()
     val report by viewModel.report.collectAsState()
     var showFinalizeDialog by remember { mutableStateOf(false) }
+    var isExporting by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
     val exportManager = remember { ExportManager(context, repository) }
@@ -286,23 +287,42 @@ fun AssetSummaryScreen(navController: NavController, reportId: String) {
     
     if (showFinalizeDialog && report != null) {
         FinalizeReportDialog(
-            onDismiss = { showFinalizeDialog = false },
+            onDismiss = {
+                if (!isExporting) {
+                    showFinalizeDialog = false
+                }
+            },
             onSendEmailPackage = {
                 scope.launch {
-                    val bundleFile = exportManager.exportToBundleZip(report!!)
-                    EmailManager.sendEmail(context, report!!.eventName, listOf(bundleFile))
+                    if (isExporting) return@launch
+                    isExporting = true
+                    try {
+                        val bundleFile = exportManager.exportToBundleZip(report!!)
+                        EmailManager.sendEmail(context, report!!.eventName, listOf(bundleFile))
+                    } finally {
+                        isExporting = false
+                        showFinalizeDialog = false
+                    }
                 }
             },
             onExportPackage = {
                 scope.launch {
-                    exportManager.exportBundleToDownloads(report!!)
-                    snackbarHostState.showSnackbar("ZIP guardado en Descargas/FieldMaintenance")
+                    if (isExporting) return@launch
+                    isExporting = true
+                    try {
+                        exportManager.exportBundleToDownloads(report!!)
+                        snackbarHostState.showSnackbar("ZIP guardado en Descargas/FieldMaintenance")
+                    } finally {
+                        isExporting = false
+                        showFinalizeDialog = false
+                    }
                 }
             },
             onGoHome = {
                 navController.navigate(Screen.Home.route) { popUpTo(0) }
             },
-            showMissingWarning = hasMissingAssets
+            showMissingWarning = hasMissingAssets,
+            isProcessing = isExporting
         )
     }
     
@@ -409,7 +429,8 @@ fun FinalizeReportDialog(
     onSendEmailPackage: () -> Unit,
     onExportPackage: () -> Unit,
     onGoHome: () -> Unit,
-    showMissingWarning: Boolean
+    showMissingWarning: Boolean,
+    isProcessing: Boolean
 ) {
 
     AlertDialog(
@@ -421,30 +442,30 @@ fun FinalizeReportDialog(
             ) {
                 TextButton(
                     onClick = {
-                        if (!showMissingWarning) {
+                        if (!showMissingWarning && !isProcessing) {
                             onExportPackage()
-                            onDismiss()
                         }
                     },
-                    enabled = !showMissingWarning
+                    enabled = !showMissingWarning && !isProcessing
                 ) {
                     Text("📦 Exportar reporte (ZIP)")
                 }
                 TextButton(
                     onClick = {
-                        if (!showMissingWarning) {
+                        if (!showMissingWarning && !isProcessing) {
                             onSendEmailPackage()
-                            onDismiss()
                         }
                     },
-                    enabled = !showMissingWarning
+                    enabled = !showMissingWarning && !isProcessing
                 ) {
                     Text("✉️ Enviar reporte (ZIP)")
                 }
                 TextButton(onClick = {
-                    onGoHome()
-                    onDismiss()
-                }) {
+                    if (!isProcessing) {
+                        onGoHome()
+                        onDismiss()
+                    }
+                }, enabled = !isProcessing) {
                     Text("🏠 Volver al inicio")
                 }
 
@@ -456,10 +477,25 @@ fun FinalizeReportDialog(
                         color = Color(0xFFDE3C2A)
                     )
                 }
+                if (isProcessing) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp
+                        )
+                        Text(
+                            "Generando exportación...",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(onClick = onDismiss, enabled = !isProcessing) {
                 Text("Cancelar")
             }
         }
