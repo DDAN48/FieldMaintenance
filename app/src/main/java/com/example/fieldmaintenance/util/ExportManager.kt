@@ -2267,12 +2267,14 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     const max = Math.max(...levels);
                     const span = max - min || 1;
                     const barWidth = options.barWidth || (width - padding * 2) / normalizedPoints.length;
+                    const xMin = options.xMin ?? 0;
+                    const xMax = options.xMax ?? 1000;
+                    const yTicks = 4;
                     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
                     svg.setAttribute('width', width);
                     svg.setAttribute('height', height);
-                    const gridSteps = 4;
-                    for (let i = 0; i <= gridSteps; i += 1) {
-                      const y = padding + (height - padding * 2) * (i / gridSteps);
+                    for (let i = 0; i <= yTicks; i += 1) {
+                      const y = padding + (height - padding * 2) * (i / yTicks);
                       const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
                       line.setAttribute('x1', padding);
                       line.setAttribute('x2', width - padding);
@@ -2281,16 +2283,27 @@ val assets = repository.getAssetsByReportId(report.id).first()
                       line.setAttribute('stroke', 'var(--chart-grid)');
                       line.setAttribute('stroke-width', '1');
                       svg.appendChild(line);
+                      const value = (max - (span * i) / yTicks).toFixed(1);
+                      const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                      label.setAttribute('x', padding - 6);
+                      label.setAttribute('y', y + 4);
+                      label.setAttribute('text-anchor', 'end');
+                      label.setAttribute('fill', 'var(--muted)');
+                      label.setAttribute('font-size', '10');
+                      label.textContent = value;
+                      svg.appendChild(label);
                     }
                     normalizedPoints.forEach((point, index) => {
                       const level = point.levelDbmv ?? 0;
-                      const x = padding + index * barWidth + barWidth * 0.1;
+                      const freq = Number(point.frequencyMHz);
+                      const ratio = (freq - xMin) / (xMax - xMin);
+                      const x = padding + ratio * (width - padding * 2) - barWidth / 2;
                       const barHeight = ((level - min) / span) * (height - padding * 2);
                       const y = height - padding - barHeight;
                       const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
                       rect.setAttribute('x', x);
                       rect.setAttribute('y', y);
-                      rect.setAttribute('width', barWidth * 0.8);
+                      rect.setAttribute('width', barWidth);
                       rect.setAttribute('height', barHeight);
                       rect.setAttribute('rx', 4);
                       rect.setAttribute('fill', point.ok === false ? '#ef6b6b' : '#2b76ff');
@@ -2309,16 +2322,20 @@ val assets = repository.getAssetsByReportId(report.id).first()
                         tooltip.style.opacity = '0';
                       });
                       svg.appendChild(rect);
-                      if (index % Math.ceil(normalizedPoints.length / 6) === 0) {
-                        const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-                        label.setAttribute('x', x + barWidth * 0.4);
-                        label.setAttribute('y', height - 8);
-                        label.setAttribute('text-anchor', 'middle');
-                        label.setAttribute('fill', 'var(--muted)');
-                        label.setAttribute('font-size', '10');
-                        label.textContent = point.frequencyMHz ?? '';
-                        svg.appendChild(label);
-                      }
+                    });
+                    const xTicks = [0, 200, 400, 600, 800, 1000];
+                    xTicks.forEach((tick) => {
+                      if (tick < xMin || tick > xMax) return;
+                      const ratio = (tick - xMin) / (xMax - xMin);
+                      const x = padding + ratio * (width - padding * 2);
+                      const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                      label.setAttribute('x', x);
+                      label.setAttribute('y', height - 8);
+                      label.setAttribute('text-anchor', 'middle');
+                      label.setAttribute('fill', 'var(--muted)');
+                      label.setAttribute('font-size', '10');
+                      label.textContent = tick.toString();
+                      svg.appendChild(label);
                     });
                     if (options.title) {
                       const title = document.createElementNS('http://www.w3.org/2000/svg', 'text');
@@ -2377,7 +2394,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                         frequencyMHz: row.Frecuencia,
                         levelDbmv: row.Nivel,
                         ok: row.Ok
-                      })), { title: 'Upstream Channels Chart' });
+                      })), { title: 'Upstream Channels Chart', xMin: 0, xMax: 1000 });
                       entryEl.appendChild(chart);
                       entryEl.appendChild(measurementName);
                       if (measurementGeo.textContent) entryEl.appendChild(measurementGeo);
@@ -2390,7 +2407,12 @@ val assets = repository.getAssetsByReportId(report.id).first()
                         levelDbmv: row.Nivel,
                         ok: row.Ok
                       }));
-                      drawBarChart(chart, points, { title: 'Downstream Channels Chart', barWidth: 3 });
+                      drawBarChart(chart, points, {
+                        title: 'Downstream Channels Chart',
+                        barWidth: 3,
+                        xMin: 0,
+                        xMax: 1000
+                      });
                       entryEl.appendChild(chart);
                       entryEl.appendChild(measurementName);
                       if (measurementGeo.textContent) entryEl.appendChild(measurementGeo);
