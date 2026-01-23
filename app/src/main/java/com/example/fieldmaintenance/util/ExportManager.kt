@@ -1493,6 +1493,12 @@ val assets = repository.getAssetsByReportId(report.id).first()
         fun countOf(t: PassiveType) = passiveCounts[t] ?: 0
         val photosById = photosByAsset.values.flatten().associateBy { it.id }
 
+        val exportDate = Date()
+        val exportDateLabel = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(exportDate)
+        val logoDataUri = drawableToPngBytes(R.drawable.telecentro_logo, targetW = 140, targetH = 70)?.let { bytes ->
+            val encoded = Base64.encodeToString(bytes, Base64.NO_WRAP)
+            "data:image/png;base64,$encoded"
+        }
         val htmlData = HtmlExportData(
             report = report,
             info = HtmlInfoCounts(
@@ -1570,7 +1576,15 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     )
                 )
             },
-            measurements = measurements
+            measurements = measurements,
+            passives = passives.map { passive ->
+                HtmlPassiveEntry(
+                    type = passive.type.label,
+                    address = passive.address,
+                    observation = passive.observation,
+                    createdAt = passive.createdAt
+                )
+            }
         )
         val json = gson.toJson(htmlData)
         val html = """
@@ -1670,6 +1684,24 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     align-items: center;
                     gap: 12px;
                     flex-wrap: wrap;
+                  }
+                  .header-bar {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    gap: 16px;
+                    flex-wrap: wrap;
+                  }
+                  .header-meta {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 4px;
+                    font-size: 12px;
+                    color: var(--muted);
+                  }
+                  .header-logo {
+                    height: 48px;
+                    object-fit: contain;
                   }
                   .theme-toggle {
                     margin-left: auto;
@@ -1924,12 +1956,18 @@ val assets = repository.getAssetsByReportId(report.id).first()
               <body>
                 <div class="container">
                   <div class="card">
-                    <div class="asset-toolbar">
-                      <div class="section-title">Informe de mantenimiento</div>
-                      <div class="theme-toggle">
-                        <span>Tema</span>
-                        <button type="button" id="theme-dark">Oscuro</button>
-                        <button type="button" id="theme-light">Claro</button>
+                    <div class="header-bar">
+                      <div class="asset-toolbar">
+                        ${'$'}{if (logoDataUri != null) "<img class=\"header-logo\" src=\"$logoDataUri\" alt=\"Telecentro\" />" else ""}
+                        <div class="section-title">Informe de mantenimiento</div>
+                      </div>
+                      <div class="header-meta">
+                        <div>Exportado: $exportDateLabel</div>
+                        <div class="theme-toggle">
+                          <span>Tema</span>
+                          <button type="button" id="theme-dark">Oscuro</button>
+                          <button type="button" id="theme-light">Claro</button>
+                        </div>
                       </div>
                     </div>
                     <div class="info-grid" id="header-info"></div>
@@ -1957,6 +1995,13 @@ val assets = repository.getAssetsByReportId(report.id).first()
                       <aside class="adjustment-panel" id="adjustment-panel"></aside>
                     </div>
                   </div>
+                  <div class="card">
+                    <div class="section-title">Detalle de intervención de pasivos</div>
+                    <details class="collapse" open>
+                      <summary>Ver detalle</summary>
+                      <div id="passive-section"></div>
+                    </details>
+                  </div>
                 </div>
                 <script id="report-data" type="application/json">
                 $json
@@ -1971,6 +2016,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                   const photoNext = document.getElementById('photo-next');
                   const adjustmentPanel = document.getElementById('adjustment-panel');
                   const measurementSection = document.getElementById('measurement-section');
+                  const passiveSection = document.getElementById('passive-section');
                   const themeDark = document.getElementById('theme-dark');
                   const themeLight = document.getElementById('theme-light');
                   let currentPhotos = [];
@@ -2014,6 +2060,41 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     createInfoItem('Pasivos normalizado o reparado', data.info.pasivosNormalizados),
                     createInfoItem('Activos ajustados', data.info.activosAjustados)
                   );
+
+                  if (passiveSection) {
+                    if (!data.passives || !data.passives.length) {
+                      passiveSection.innerHTML = `<div class="muted">Sin pasivos cargados.</div>`;
+                    } else {
+                      const table = document.createElement('table');
+                      table.className = 'table';
+                      table.innerHTML = `
+                        <thead>
+                          <tr>
+                            <th>Tipo</th>
+                            <th>Dirección</th>
+                            <th>Observación</th>
+                            <th>Fecha</th>
+                          </tr>
+                        </thead>
+                        <tbody></tbody>
+                      `;
+                      const body = table.querySelector('tbody');
+                      data.passives.forEach((item) => {
+                        const tr = document.createElement('tr');
+                        const date = item.createdAt
+                          ? new Date(item.createdAt).toLocaleString()
+                          : '—';
+                        tr.innerHTML = `
+                          <td>${'$'}{item.type || '—'}</td>
+                          <td>${'$'}{item.address || '—'}</td>
+                          <td>${'$'}{item.observation || '—'}</td>
+                          <td>${'$'}{date}</td>
+                        `;
+                        body.appendChild(tr);
+                      });
+                      passiveSection.appendChild(table);
+                    }
+                  }
 
                   data.assets.forEach((asset, index) => {
                     const option = document.createElement('option');
@@ -3025,7 +3106,8 @@ data class HtmlExportData(
     val report: MaintenanceReport,
     val info: HtmlInfoCounts,
     val assets: List<HtmlAssetExport>,
-    val measurements: Map<String, HtmlMeasurementBundle>
+    val measurements: Map<String, HtmlMeasurementBundle>,
+    val passives: List<HtmlPassiveEntry> = emptyList()
 )
 
 data class HtmlInfoCounts(
@@ -3034,6 +3116,13 @@ data class HtmlInfoCounts(
     val antirroboColocado: Int,
     val pasivosNormalizados: Int,
     val activosAjustados: Int
+)
+
+data class HtmlPassiveEntry(
+    val type: String,
+    val address: String,
+    val observation: String,
+    val createdAt: Long
 )
 
 data class HtmlAssetExport(
