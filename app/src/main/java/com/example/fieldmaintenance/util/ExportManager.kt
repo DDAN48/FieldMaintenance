@@ -1487,7 +1487,8 @@ val assets = repository.getAssetsByReportId(report.id).first()
         nodeAdjustmentsByAsset: Map<String, NodeAdjustment>
     ): File {
         val measurementRoot = File(exportDir, "measurements")
-        val measurements = buildHtmlMeasurementMap(report, assets, measurementRoot)
+        val switchSelections = collectSwitchSelections(assets)
+        val measurements = buildHtmlMeasurementMap(report, assets, measurementRoot, switchSelections)
         val passiveCounts = passives.groupingBy { it.type }.eachCount()
 
         fun countOf(t: PassiveType) = passiveCounts[t] ?: 0
@@ -1779,6 +1780,8 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     height: auto;
                     border-radius: 12px;
                     display: block;
+                    transition: transform 0.2s ease;
+                    transform-origin: center;
                   }
                   .photo-title {
                     position: absolute;
@@ -1808,6 +1811,23 @@ val assets = repository.getAssetsByReportId(report.id).first()
                   }
                   .photo-nav.prev { left: 8px; }
                   .photo-nav.next { right: 8px; }
+                  .photo-zoom-controls {
+                    position: absolute;
+                    top: 12px;
+                    right: 12px;
+                    display: flex;
+                    gap: 6px;
+                    z-index: 2;
+                  }
+                  .photo-zoom-controls button {
+                    background: rgba(0,0,0,0.55);
+                    border: 1px solid var(--border);
+                    color: var(--text);
+                    padding: 6px 8px;
+                    border-radius: 8px;
+                    cursor: pointer;
+                    font-size: 12px;
+                  }
                   .adjustment-panel {
                     background: var(--panel);
                     border-radius: 16px;
@@ -1874,15 +1894,56 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     align-items: start;
                   }
                   .summary-map {
-                    height: 260px;
+                    height: 320px;
                     border-radius: 12px;
                     border: 1px solid var(--border);
                     overflow: hidden;
+                  }
+                  .summary-map-wrapper {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 8px;
+                  }
+                  .map-search {
+                    display: flex;
+                    gap: 8px;
+                  }
+                  .map-search input {
+                    flex: 1;
+                    background: var(--panel-2);
+                    color: var(--text);
+                    border: 1px solid var(--border);
+                    padding: 8px 12px;
+                    border-radius: 8px;
+                  }
+                  .map-search button {
+                    background: var(--accent);
+                    color: #101520;
+                    border: none;
+                    padding: 8px 12px;
+                    border-radius: 8px;
+                    cursor: pointer;
+                    font-weight: 600;
+                  }
+                  .copy-coords {
+                    background: var(--panel-2);
+                    color: var(--text);
+                    border: 1px solid var(--border);
+                    padding: 4px 8px;
+                    border-radius: 6px;
+                    cursor: pointer;
+                    font-size: 11px;
                   }
                   .summary-observations {
                     margin-top: 12px;
                   }
                   .measurement-header {
+                    display: flex;
+                    flex-direction: column;
+                    align-items: stretch;
+                    gap: 8px;
+                  }
+                  .measurement-header-top {
                     display: flex;
                     align-items: center;
                     justify-content: space-between;
@@ -1941,6 +2002,33 @@ val assets = repository.getAssetsByReportId(report.id).first()
                   .measurement-group-geo {
                     color: var(--muted);
                     font-size: 12px;
+                    margin-left: 4px;
+                  }
+                  .measurement-name-row {
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    justify-content: center;
+                    flex-wrap: wrap;
+                  }
+                  .switch-pill {
+                    background: var(--accent);
+                    color: #101520;
+                    font-weight: 700;
+                    border-radius: 999px;
+                    padding: 2px 8px;
+                    font-size: 11px;
+                  }
+                  .observation-panel {
+                    margin-top: 8px;
+                    border: 1px solid var(--border);
+                    border-radius: 12px;
+                    padding: 10px 12px;
+                    background: rgba(0,0,0,0.2);
+                  }
+                  .observation-panel strong {
+                    display: block;
+                    margin-bottom: 6px;
                   }
                   .collapse {
                     border: 1px solid var(--border);
@@ -1993,6 +2081,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     transition: opacity 0.1s ease;
                     transform: translate(-50%, -100%);
                     white-space: nowrap;
+                    z-index: 2;
                   }
                   .muted {
                     color: var(--muted);
@@ -2040,7 +2129,13 @@ val assets = repository.getAssetsByReportId(report.id).first()
                           </details>
                         </div>
                       </div>
-                      <div class="summary-map" id="summary-map"></div>
+                      <div class="summary-map-wrapper">
+                        <div class="map-search">
+                          <input type="text" id="map-search-input" placeholder="Buscar dirección" />
+                          <button type="button" id="map-search-button">Buscar</button>
+                        </div>
+                        <div class="summary-map" id="summary-map"></div>
+                      </div>
                     </div>
                   </div>
                   <div class="card">
@@ -2053,6 +2148,11 @@ val assets = repository.getAssetsByReportId(report.id).first()
                         <div class="photo-frame">
                           <button class="photo-nav prev" id="photo-prev">‹</button>
                           <button class="photo-nav next" id="photo-next">›</button>
+                          <div class="photo-zoom-controls">
+                            <button type="button" id="photo-zoom-in">+</button>
+                            <button type="button" id="photo-zoom-out">−</button>
+                            <button type="button" id="photo-zoom-reset">Reset</button>
+                          </div>
                           <img id="photo-image" alt="Foto del activo" />
                           <div class="photo-title" id="photo-title"></div>
                         </div>
@@ -2089,8 +2189,14 @@ val assets = repository.getAssetsByReportId(report.id).first()
                   const measurementSection = document.getElementById('measurement-section');
                   const passiveSection = document.getElementById('passive-section');
                   const themeToggle = document.getElementById('theme-toggle');
+                  const mapSearchInput = document.getElementById('map-search-input');
+                  const mapSearchButton = document.getElementById('map-search-button');
+                  const photoZoomIn = document.getElementById('photo-zoom-in');
+                  const photoZoomOut = document.getElementById('photo-zoom-out');
+                  const photoZoomReset = document.getElementById('photo-zoom-reset');
                   let currentPhotos = [];
                   let currentPhotoIndex = 0;
+                  let currentPhotoScale = 1;
 
                   function applyTheme(theme) {
                     document.documentElement.setAttribute('data-theme', theme);
@@ -2185,18 +2291,69 @@ val assets = repository.getAssetsByReportId(report.id).first()
 
                   const mapPoints = buildMapPoints();
                   const mapEl = document.getElementById('summary-map');
+                  let mapInstance = null;
+                  let mapSearchMarker = null;
                   if (mapEl && mapPoints.length && window.L) {
                     const avgLat = mapPoints.reduce((sum, p) => sum + p.geo.latitude, 0) / mapPoints.length;
                     const avgLng = mapPoints.reduce((sum, p) => sum + p.geo.longitude, 0) / mapPoints.length;
-                    const map = L.map(mapEl).setView([avgLat, avgLng], 13);
+                    mapInstance = L.map(mapEl).setView([avgLat, avgLng], 13);
                     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                       maxZoom: 18,
                       attribution: '&copy; OpenStreetMap'
-                    }).addTo(map);
+                    }).addTo(mapInstance);
                     mapPoints.forEach((point) => {
-                      const marker = L.marker([point.geo.latitude, point.geo.longitude]).addTo(map);
+                      const marker = L.marker([point.geo.latitude, point.geo.longitude]).addTo(mapInstance);
                       const obsLabel = point.observations ? ` - ${'$'}{point.observations} obs.` : '';
-                      marker.bindPopup(`<strong>${'$'}{point.label}</strong>${'$'}{obsLabel}`);
+                      const coords = `${'$'}{point.geo.latitude.toFixed(5)}, ${'$'}{point.geo.longitude.toFixed(5)}`;
+                      marker.bindPopup(`
+                        <div>
+                          <strong>${'$'}{point.label}</strong>${'$'}{obsLabel}<br/>
+                          <span class="muted">${'$'}{coords}</span>
+                          <div style="margin-top:6px;">
+                            <button type="button" class="copy-coords" data-coords="${'$'}{coords}">Copiar coordenadas</button>
+                          </div>
+                        </div>
+                      `);
+                    });
+                    mapInstance.on('popupopen', (event) => {
+                      const button = event.popup.getElement()?.querySelector('.copy-coords');
+                      if (button) {
+                        button.addEventListener('click', () => {
+                          const coords = button.getAttribute('data-coords') || '';
+                          navigator.clipboard?.writeText(coords);
+                        });
+                      }
+                    });
+                  }
+
+                  async function searchAddress(query) {
+                    if (!query || !mapInstance) return;
+                    const url = `https://nominatim.openstreetmap.org/search?format=json&q=${'$'}{encodeURIComponent(query)}`;
+                    const response = await fetch(url);
+                    const results = await response.json();
+                    if (!results.length) return;
+                    const result = results[0];
+                    const lat = Number(result.lat);
+                    const lon = Number(result.lon);
+                    mapInstance.setView([lat, lon], 15);
+                    if (mapSearchMarker) {
+                      mapInstance.removeLayer(mapSearchMarker);
+                    }
+                    mapSearchMarker = L.marker([lat, lon]).addTo(mapInstance);
+                    mapSearchMarker.bindPopup(`<strong>${'$'}{result.display_name}</strong>`).openPopup();
+                  }
+
+                  if (mapSearchButton) {
+                    mapSearchButton.addEventListener('click', () => {
+                      searchAddress(mapSearchInput?.value || '');
+                    });
+                  }
+                  if (mapSearchInput) {
+                    mapSearchInput.addEventListener('keydown', (event) => {
+                      if (event.key === 'Enter') {
+                        event.preventDefault();
+                        searchAddress(mapSearchInput.value || '');
+                      }
                     });
                   }
 
@@ -2251,6 +2408,8 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     }
                     const photo = currentPhotos[currentPhotoIndex];
                     photoImage.src = photo.dataUri || photo.fileName;
+                    currentPhotoScale = 1;
+                    photoImage.style.transform = `scale(${currentPhotoScale})`;
                     const coords = photo.latitude != null && photo.longitude != null
                       ? `${'$'}{photo.latitude.toFixed(5)}, ${'$'}{photo.longitude.toFixed(5)}`
                       : null;
@@ -2267,6 +2426,24 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     currentPhotoIndex = (currentPhotoIndex + 1) % currentPhotos.length;
                     updatePhoto();
                   });
+
+                  function applyPhotoZoom(delta) {
+                    currentPhotoScale = Math.min(3, Math.max(1, currentPhotoScale + delta));
+                    photoImage.style.transform = `scale(${currentPhotoScale})`;
+                  }
+
+                  if (photoZoomIn) {
+                    photoZoomIn.addEventListener('click', () => applyPhotoZoom(0.2));
+                  }
+                  if (photoZoomOut) {
+                    photoZoomOut.addEventListener('click', () => applyPhotoZoom(-0.2));
+                  }
+                  if (photoZoomReset) {
+                    photoZoomReset.addEventListener('click', () => {
+                      currentPhotoScale = 1;
+                      photoImage.style.transform = `scale(${currentPhotoScale})`;
+                    });
+                  }
 
                   function badge(value) {
                     const span = document.createElement('span');
@@ -2404,12 +2581,13 @@ val assets = repository.getAssetsByReportId(report.id).first()
                       container.classList.add('muted');
                       return;
                     }
+                    container.innerHTML = '';
+                    container.classList.remove('muted');
                     const tooltip = document.createElement('div');
                     tooltip.className = 'chart-tooltip';
-                    container.appendChild(tooltip);
                     const width = container.clientWidth || 600;
                     const height = 200;
-                    const padding = 36;
+                    const padding = 44;
                     const levels = normalizedPoints.map((p) => p.levelDbmv).filter((v) => v != null);
                     if (!levels.length) {
                       container.textContent = 'Sin datos para graficar.';
@@ -2438,7 +2616,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                       svg.appendChild(line);
                       const value = (max - (span * i) / yTicks).toFixed(1);
                       const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-                      label.setAttribute('x', padding - 6);
+                      label.setAttribute('x', padding - 10);
                       label.setAttribute('y', y + 4);
                       label.setAttribute('text-anchor', 'end');
                       label.setAttribute('fill', 'var(--muted)');
@@ -2511,15 +2689,15 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     axis.textContent = 'MHz';
                     svg.appendChild(axis);
                     const axisY = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-                    axisY.setAttribute('x', 10);
+                    axisY.setAttribute('x', 16);
                     axisY.setAttribute('y', height / 2);
                     axisY.setAttribute('text-anchor', 'middle');
                     axisY.setAttribute('fill', 'var(--muted)');
                     axisY.setAttribute('font-size', '10');
-                    axisY.setAttribute('transform', `rotate(-90 12 ${'$'}{height / 2})`);
+                    axisY.setAttribute('transform', `rotate(-90 16 ${'$'}{height / 2})`);
                     axisY.textContent = 'dBmV';
                     svg.appendChild(axisY);
-                    container.innerHTML = '';
+                    container.appendChild(tooltip);
                     container.appendChild(svg);
                   }
 
@@ -2569,7 +2747,16 @@ val assets = repository.getAssetsByReportId(report.id).first()
                         xMax: 1000
                       });
                       entryEl.appendChild(chart);
-                      entryEl.appendChild(measurementName);
+                      const nameRow = document.createElement('div');
+                      nameRow.className = 'measurement-name-row';
+                      if (entry.switchSelection) {
+                        const pill = document.createElement('span');
+                        pill.className = 'switch-pill';
+                        pill.textContent = entry.switchSelection;
+                        nameRow.appendChild(pill);
+                      }
+                      nameRow.appendChild(measurementName);
+                      entryEl.appendChild(nameRow);
                       if (measurementGeo.textContent) entryEl.appendChild(measurementGeo);
                       entryEl.appendChild(buildCollapsible('Downstream Analogic Channels', buildTable(entry.pilotRows)));
                       entryEl.appendChild(buildCollapsible('Downstream Digital Channels', buildTable(entry.digitalRows)));
@@ -2645,6 +2832,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
 
                   function renderMeasurements(assetId) {
                     measurementSection.innerHTML = '';
+                    const asset = data.assets.find((a) => a.id === assetId);
                     const bundle = data.measurements[assetId];
                     if (!bundle || (!bundle.rx?.entries.length && !bundle.module?.entries.length)) {
                       const empty = document.createElement('div');
@@ -2659,19 +2847,22 @@ val assets = repository.getAssetsByReportId(report.id).first()
                       groupEl.className = 'measurement-group';
                       const header = document.createElement('div');
                       header.className = 'measurement-header';
+                      const headerTop = document.createElement('div');
+                      headerTop.className = 'measurement-header-top';
                       const title = document.createElement('div');
                       title.className = 'section-title';
                       title.textContent = `Carga de Mediciones - ${'$'}{group.label}`;
-                      header.appendChild(title);
+                      headerTop.appendChild(title);
+                      const tabs = document.createElement('div');
+                      tabs.className = 'measurement-tabs';
+                      headerTop.appendChild(tabs);
+                      header.appendChild(headerTop);
                       if (group.geoLocation) {
                         const geo = document.createElement('div');
                         geo.className = 'measurement-group-geo';
                         geo.textContent = `${'$'}{group.geoLocation.latitude.toFixed(5)}, ${'$'}{group.geoLocation.longitude.toFixed(5)}`;
                         header.appendChild(geo);
                       }
-                      const tabs = document.createElement('div');
-                      tabs.className = 'measurement-tabs';
-                      header.appendChild(tabs);
                       groupEl.appendChild(header);
 
                       const entryEls = group.entries.map((entry, index) => {
@@ -2694,6 +2885,21 @@ val assets = repository.getAssetsByReportId(report.id).first()
                         entryEls[0].classList.add('active');
                         const firstTab = tabs.querySelector('.measurement-tab');
                         if (firstTab) firstTab.classList.add('active');
+                      }
+                      if (group.observationDetails && group.observationDetails.length) {
+                        const panel = document.createElement('div');
+                        panel.className = 'observation-panel';
+                        const title = document.createElement('strong');
+                        title.textContent = `Observaciones en Mediciones - ${'$'}{asset?.header || ''}`;
+                        panel.appendChild(title);
+                        const list = document.createElement('ul');
+                        group.observationDetails.forEach((detail) => {
+                          const li = document.createElement('li');
+                          li.innerHTML = `<strong>${'$'}{detail.assetHeader}</strong> - ${'$'}{detail.detail}`;
+                          list.appendChild(li);
+                        });
+                        panel.appendChild(list);
+                        groupEl.appendChild(panel);
                       }
                       measurementSection.appendChild(groupEl);
                     });
@@ -2738,17 +2944,30 @@ val assets = repository.getAssetsByReportId(report.id).first()
     private suspend fun buildHtmlMeasurementMap(
         report: MaintenanceReport,
         assets: List<Asset>,
-        measurementRoot: File
+        measurementRoot: File,
+        switchSelections: Map<String, Map<String, String>>
     ): Map<String, HtmlMeasurementBundle> {
         val result = mutableMapOf<String, HtmlMeasurementBundle>()
         for (asset in assets) {
             val rxDir = File(measurementRoot, MaintenanceStorage.assetFolderName(asset))
             val rxLabel = if (asset.type == AssetType.AMPLIFIER) "Módulo" else "RX"
-            val rxBundle = buildMeasurementGroup(rxLabel, asset, assetHeaderLine(report, asset), rxDir)
+            val rxBundle = buildMeasurementGroup(
+                rxLabel,
+                asset,
+                assetHeaderLine(report, asset),
+                rxDir,
+                switchSelections[asset.id].orEmpty()
+            )
             val moduleBundle = if (asset.type == AssetType.NODE) {
                 val moduleAsset = asset.copy(type = AssetType.AMPLIFIER)
                 val moduleDir = File(measurementRoot, MaintenanceStorage.assetFolderName(moduleAsset))
-                buildMeasurementGroup("Módulo", moduleAsset, assetHeaderLine(report, asset), moduleDir)
+                buildMeasurementGroup(
+                    "Módulo",
+                    moduleAsset,
+                    assetHeaderLine(report, asset),
+                    moduleDir,
+                    switchSelections[moduleAsset.id].orEmpty()
+                )
             } else {
                 null
             }
@@ -2761,7 +2980,8 @@ val assets = repository.getAssetsByReportId(report.id).first()
         label: String,
         asset: Asset,
         assetHeader: String,
-        dir: File
+        dir: File,
+        switchSelections: Map<String, String>
     ): HtmlMeasurementGroup? {
         val files = dir.listFiles()?.filter { it.isFile } ?: emptyList()
         if (files.isEmpty()) return null
@@ -2778,7 +2998,9 @@ val assets = repository.getAssetsByReportId(report.id).first()
         )
         val entries = summary.result.measurementEntries
             .filter { it.type == "docsisexpert" || it.type == "channelexpert" }
-            .map { entry -> entry.toHtmlMeasurementEntry() }
+            .map { entry ->
+                entry.toHtmlMeasurementEntry(switchSelections[entry.label])
+            }
         if (entries.isEmpty()) return null
         return HtmlMeasurementGroup(
             label = label,
@@ -2797,7 +3019,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
         )
     }
 
-    private fun MeasurementEntry.toHtmlMeasurementEntry(): HtmlMeasurementEntry {
+    private fun MeasurementEntry.toHtmlMeasurementEntry(switchSelection: String?): HtmlMeasurementEntry {
         val docsisRows = docsisLevels.keys.sorted().map { freq ->
             val meta = docsisMeta[freq]
             HtmlDocsisRow(
@@ -2834,6 +3056,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
             type = type,
             isDiscarded = isDiscarded,
             geoLocation = geoLocation,
+            switchSelection = switchSelection,
             docsisRows = docsisRows,
             pilotRows = pilotRows,
             digitalRows = digitalRows,
@@ -3416,6 +3639,7 @@ data class HtmlMeasurementEntry(
     val type: String,
     val isDiscarded: Boolean,
     val geoLocation: GeoPoint? = null,
+    val switchSelection: String? = null,
     val docsisRows: List<HtmlDocsisRow>,
     val pilotRows: List<HtmlPilotRow>,
     val digitalRows: List<HtmlDigitalRow>,
