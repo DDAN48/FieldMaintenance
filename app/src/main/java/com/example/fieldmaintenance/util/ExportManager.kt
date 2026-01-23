@@ -1487,7 +1487,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
         nodeAdjustmentsByAsset: Map<String, NodeAdjustment>
     ): File {
         val measurementRoot = File(exportDir, "measurements")
-        val measurements = buildHtmlMeasurementMap(assets, measurementRoot)
+        val measurements = buildHtmlMeasurementMap(report, assets, measurementRoot)
         val passiveCounts = passives.groupingBy { it.type }.eachCount()
 
         fun countOf(t: PassiveType) = passiveCounts[t] ?: 0
@@ -1595,6 +1595,12 @@ val assets = repository.getAssetsByReportId(report.id).first()
                 <meta charset="utf-8" />
                 <meta name="viewport" content="width=device-width, initial-scale=1" />
                 <title>Informe de Mantenimiento</title>
+                <link
+                  rel="stylesheet"
+                  href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+                  integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+                  crossorigin=""
+                />
                 <style>
                   :root {
                     color-scheme: dark;
@@ -1651,11 +1657,9 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     font-size: 20px;
                     font-weight: 700;
                     padding: 16px;
-                    background: rgba(255,255,255,0.06);
+                    background: #40bdeb;
+                    color: #0b2233;
                     border-radius: 12px;
-                  }
-                  [data-theme="light"] .title {
-                    background: rgba(0,0,0,0.04);
                   }
                   .info-grid {
                     display: grid;
@@ -1687,11 +1691,16 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     flex-wrap: wrap;
                   }
                   .header-bar {
-                    display: flex;
+                    display: grid;
+                    grid-template-columns: auto 1fr auto;
                     align-items: center;
-                    justify-content: space-between;
                     gap: 16px;
                     flex-wrap: wrap;
+                    padding-bottom: 12px;
+                  }
+                  .header-title {
+                    text-align: center;
+                    font-weight: 700;
                   }
                   .header-meta {
                     display: flex;
@@ -1699,33 +1708,51 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     gap: 4px;
                     font-size: 12px;
                     color: var(--muted);
+                    align-items: flex-end;
                   }
                   .header-logo {
                     height: 48px;
                     object-fit: contain;
+                    margin-bottom: 8px;
                   }
                   .theme-toggle {
-                    margin-left: auto;
                     display: inline-flex;
                     align-items: center;
-                    gap: 8px;
-                    font-size: 12px;
-                    color: var(--muted);
-                  }
-                  .theme-toggle button {
-                    border: 1px solid var(--border);
+                    gap: 6px;
                     background: var(--panel-2);
-                    color: var(--text);
+                    border: 1px solid var(--border);
                     border-radius: 999px;
-                    padding: 6px 12px;
-                    cursor: pointer;
-                    font-size: 12px;
+                    padding: 4px 8px;
                   }
-                  .theme-toggle button.active {
+                  .theme-toggle input {
+                    appearance: none;
+                    width: 40px;
+                    height: 22px;
+                    background: var(--border);
+                    border-radius: 999px;
+                    position: relative;
+                    cursor: pointer;
+                    outline: none;
+                  }
+                  .theme-toggle input::after {
+                    content: "";
+                    position: absolute;
+                    top: 2px;
+                    left: 2px;
+                    width: 18px;
+                    height: 18px;
+                    border-radius: 50%;
+                    background: var(--text);
+                    transition: transform 0.2s ease;
+                  }
+                  .theme-toggle input:checked {
                     background: var(--accent);
-                    color: #101520;
-                    border-color: transparent;
-                    font-weight: 600;
+                  }
+                  .theme-toggle input:checked::after {
+                    transform: translateX(18px);
+                  }
+                  .theme-icon {
+                    font-size: 14px;
                   }
                   select {
                     background: var(--panel-2);
@@ -1754,10 +1781,18 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     display: block;
                   }
                   .photo-title {
-                    margin-top: 8px;
+                    position: absolute;
+                    top: 10px;
+                    left: 12px;
+                    right: 12px;
                     text-align: center;
-                    color: var(--muted);
+                    color: #fff;
                     font-size: 13px;
+                    font-weight: 600;
+                    text-shadow: 0 2px 6px rgba(0,0,0,0.6);
+                    background: rgba(0,0,0,0.45);
+                    padding: 4px 8px;
+                    border-radius: 8px;
                   }
                   .photo-nav {
                     position: absolute;
@@ -1766,9 +1801,10 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     background: rgba(0,0,0,0.55);
                     border: 1px solid var(--border);
                     color: var(--text);
-                    padding: 6px 10px;
+                    padding: 12px 16px;
                     border-radius: 50%;
                     cursor: pointer;
+                    font-size: 24px;
                   }
                   .photo-nav.prev { left: 8px; }
                   .photo-nav.next { right: 8px; }
@@ -1830,6 +1866,21 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     display: flex;
                     flex-direction: column;
                     gap: 12px;
+                  }
+                  .summary-grid {
+                    display: grid;
+                    grid-template-columns: minmax(0, 1fr) minmax(280px, 1.2fr);
+                    gap: 16px;
+                    align-items: start;
+                  }
+                  .summary-map {
+                    height: 260px;
+                    border-radius: 12px;
+                    border: 1px solid var(--border);
+                    overflow: hidden;
+                  }
+                  .summary-observations {
+                    margin-top: 12px;
                   }
                   .measurement-header {
                     display: flex;
@@ -1951,6 +2002,9 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     .asset-grid {
                       grid-template-columns: 1fr;
                     }
+                    .summary-grid {
+                      grid-template-columns: 1fr;
+                    }
                   }
                 </style>
               </head>
@@ -1960,23 +2014,34 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     <div class="header-bar">
                       <div class="asset-toolbar">
                         <img class="header-logo" src="$logoUrl" alt="Telecentro" ${'$'}{if (logoDataUri != null) "onerror=\"this.onerror=null;this.src='$logoDataUri';\"" else ""} />
-                        <div class="section-title">Informe de mantenimiento</div>
                       </div>
+                      <div class="header-title">Informe de mantenimiento</div>
                       <div class="header-meta">
-                        <div>Exportado: $exportDateLabel</div>
                         <div class="theme-toggle">
-                          <span>Tema</span>
-                          <button type="button" id="theme-dark">Oscuro</button>
-                          <button type="button" id="theme-light">Claro</button>
+                          <span class="theme-icon">🌙</span>
+                          <input type="checkbox" id="theme-toggle" aria-label="Cambiar tema" />
+                          <span class="theme-icon">☀️</span>
                         </div>
+                        <div>Exportado: $exportDateLabel</div>
                       </div>
                     </div>
                     <div class="info-grid" id="header-info"></div>
                   </div>
                   <div class="card">
-                    <div class="title">Informe de Mantenimiento Preventivo</div>
-                    <div class="section-title" style="margin-top:16px;">Información General</div>
-                    <div class="info-grid" id="general-info"></div>
+                    <div class="title">Resumen del Mantenimiento Preventivo</div>
+                    <div class="summary-grid" style="margin-top:16px;">
+                      <div>
+                        <div class="section-title">Información General</div>
+                        <div class="info-grid" id="general-info"></div>
+                        <div class="summary-observations">
+                          <details class="collapse" id="observations-details">
+                            <summary>Observaciones en Mediciones: <span id="observations-count">0</span></summary>
+                            <div id="observations-list"></div>
+                          </details>
+                        </div>
+                      </div>
+                      <div class="summary-map" id="summary-map"></div>
+                    </div>
                   </div>
                   <div class="card">
                     <div class="asset-toolbar">
@@ -2004,6 +2069,11 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     </details>
                   </div>
                 </div>
+                <script
+                  src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+                  integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+                  crossorigin=""
+                ></script>
                 <script id="report-data" type="application/json">
                 $json
                 </script>
@@ -2018,22 +2088,25 @@ val assets = repository.getAssetsByReportId(report.id).first()
                   const adjustmentPanel = document.getElementById('adjustment-panel');
                   const measurementSection = document.getElementById('measurement-section');
                   const passiveSection = document.getElementById('passive-section');
-                  const themeDark = document.getElementById('theme-dark');
-                  const themeLight = document.getElementById('theme-light');
+                  const themeToggle = document.getElementById('theme-toggle');
                   let currentPhotos = [];
                   let currentPhotoIndex = 0;
 
                   function applyTheme(theme) {
                     document.documentElement.setAttribute('data-theme', theme);
-                    themeDark.classList.toggle('active', theme === 'dark');
-                    themeLight.classList.toggle('active', theme === 'light');
+                    if (themeToggle) {
+                      themeToggle.checked = theme === 'light';
+                    }
                     localStorage.setItem('reportTheme', theme);
                   }
 
                   const savedTheme = localStorage.getItem('reportTheme') || 'dark';
                   applyTheme(savedTheme);
-                  themeDark.addEventListener('click', () => applyTheme('dark'));
-                  themeLight.addEventListener('click', () => applyTheme('light'));
+                  if (themeToggle) {
+                    themeToggle.addEventListener('change', () => {
+                      applyTheme(themeToggle.checked ? 'light' : 'dark');
+                    });
+                  }
 
                   function createInfoItem(label, value) {
                     const div = document.createElement('div');
@@ -2061,6 +2134,71 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     createInfoItem('Pasivos normalizado o reparado', data.info.pasivosNormalizados),
                     createInfoItem('Activos ajustados', data.info.activosAjustados)
                   );
+
+                  function collectObservationDetails() {
+                    const details = [];
+                    Object.values(data.measurements || {}).forEach((bundle) => {
+                      [bundle.rx, bundle.module].filter(Boolean).forEach((group) => {
+                        (group.observationDetails || []).forEach((detail) => {
+                          details.push(detail);
+                        });
+                      });
+                    });
+                    return details;
+                  }
+
+                  const observationDetails = collectObservationDetails();
+                  const observationCount = observationDetails.length;
+                  const observationCountEl = document.getElementById('observations-count');
+                  const observationListEl = document.getElementById('observations-list');
+                  if (observationCountEl) {
+                    observationCountEl.textContent = observationCount.toString();
+                  }
+                  if (observationListEl) {
+                    if (!observationDetails.length) {
+                      observationListEl.innerHTML = `<div class="muted">Sin observaciones.</div>`;
+                    } else {
+                      const list = document.createElement('ul');
+                      observationDetails.forEach((detail) => {
+                        const li = document.createElement('li');
+                        li.innerHTML = `<strong>${'$'}{detail.assetHeader}</strong> - ${'$'}{detail.detail}`;
+                        list.appendChild(li);
+                      });
+                      observationListEl.appendChild(list);
+                    }
+                  }
+
+                  function buildMapPoints() {
+                    return data.assets.map((asset) => {
+                      const bundle = data.measurements?.[asset.id];
+                      const groups = [bundle?.rx, bundle?.module].filter(Boolean);
+                      const point = groups.map((g) => g.geoLocation).find(Boolean);
+                      const observationTotal = groups.reduce((sum, g) => sum + (g?.observationTotal || 0), 0);
+                      return {
+                        id: asset.id,
+                        label: asset.header,
+                        geo: point,
+                        observations: observationTotal
+                      };
+                    }).filter((item) => item.geo);
+                  }
+
+                  const mapPoints = buildMapPoints();
+                  const mapEl = document.getElementById('summary-map');
+                  if (mapEl && mapPoints.length && window.L) {
+                    const avgLat = mapPoints.reduce((sum, p) => sum + p.geo.latitude, 0) / mapPoints.length;
+                    const avgLng = mapPoints.reduce((sum, p) => sum + p.geo.longitude, 0) / mapPoints.length;
+                    const map = L.map(mapEl).setView([avgLat, avgLng], 13);
+                    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                      maxZoom: 18,
+                      attribution: '&copy; OpenStreetMap'
+                    }).addTo(map);
+                    mapPoints.forEach((point) => {
+                      const marker = L.marker([point.geo.latitude, point.geo.longitude]).addTo(map);
+                      const obsLabel = point.observations ? ` - ${'$'}{point.observations} obs.` : '';
+                      marker.bindPopup(`<strong>${'$'}{point.label}</strong>${'$'}{obsLabel}`);
+                    });
+                  }
 
                   if (passiveSection) {
                     if (!data.passives || !data.passives.length) {
@@ -2184,13 +2322,17 @@ val assets = repository.getAssetsByReportId(report.id).first()
                       return container;
                     }
                     const tables = [
+                      { title: 'FWD IN PAD/ EQ /AGC PAD', rows: amp.pads },
                       { title: 'Niveles ENTRADA medido vs plano', rows: amp.inputMeasured },
                       { title: 'Niveles ENTRADA calculados', rows: amp.inputCalculated },
                       { title: 'Niveles SALIDA por plano', rows: amp.outputPlan },
                       { title: 'Niveles SALIDA calculados', rows: amp.outputCalculated },
-                      { title: 'Niveles SALIDA calculado vs medido', rows: amp.outputMeasured },
-                      { title: 'FWD IN PAD/ EQ /AGC PAD', rows: amp.pads }
+                      { title: 'Niveles SALIDA calculado vs medido', rows: amp.outputMeasured }
                     ];
+                    const collapsibleTitles = new Set([
+                      'Niveles ENTRADA calculados',
+                      'Niveles SALIDA calculados'
+                    ]);
                     tables.forEach((tableData) => {
                       if (!tableData.rows || !tableData.rows.length) return;
                       const section = document.createElement('div');
@@ -2224,8 +2366,18 @@ val assets = repository.getAssetsByReportId(report.id).first()
                         });
                         body.appendChild(tr);
                       });
-                      section.appendChild(table);
-                      container.appendChild(section);
+                      if (collapsibleTitles.has(tableData.title)) {
+                        const details = document.createElement('details');
+                        details.className = 'collapse';
+                        const summary = document.createElement('summary');
+                        summary.textContent = tableData.title;
+                        details.appendChild(summary);
+                        details.appendChild(table);
+                        container.appendChild(details);
+                      } else {
+                        section.appendChild(table);
+                        container.appendChild(section);
+                      }
                     });
                     return container;
                   }
@@ -2257,7 +2409,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     container.appendChild(tooltip);
                     const width = container.clientWidth || 600;
                     const height = 200;
-                    const padding = 28;
+                    const padding = 36;
                     const levels = normalizedPoints.map((p) => p.levelDbmv).filter((v) => v != null);
                     if (!levels.length) {
                       container.textContent = 'Sin datos para graficar.';
@@ -2351,15 +2503,15 @@ val assets = repository.getAssetsByReportId(report.id).first()
                       svg.appendChild(title);
                     }
                     const axis = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-                    axis.setAttribute('x', width - padding);
+                    axis.setAttribute('x', padding + (width - padding * 2) / 2);
                     axis.setAttribute('y', height - 2);
-                    axis.setAttribute('text-anchor', 'end');
+                    axis.setAttribute('text-anchor', 'middle');
                     axis.setAttribute('fill', 'var(--muted)');
                     axis.setAttribute('font-size', '10');
                     axis.textContent = 'MHz';
                     svg.appendChild(axis);
                     const axisY = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-                    axisY.setAttribute('x', 12);
+                    axisY.setAttribute('x', 10);
                     axisY.setAttribute('y', height / 2);
                     axisY.setAttribute('text-anchor', 'middle');
                     axisY.setAttribute('fill', 'var(--muted)');
@@ -2584,6 +2736,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
     }
 
     private suspend fun buildHtmlMeasurementMap(
+        report: MaintenanceReport,
         assets: List<Asset>,
         measurementRoot: File
     ): Map<String, HtmlMeasurementBundle> {
@@ -2591,11 +2744,11 @@ val assets = repository.getAssetsByReportId(report.id).first()
         for (asset in assets) {
             val rxDir = File(measurementRoot, MaintenanceStorage.assetFolderName(asset))
             val rxLabel = if (asset.type == AssetType.AMPLIFIER) "Módulo" else "RX"
-            val rxBundle = buildMeasurementGroup(rxLabel, asset, rxDir)
+            val rxBundle = buildMeasurementGroup(rxLabel, asset, assetHeaderLine(report, asset), rxDir)
             val moduleBundle = if (asset.type == AssetType.NODE) {
                 val moduleAsset = asset.copy(type = AssetType.AMPLIFIER)
                 val moduleDir = File(measurementRoot, MaintenanceStorage.assetFolderName(moduleAsset))
-                buildMeasurementGroup("Módulo", moduleAsset, moduleDir)
+                buildMeasurementGroup("Módulo", moduleAsset, assetHeaderLine(report, asset), moduleDir)
             } else {
                 null
             }
@@ -2607,6 +2760,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
     private suspend fun buildMeasurementGroup(
         label: String,
         asset: Asset,
+        assetHeader: String,
         dir: File
     ): HtmlMeasurementGroup? {
         val files = dir.listFiles()?.filter { it.isFile } ?: emptyList()
@@ -2629,6 +2783,16 @@ val assets = repository.getAssetsByReportId(report.id).first()
         return HtmlMeasurementGroup(
             label = label,
             geoLocation = summary.geoLocation,
+            observationTotal = summary.observationTotal,
+            observationDetails = summary.geoIssueDetails.map { detail ->
+                HtmlObservationDetail(
+                    assetId = asset.id,
+                    assetHeader = assetHeader,
+                    type = detail.type,
+                    file = detail.file,
+                    detail = detail.detail
+                )
+            },
             entries = entries
         )
     }
@@ -3234,7 +3398,17 @@ data class HtmlMeasurementBundle(
 data class HtmlMeasurementGroup(
     val label: String,
     val geoLocation: GeoPoint? = null,
+    val observationTotal: Int = 0,
+    val observationDetails: List<HtmlObservationDetail> = emptyList(),
     val entries: List<HtmlMeasurementEntry>
+)
+
+data class HtmlObservationDetail(
+    val assetId: String,
+    val assetHeader: String,
+    val type: String,
+    val file: String,
+    val detail: String
 )
 
 data class HtmlMeasurementEntry(
