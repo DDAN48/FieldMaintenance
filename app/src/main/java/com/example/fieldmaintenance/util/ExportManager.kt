@@ -1588,6 +1588,21 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     --ok: #62c370;
                     --warn: #f6c56f;
                     --bad: #ef6b6b;
+                    --chart-grid: rgba(255,255,255,0.12);
+                  }
+                  [data-theme="light"] {
+                    color-scheme: light;
+                    --bg: #f6f7fb;
+                    --panel: #ffffff;
+                    --panel-2: #eef1f6;
+                    --border: #d6dbe6;
+                    --text: #1b1b26;
+                    --muted: #5a5f6d;
+                    --accent: #2b76ff;
+                    --ok: #2f9e44;
+                    --warn: #e9a93a;
+                    --bad: #e03131;
+                    --chart-grid: rgba(0,0,0,0.12);
                   }
                   * { box-sizing: border-box; }
                   body {
@@ -1619,6 +1634,9 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     background: rgba(255,255,255,0.06);
                     border-radius: 12px;
                   }
+                  [data-theme="light"] .title {
+                    background: rgba(0,0,0,0.04);
+                  }
                   .info-grid {
                     display: grid;
                     grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
@@ -1647,6 +1665,29 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     align-items: center;
                     gap: 12px;
                     flex-wrap: wrap;
+                  }
+                  .theme-toggle {
+                    margin-left: auto;
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 8px;
+                    font-size: 12px;
+                    color: var(--muted);
+                  }
+                  .theme-toggle button {
+                    border: 1px solid var(--border);
+                    background: var(--panel-2);
+                    color: var(--text);
+                    border-radius: 999px;
+                    padding: 6px 12px;
+                    cursor: pointer;
+                    font-size: 12px;
+                  }
+                  .theme-toggle button.active {
+                    background: var(--accent);
+                    color: #101520;
+                    border-color: transparent;
+                    font-weight: 600;
                   }
                   select {
                     background: var(--panel-2);
@@ -1718,6 +1759,15 @@ val assets = repository.getAssetsByReportId(report.id).first()
                   }
                   .table th {
                     background: rgba(255,255,255,0.06);
+                  }
+                  [data-theme="light"] .table th {
+                    background: rgba(0,0,0,0.04);
+                  }
+                  .table tbody tr:nth-child(odd) td {
+                    background: rgba(255,255,255,0.02);
+                  }
+                  [data-theme="light"] .table tbody tr:nth-child(odd) td {
+                    background: rgba(0,0,0,0.02);
                   }
                   .badge {
                     padding: 2px 6px;
@@ -1821,10 +1871,14 @@ val assets = repository.getAssetsByReportId(report.id).first()
                   }
                   .chart {
                     width: 100%;
-                    height: 160px;
-                    background: rgba(0,0,0,0.25);
-                    border-radius: 8px;
+                    height: 220px;
+                    background: linear-gradient(180deg, rgba(0,0,0,0.18), rgba(0,0,0,0.08));
+                    border-radius: 12px;
                     border: 1px solid var(--border);
+                    padding: 8px;
+                  }
+                  .chart svg text {
+                    font-family: inherit;
                   }
                   .muted {
                     color: var(--muted);
@@ -1840,7 +1894,14 @@ val assets = repository.getAssetsByReportId(report.id).first()
               <body>
                 <div class="container">
                   <div class="card">
-                    <div class="section-title">Informe de mantenimiento</div>
+                    <div class="asset-toolbar">
+                      <div class="section-title">Informe de mantenimiento</div>
+                      <div class="theme-toggle">
+                        <span>Tema</span>
+                        <button type="button" id="theme-dark">Oscuro</button>
+                        <button type="button" id="theme-light">Claro</button>
+                      </div>
+                    </div>
                     <div class="info-grid" id="header-info"></div>
                   </div>
                   <div class="card">
@@ -1880,8 +1941,22 @@ val assets = repository.getAssetsByReportId(report.id).first()
                   const photoNext = document.getElementById('photo-next');
                   const adjustmentPanel = document.getElementById('adjustment-panel');
                   const measurementSection = document.getElementById('measurement-section');
+                  const themeDark = document.getElementById('theme-dark');
+                  const themeLight = document.getElementById('theme-light');
                   let currentPhotos = [];
                   let currentPhotoIndex = 0;
+
+                  function applyTheme(theme) {
+                    document.documentElement.setAttribute('data-theme', theme);
+                    themeDark.classList.toggle('active', theme === 'dark');
+                    themeLight.classList.toggle('active', theme === 'light');
+                    localStorage.setItem('reportTheme', theme);
+                  }
+
+                  const savedTheme = localStorage.getItem('reportTheme') || 'dark';
+                  applyTheme(savedTheme);
+                  themeDark.addEventListener('click', () => applyTheme('dark'));
+                  themeLight.addEventListener('click', () => applyTheme('light'));
 
                   function createInfoItem(label, value) {
                     const div = document.createElement('div');
@@ -2031,15 +2106,15 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     return container;
                   }
 
-                  function drawBarChart(container, points) {
+                  function drawBarChart(container, points, options = {}) {
                     if (!points.length) {
                       container.textContent = 'Sin datos para graficar.';
                       container.classList.add('muted');
                       return;
                     }
                     const width = container.clientWidth || 600;
-                    const height = 160;
-                    const padding = 24;
+                    const height = 200;
+                    const padding = 28;
                     const levels = points.map((p) => p.levelDbmv).filter((v) => v != null);
                     if (!levels.length) {
                       container.textContent = 'Sin datos para graficar.';
@@ -2053,6 +2128,18 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
                     svg.setAttribute('width', width);
                     svg.setAttribute('height', height);
+                    const gridSteps = 4;
+                    for (let i = 0; i <= gridSteps; i += 1) {
+                      const y = padding + (height - padding * 2) * (i / gridSteps);
+                      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                      line.setAttribute('x1', padding);
+                      line.setAttribute('x2', width - padding);
+                      line.setAttribute('y1', y);
+                      line.setAttribute('y2', y);
+                      line.setAttribute('stroke', 'var(--chart-grid)');
+                      line.setAttribute('stroke-width', '1');
+                      svg.appendChild(line);
+                    }
                     points.forEach((point, index) => {
                       const level = point.levelDbmv ?? 0;
                       const x = padding + index * barWidth + barWidth * 0.1;
@@ -2064,17 +2151,37 @@ val assets = repository.getAssetsByReportId(report.id).first()
                       rect.setAttribute('width', barWidth * 0.8);
                       rect.setAttribute('height', barHeight);
                       rect.setAttribute('rx', 4);
-                      rect.setAttribute('fill', point.ok === false ? '#ef6b6b' : '#8ab4ff');
+                      rect.setAttribute('fill', point.ok === false ? '#ef6b6b' : '#2b76ff');
                       svg.appendChild(rect);
-                      const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-                      label.setAttribute('x', x + barWidth * 0.4);
-                      label.setAttribute('y', height - 8);
-                      label.setAttribute('text-anchor', 'middle');
-                      label.setAttribute('fill', '#b7b7c5');
-                      label.setAttribute('font-size', '10');
-                      label.textContent = point.frequencyMHz ?? '';
-                      svg.appendChild(label);
+                      if (index % Math.ceil(points.length / 6) === 0) {
+                        const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                        label.setAttribute('x', x + barWidth * 0.4);
+                        label.setAttribute('y', height - 8);
+                        label.setAttribute('text-anchor', 'middle');
+                        label.setAttribute('fill', 'var(--muted)');
+                        label.setAttribute('font-size', '10');
+                        label.textContent = point.frequencyMHz ?? '';
+                        svg.appendChild(label);
+                      }
                     });
+                    if (options.title) {
+                      const title = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                      title.setAttribute('x', padding);
+                      title.setAttribute('y', 16);
+                      title.setAttribute('fill', 'var(--text)');
+                      title.setAttribute('font-size', '12');
+                      title.setAttribute('font-weight', '600');
+                      title.textContent = options.title;
+                      svg.appendChild(title);
+                    }
+                    const axis = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                    axis.setAttribute('x', width - padding);
+                    axis.setAttribute('y', height - 6);
+                    axis.setAttribute('text-anchor', 'end');
+                    axis.setAttribute('fill', 'var(--muted)');
+                    axis.setAttribute('font-size', '10');
+                    axis.textContent = 'MHz';
+                    svg.appendChild(axis);
                     container.innerHTML = '';
                     container.appendChild(svg);
                   }
@@ -2100,7 +2207,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                         frequencyMHz: row.Frecuencia,
                         levelDbmv: row.Nivel,
                         ok: row.Ok
-                      })));
+                      })), { title: 'Upstream Channels Chart' });
                       entryEl.appendChild(chart);
                       entryEl.appendChild(measurementName);
                       entryEl.appendChild(buildCollapsible('Upstream Channels', buildTable(entry.docsisRows)));
@@ -2112,7 +2219,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                         levelDbmv: row.Nivel,
                         ok: row.Ok
                       }));
-                      drawBarChart(chart, points);
+                      drawBarChart(chart, points, { title: 'Downstream Channels Chart' });
                       entryEl.appendChild(chart);
                       entryEl.appendChild(measurementName);
                       entryEl.appendChild(buildCollapsible('Downstream Analogic Channels', buildTable(entry.pilotRows)));
@@ -2130,6 +2237,15 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     const table = document.createElement('table');
                     table.className = 'table';
                     const headers = Object.keys(rows[0]).filter((h) => h !== 'Ok');
+                    const preferred = ['Canal', 'UCD', 'Frecuencia', 'Nivel'];
+                    headers.sort((a, b) => {
+                      const ia = preferred.indexOf(a);
+                      const ib = preferred.indexOf(b);
+                      if (ia === -1 && ib === -1) return a.localeCompare(b);
+                      if (ia === -1) return 1;
+                      if (ib === -1) return -1;
+                      return ia - ib;
+                    });
                     table.innerHTML = `
                       <thead><tr>${'$'}{headers.map((h) => `<th>${'$'}{h}</th>`).join('')}</tr></thead>
                       <tbody></tbody>
