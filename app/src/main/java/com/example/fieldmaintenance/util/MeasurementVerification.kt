@@ -432,7 +432,7 @@ private fun validateMeasurementValues(
             }
             if (rule.has("source")) {
                 val target = amplifierTargets?.get(channel)
-                if (target == null) {
+                if (target == null && assetType != AssetType.NODE) {
                     issues.add("Falta tabla interna para canal $channel.")
                 } else {
                     val row = rows.firstOrNull { it.channel == channel }
@@ -708,6 +708,12 @@ suspend fun verifyMeasurementFiles(
         val seenNames = mutableSetOf<String>()
         files.forEach { file ->
             val key = file.name.lowercase(Locale.getDefault())
+            if (file.extension.equals("html", ignoreCase = true) || file.extension.equals("htm", ignoreCase = true)) {
+                if (file.exists()) {
+                    file.delete()
+                }
+                return@forEach
+            }
             if (seenNames.add(key)) {
                 add(file)
             } else {
