@@ -1826,9 +1826,9 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     z-index: 10;
                   }
                   .photo-zoom-controls button {
-                    background: rgba(255,255,255,0.9);
+                    background: rgba(220,220,220,0.95);
                     border: 1px solid var(--border);
-                    color: #000;
+                    color: #222;
                     padding: 6px 10px;
                     border-radius: 8px;
                     cursor: pointer;
@@ -1848,6 +1848,12 @@ val assets = repository.getAssetsByReportId(report.id).first()
                   .adjustment-panel h3 {
                     margin: 0;
                     font-size: 16px;
+                  }
+                  .adjustment-panel .section-title {
+                    margin: 12px 0 6px;
+                  }
+                  .adjustment-panel .table {
+                    margin-bottom: 8px;
                   }
                   .table {
                     width: 100%;
@@ -2047,6 +2053,9 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     padding: 8px 12px;
                     background: rgba(0,0,0,0.25);
                   }
+                  .collapse.flat {
+                    border-radius: 0;
+                  }
                   .collapse summary {
                     cursor: pointer;
                     list-style: none;
@@ -2097,6 +2106,69 @@ val assets = repository.getAssetsByReportId(report.id).first()
                   .muted {
                     color: var(--muted);
                     font-size: 12px;
+                  }
+                  .observation-asset {
+                    margin-bottom: 12px;
+                  }
+                  .observation-asset-title {
+                    font-weight: 600;
+                    margin-bottom: 6px;
+                  }
+                  .observation-measurement-title {
+                    font-weight: 600;
+                    margin: 6px 0 4px;
+                  }
+                  .observation-measurement-list {
+                    margin: 0 0 6px 18px;
+                    padding: 0;
+                  }
+                  .measurement-type-toggle {
+                    display: flex;
+                    align-items: center;
+                    gap: 10px;
+                  }
+                  .measurement-type-toggle span {
+                    font-size: 12px;
+                    color: var(--muted);
+                  }
+                  .toggle-switch {
+                    position: relative;
+                    width: 38px;
+                    height: 20px;
+                    display: inline-block;
+                  }
+                  .toggle-switch input {
+                    opacity: 0;
+                    width: 0;
+                    height: 0;
+                  }
+                  .toggle-slider {
+                    position: absolute;
+                    cursor: pointer;
+                    top: 0;
+                    left: 0;
+                    right: 0;
+                    bottom: 0;
+                    background-color: #ccc;
+                    border-radius: 20px;
+                    transition: 0.2s;
+                  }
+                  .toggle-slider::before {
+                    position: absolute;
+                    content: "";
+                    height: 16px;
+                    width: 16px;
+                    left: 2px;
+                    bottom: 2px;
+                    background-color: white;
+                    border-radius: 50%;
+                    transition: 0.2s;
+                  }
+                  .toggle-switch input:checked + .toggle-slider {
+                    background-color: #4c7dff;
+                  }
+                  .toggle-switch input:checked + .toggle-slider::before {
+                    transform: translateX(18px);
                   }
                   @media (max-width: 900px) {
                     .asset-grid {
@@ -2207,10 +2279,6 @@ val assets = repository.getAssetsByReportId(report.id).first()
                   const photoZoomIn = document.getElementById('photo-zoom-in');
                   const photoZoomOut = document.getElementById('photo-zoom-out');
                   const photoZoomReset = document.getElementById('photo-zoom-reset');
-                  let currentPhotos = [];
-                  let currentPhotoIndex = 0;
-                  let currentPhotoScale = 1;
-
                   function applyTheme(theme) {
                     document.documentElement.setAttribute('data-theme', theme);
                     if (themeToggle) {
@@ -2277,13 +2345,61 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     if (!observationDetails.length) {
                       observationListEl.innerHTML = `<div class="muted">Sin observaciones.</div>`;
                     } else {
-                      const list = document.createElement('ul');
-                      observationDetails.forEach((detail) => {
-                        const li = document.createElement('li');
-                        li.innerHTML = `<strong>${'$'}{detail.assetHeader}</strong> - ${'$'}{detail.detail}`;
-                        list.appendChild(li);
+                      const assetsById = new Map();
+                      data.assets.forEach((asset) => {
+                        assetsById.set(asset.id, {
+                          assetHeader: asset.header,
+                          files: new Map()
+                        });
                       });
-                      observationListEl.appendChild(list);
+                      observationDetails.forEach((detail) => {
+                        const bucket = assetsById.get(detail.assetId) || {
+                          assetHeader: detail.assetHeader || 'Activo',
+                          files: new Map()
+                        };
+                        if (!assetsById.has(detail.assetId)) {
+                          assetsById.set(detail.assetId, bucket);
+                        }
+                        const fileName = detail.file || 'General';
+                        if (!bucket.files.has(fileName)) {
+                          bucket.files.set(fileName, []);
+                        }
+                        bucket.files.get(fileName).push(detail);
+                      });
+
+                      const orderedAssetIds = [
+                        ...data.assets.map((asset) => asset.id),
+                        ...Array.from(assetsById.keys()).filter((id) => !data.assets.find((asset) => asset.id === id))
+                      ];
+                      orderedAssetIds.forEach((assetId) => {
+                        const bucket = assetsById.get(assetId);
+                        if (!bucket || !bucket.files.size) return;
+                        const assetBlock = document.createElement('div');
+                        assetBlock.className = 'observation-asset';
+                        const assetTitle = document.createElement('div');
+                        assetTitle.className = 'observation-asset-title';
+                        assetTitle.textContent = bucket.assetHeader;
+                        assetBlock.appendChild(assetTitle);
+
+                        bucket.files.forEach((details, fileName) => {
+                          const measurementTitle = document.createElement('div');
+                          measurementTitle.className = 'observation-measurement-title';
+                          measurementTitle.textContent = fileName;
+                          assetBlock.appendChild(measurementTitle);
+                          const detailList = document.createElement('ul');
+                          detailList.className = 'observation-measurement-list';
+                          details.forEach((detail) => {
+                            const detailItem = document.createElement('li');
+                            detailItem.textContent = detail.detail;
+                            if (detail.type === 'rule_violation' || detail.detail.toLowerCase().includes('fuera de rango')) {
+                              detailItem.style.color = 'var(--bad)';
+                            }
+                            detailList.appendChild(detailItem);
+                          });
+                          assetBlock.appendChild(detailList);
+                        });
+                        observationListEl.appendChild(assetBlock);
+                      });
                     }
                   }
 
@@ -2633,7 +2749,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                       });
                       if (collapsibleTitles.has(tableData.title)) {
                         const details = document.createElement('details');
-                        details.className = 'collapse';
+                        details.className = 'collapse flat';
                         const summary = document.createElement('summary');
                         summary.textContent = tableData.title;
                         details.appendChild(summary);
@@ -2751,7 +2867,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                       const x = padding + ratio * (width - padding * 2);
                       const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
                       label.setAttribute('x', x);
-                      label.setAttribute('y', height - 12);
+                      label.setAttribute('y', height - 6);
                       label.setAttribute('text-anchor', 'middle');
                       label.setAttribute('fill', 'var(--muted)');
                       label.setAttribute('font-size', '10');
@@ -2825,7 +2941,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                         }
                     });
 
-                    wrapper.addEventListener('mousemove', (e) => {
+                    window.addEventListener('mousemove', (e) => {
                         if (!isDragging) return;
                         e.preventDefault();
                         pannedX = e.clientX - startX;
@@ -2833,7 +2949,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                         updateTransform();
                     });
 
-                    wrapper.addEventListener('mouseup', () => {
+                    window.addEventListener('mouseup', () => {
                         if (isDragging) {
                             isDragging = false;
                             wrapper.style.cursor = 'default';
@@ -3000,6 +3116,15 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     return details;
                   }
 
+                  function extractMeasurementIndex(label) {
+                    const base = (label || '').split('/').pop() || '';
+                    const match = base.match(/M\s*(\d+)/i);
+                    if (match && match[1]) {
+                      return Number(match[1]);
+                    }
+                    return Number.POSITIVE_INFINITY;
+                  }
+
                   function renderMeasurements(assetId) {
                     measurementSection.innerHTML = '';
                     const asset = data.assets.find((a) => a.id === assetId);
@@ -3034,27 +3159,78 @@ val assets = repository.getAssetsByReportId(report.id).first()
                         header.appendChild(geo);
                       }
                       groupEl.appendChild(header);
+                      const entryContainer = document.createElement('div');
+                      groupEl.appendChild(entryContainer);
 
-                      const entryEls = group.entries.map((entry, index) => {
-                        const tab = document.createElement('button');
-                        tab.className = 'measurement-tab';
-                        tab.textContent = `M${'$'}{index + 1}`;
-                        tab.addEventListener('click', () => {
-                          entryEls.forEach((el) => el.classList.remove('active'));
-                          tabs.querySelectorAll('.measurement-tab').forEach((t) => t.classList.remove('active'));
-                          entryEls[index].classList.add('active');
-                          tab.classList.add('active');
+                      const entries = group.entries || [];
+                      const isModuleGroup = group.label === 'Módulo';
+                      const groupedEntries = {
+                        channelexpert: entries.filter((entry) => entry.type === 'channelexpert'),
+                        docsisexpert: entries.filter((entry) => entry.type === 'docsisexpert')
+                      };
+
+                      function renderTabsForEntries(filteredEntries) {
+                        tabs.innerHTML = '';
+                        entryContainer.innerHTML = '';
+                        const sortedEntries = filteredEntries
+                          .slice()
+                          .sort((a, b) => extractMeasurementIndex(a.label) - extractMeasurementIndex(b.label));
+                        const entryEls = sortedEntries.map((entry, index) => {
+                          const tab = document.createElement('button');
+                          tab.className = 'measurement-tab';
+                          tab.textContent = `M${'$'}{index + 1}`;
+                          tab.addEventListener('click', () => {
+                            entryEls.forEach((el) => el.classList.remove('active'));
+                            tabs.querySelectorAll('.measurement-tab').forEach((t) => t.classList.remove('active'));
+                            entryEls[index].classList.add('active');
+                            tab.classList.add('active');
+                          });
+                          tabs.appendChild(tab);
+                          const entryEl = renderMeasurementEntry(entry);
+                          entryContainer.appendChild(entryEl);
+                          return entryEl;
                         });
-                        tabs.appendChild(tab);
-                        const entryEl = renderMeasurementEntry(entry);
-                        groupEl.appendChild(entryEl);
-                        return entryEl;
-                      });
 
-                      if (entryEls.length) {
-                        entryEls[0].classList.add('active');
-                        const firstTab = tabs.querySelector('.measurement-tab');
-                        if (firstTab) firstTab.classList.add('active');
+                        if (entryEls.length) {
+                          entryEls[0].classList.add('active');
+                          const firstTab = tabs.querySelector('.measurement-tab');
+                          if (firstTab) firstTab.classList.add('active');
+                        } else {
+                          const empty = document.createElement('div');
+                          empty.className = 'muted';
+                          empty.textContent = 'Sin mediciones cargadas.';
+                          entryContainer.appendChild(empty);
+                        }
+                      }
+
+                      if (isModuleGroup && groupedEntries.channelexpert.length && groupedEntries.docsisexpert.length) {
+                        const toggle = document.createElement('div');
+                        toggle.className = 'measurement-type-toggle';
+                        toggle.innerHTML = `
+                          <span>ChannelExpert</span>
+                          <label class="toggle-switch">
+                            <input type="checkbox" />
+                            <span class="toggle-slider"></span>
+                          </label>
+                          <span>DocsisExpert</span>
+                        `;
+                        headerTop.appendChild(toggle);
+                        const toggleInput = toggle.querySelector('input');
+                        const renderForType = () => {
+                          if (toggleInput.checked) {
+                            renderTabsForEntries(groupedEntries.docsisexpert);
+                          } else {
+                            renderTabsForEntries(groupedEntries.channelexpert);
+                          }
+                        };
+                        toggleInput.addEventListener('change', renderForType);
+                        renderForType();
+                      } else if (isModuleGroup && groupedEntries.docsisexpert.length) {
+                        renderTabsForEntries(groupedEntries.docsisexpert);
+                      } else if (isModuleGroup && groupedEntries.channelexpert.length) {
+                        renderTabsForEntries(groupedEntries.channelexpert);
+                      } else {
+                        renderTabsForEntries(entries);
                       }
                       if (group.observationDetails && group.observationDetails.length) {
                         const details = document.createElement('details');
