@@ -433,18 +433,20 @@ private fun validateMeasurementValues(
             if (rule.has("source")) {
                 val target = amplifierTargets?.get(channel)
                 if (target == null) {
-                    issues.add("Falta tabla interna para canal $channel.")
+                    if (assetType != AssetType.NODE) {
+                        issues.add("Falta tabla interna para canal $channel.")
+                    }
+                    continue
+                }
+                val row = rows.firstOrNull { it.channel == channel }
+                val level = row?.levelDbmv
+                if (level == null) {
+                    issues.add("No se encontr? nivel para canal $channel.")
                 } else {
-                    val row = rows.firstOrNull { it.channel == channel }
-                    val level = row?.levelDbmv
-                    if (level == null) {
-                        issues.add("No se encontr? nivel para canal $channel.")
-                    } else {
-                        val tolerance = resolveTolerance(rule.optDouble("tolerance", 1.5), toleranceOverride)
-                        val adjusted = level + testPointOffset
-                        if (tolerance != null && (adjusted < target - tolerance || adjusted > target + tolerance)) {
-                            issues.add("Nivel fuera de rango en canal $channel.")
-                        }
+                    val tolerance = resolveTolerance(rule.optDouble("tolerance", 1.5), toleranceOverride)
+                    val adjusted = level + testPointOffset
+                    if (tolerance != null && (adjusted < target - tolerance || adjusted > target + tolerance)) {
+                        issues.add("Nivel fuera de rango en canal $channel.")
                     }
                 }
             } else {
@@ -708,6 +710,12 @@ suspend fun verifyMeasurementFiles(
         val seenNames = mutableSetOf<String>()
         files.forEach { file ->
             val key = file.name.lowercase(Locale.getDefault())
+            if (file.extension.equals("html", ignoreCase = true) || file.extension.equals("htm", ignoreCase = true)) {
+                if (file.exists()) {
+                    file.delete()
+                }
+                return@forEach
+            }
             if (seenNames.add(key)) {
                 add(file)
             } else {
