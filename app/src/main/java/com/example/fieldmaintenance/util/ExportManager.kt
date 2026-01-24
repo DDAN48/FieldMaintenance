@@ -2426,7 +2426,6 @@ val assets = repository.getAssetsByReportId(report.id).first()
 
                   const mapPoints = buildMapPoints();
                   const mapEl = document.getElementById('summary-map');
-                  const mapSearchClear = document.getElementById('map-search-clear');
                   let mapInstance = null;
                   let mapSearchMarker = null;
 
