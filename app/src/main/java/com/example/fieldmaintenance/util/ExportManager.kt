@@ -1805,15 +1805,21 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     position: absolute;
                     top: 50%;
                     transform: translateY(-50%);
-                    background: rgba(0,0,0,0.55);
+                    background: rgba(240,240,240,0.9);
                     border: 1px solid var(--border);
-                    color: var(--text);
-                    padding: 12px 16px;
+                    color: #111;
+                    width: 44px;
+                    height: 44px;
                     border-radius: 50%;
                     cursor: pointer;
-                    font-size: 24px;
+                    font-size: 26px;
+                    font-weight: 700;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
                     z-index: 10;
                     user-select: none;
+                    box-shadow: 0 6px 14px rgba(0,0,0,0.35);
                   }
                   .photo-nav.prev { left: 8px; }
                   .photo-nav.next { right: 8px; }
@@ -2223,9 +2229,8 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     </div>
                   </div>
                   <div class="card">
-                    <div class="asset-toolbar">
+                  <div class="asset-toolbar">
                       <select id="asset-select"></select>
-                      <strong id="asset-header"></strong>
                     </div>
                     <div class="asset-grid" style="margin-top:16px;">
                       <div>
@@ -2247,7 +2252,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                   </div>
                   <div class="card">
                     <div class="section-title">Detalle de intervención de pasivos</div>
-                    <details class="collapse" open>
+                    <details class="collapse">
                       <summary>Ver detalle</summary>
                       <div id="passive-section"></div>
                     </details>
@@ -2264,7 +2269,6 @@ val assets = repository.getAssetsByReportId(report.id).first()
                 <script>
                   const data = JSON.parse(document.getElementById('report-data').textContent);
                   const assetSelect = document.getElementById('asset-select');
-                  const assetHeader = document.getElementById('asset-header');
                   const photoImage = document.getElementById('photo-image');
                   const photoTitle = document.getElementById('photo-title');
                   const photoPrev = document.getElementById('photo-prev');
@@ -2790,7 +2794,9 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     tooltip.className = 'chart-tooltip';
                     const width = container.clientWidth || 600;
                     const height = 200;
-                    const padding = 80;
+                    const padding = { top: 24, right: 18, bottom: 26, left: 48 };
+                    const chartWidth = width - padding.left - padding.right;
+                    const chartHeight = height - padding.top - padding.bottom;
                     const levels = normalizedPoints.map((p) => p.levelDbmv).filter((v) => v != null);
                     if (!levels.length) {
                       container.textContent = 'Sin datos para graficar.';
@@ -2800,7 +2806,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     const min = Math.min(...levels);
                     const max = Math.max(...levels);
                     const span = max - min || 1;
-                    const barWidth = options.barWidth || (width - padding * 2) / normalizedPoints.length;
+                    const barWidth = options.barWidth || chartWidth / normalizedPoints.length;
                     const xMin = options.xMin ?? 0;
                     const xMax = options.xMax ?? 1000;
                     const yTicks = 4;
@@ -2808,10 +2814,10 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     svg.setAttribute('width', width);
                     svg.setAttribute('height', height);
                     for (let i = 0; i <= yTicks; i += 1) {
-                      const y = padding + (height - padding * 2) * (i / yTicks);
+                      const y = padding.top + chartHeight * (i / yTicks);
                       const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-                      line.setAttribute('x1', padding);
-                      line.setAttribute('x2', width - padding);
+                      line.setAttribute('x1', padding.left);
+                      line.setAttribute('x2', width - padding.right);
                       line.setAttribute('y1', y);
                       line.setAttribute('y2', y);
                       line.setAttribute('stroke', 'var(--chart-grid)');
@@ -2819,7 +2825,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                       svg.appendChild(line);
                       const value = (max - (span * i) / yTicks).toFixed(1);
                       const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-                      label.setAttribute('x', padding - 10);
+                      label.setAttribute('x', padding.left - 8);
                       label.setAttribute('y', y + 4);
                       label.setAttribute('text-anchor', 'end');
                       label.setAttribute('fill', 'var(--muted)');
@@ -2831,9 +2837,9 @@ val assets = repository.getAssetsByReportId(report.id).first()
                       const level = point.levelDbmv ?? 0;
                       const freq = Number(point.frequencyMHz);
                       const ratio = (freq - xMin) / (xMax - xMin);
-                      const x = padding + ratio * (width - padding * 2) - barWidth / 2;
-                      const barHeight = ((level - min) / span) * (height - padding * 2);
-                      const y = height - padding - barHeight;
+                      const x = padding.left + ratio * chartWidth - barWidth / 2;
+                      const barHeight = ((level - min) / span) * chartHeight;
+                      const y = height - padding.bottom - barHeight;
                       const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
                       rect.setAttribute('x', x);
                       rect.setAttribute('y', y);
@@ -2863,10 +2869,10 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     xTicks.forEach((tick) => {
                       if (tick < xMin || tick > xMax) return;
                       const ratio = (tick - xMin) / (xMax - xMin);
-                      const x = padding + ratio * (width - padding * 2);
+                      const x = padding.left + ratio * chartWidth;
                       const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
                       label.setAttribute('x', x);
-                      label.setAttribute('y', height - 6);
+                      label.setAttribute('y', height - padding.bottom + 12);
                       label.setAttribute('text-anchor', 'middle');
                       label.setAttribute('fill', 'var(--muted)');
                       label.setAttribute('font-size', '10');
@@ -2875,7 +2881,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     });
                     if (options.title) {
                       const title = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-                      title.setAttribute('x', padding);
+                      title.setAttribute('x', padding.left);
                       title.setAttribute('y', 16);
                       title.setAttribute('fill', 'var(--text)');
                       title.setAttribute('font-size', '12');
@@ -2884,20 +2890,20 @@ val assets = repository.getAssetsByReportId(report.id).first()
                       svg.appendChild(title);
                     }
                     const axis = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-                    axis.setAttribute('x', padding + (width - padding * 2) / 2);
-                    axis.setAttribute('y', height - 2);
+                    axis.setAttribute('x', padding.left + chartWidth / 2);
+                    axis.setAttribute('y', height - 4);
                     axis.setAttribute('text-anchor', 'middle');
                     axis.setAttribute('fill', 'var(--muted)');
                     axis.setAttribute('font-size', '10');
                     axis.textContent = 'MHz';
                     svg.appendChild(axis);
                     const axisY = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-                    axisY.setAttribute('x', 24);
+                    axisY.setAttribute('x', 14);
                     axisY.setAttribute('y', height / 2);
                     axisY.setAttribute('text-anchor', 'middle');
                     axisY.setAttribute('fill', 'var(--muted)');
                     axisY.setAttribute('font-size', '10');
-                    axisY.setAttribute('transform', `rotate(-90 24 ${'$'}{height / 2})`);
+                    axisY.setAttribute('transform', `rotate(-90 14 ${'$'}{height / 2})`);
                     axisY.textContent = 'dBmV';
                     svg.appendChild(axisY);
 
@@ -2986,7 +2992,8 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     container.appendChild(wrapper);
                   }
 
-                  function renderMeasurementEntry(entry) {
+                  function renderMeasurementEntry(entry, options = {}) {
+                    const { showSwitchPill = true } = options;
                     const entryEl = document.createElement('div');
                     entryEl.className = 'measurement-entry';
                     const header = document.createElement('div');
@@ -3034,7 +3041,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                       entryEl.appendChild(chart);
                       const nameRow = document.createElement('div');
                       nameRow.className = 'measurement-name-row';
-                      if (entry.switchSelection) {
+                      if (showSwitchPill && entry.switchSelection) {
                         const pill = document.createElement('span');
                         pill.className = 'switch-pill';
                         pill.textContent = entry.switchSelection;
@@ -3137,6 +3144,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     }
                     const groups = [bundle.rx, bundle.module].filter(Boolean);
                     groups.forEach((group) => {
+                      const isAmplifierGroup = asset?.type === 'AMPLIFIER' || group.label === 'Módulo';
                       const groupEl = document.createElement('div');
                       groupEl.className = 'measurement-group';
                       const header = document.createElement('div');
@@ -3177,7 +3185,9 @@ val assets = repository.getAssetsByReportId(report.id).first()
                         const entryEls = sortedEntries.map((entry, index) => {
                           const tab = document.createElement('button');
                           tab.className = 'measurement-tab';
-                          tab.textContent = `M${'$'}{index + 1}`;
+                          tab.textContent = isAmplifierGroup && entry.switchSelection
+                            ? entry.switchSelection
+                            : `M${'$'}{index + 1}`;
                           tab.addEventListener('click', () => {
                             entryEls.forEach((el) => el.classList.remove('active'));
                             tabs.querySelectorAll('.measurement-tab').forEach((t) => t.classList.remove('active'));
@@ -3185,7 +3195,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                             tab.classList.add('active');
                           });
                           tabs.appendChild(tab);
-                          const entryEl = renderMeasurementEntry(entry);
+                          const entryEl = renderMeasurementEntry(entry, { showSwitchPill: !isAmplifierGroup });
                           entryContainer.appendChild(entryEl);
                           return entryEl;
                         });
@@ -3278,7 +3288,6 @@ val assets = repository.getAssetsByReportId(report.id).first()
                   function setAsset(assetId) {
                     const asset = data.assets.find((a) => a.id === assetId);
                     if (!asset) return;
-                    assetHeader.textContent = asset.header;
                     currentPhotos = asset.photos || [];
                     currentPhotoIndex = 0;
                     updatePhoto();
@@ -3544,25 +3553,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
     }
 
     suspend fun exportToBundleZip(report: MaintenanceReport): File = withContext(Dispatchers.IO) {
-        val pdfFile = exportToPDF(report)
-        val jsonZip = exportToZIP(report)
-        val baseName = exportBaseName(report)
-
-        val bundleZip = File(context.getExternalFilesDir(null), "maintenance_${report.id}_bundle.zip")
-        if (bundleZip.exists()) bundleZip.delete()
-
-        ZipFile(bundleZip).apply {
-            addFile(
-                pdfFile,
-                ZipParameters().apply { fileNameInZip = "$baseName.pdf" }
-            )
-            addFile(
-                jsonZip,
-                ZipParameters().apply { fileNameInZip = "${baseName}_json.zip" }
-            )
-        }
-
-        bundleZip
+        exportToZIP(report)
     }
 
     suspend fun exportZipToDownloads(report: MaintenanceReport): Uri = withContext(Dispatchers.IO) {

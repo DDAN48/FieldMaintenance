@@ -3481,11 +3481,31 @@ private fun AssetFileSection(
                                 }
                             }
                         } else {
+                            val switchOptions = if (assetForDisplay.type == AssetType.AMPLIFIER) {
+                                switchOptionsFor(assetForDisplay.amplifierMode)
+                            } else {
+                                emptyList()
+                            }
+                            fun tabLabelForEntry(entry: MeasurementEntry, index: Int): String {
+                                if (assetForDisplay.type != AssetType.AMPLIFIER) {
+                                    return "M${index + 1}"
+                                }
+                                val saved = switchPrefs.getString(
+                                    switchKey(assetForDisplay.id, entry.label),
+                                    null
+                                )?.uppercase(Locale.getDefault())
+                                val inferred = if (saved == null) {
+                                    inferSwitchSelection(entry.label, switchOptions)
+                                } else {
+                                    null
+                                }
+                                return saved ?: inferred ?: "M${index + 1}"
+                            }
                             Text("DOCSIS Expert $docsisCountLabel", color = tableTextPrimary, fontSize = 18.sp)
                             Spacer(Modifier.height(8.dp))
                             val docsisTabs = docsisTableEntries.mapIndexed { index, entry ->
                                 MeasurementTab(
-                                    label = "M${index + 1}",
+                                    label = tabLabelForEntry(entry, index),
                                     entry = entry,
                                     hasError = docsisHasError(entry)
                                 )
@@ -3583,7 +3603,7 @@ private fun AssetFileSection(
                             Spacer(Modifier.height(8.dp))
                             val channelTabs = channelTableEntries.mapIndexed { index, entry ->
                                 MeasurementTab(
-                                    label = "M${index + 1}",
+                                    label = tabLabelForEntry(entry, index),
                                     entry = entry,
                                     hasError = channelHasError(entry)
                                 )
