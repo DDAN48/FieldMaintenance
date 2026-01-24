@@ -3200,253 +3200,282 @@ private fun AssetFileSection(
                                 }
                             }
                         } else if (assetForDisplay.type == AssetType.NODE) {
-                            Text("DOCSIS Expert $docsisCountLabel", color = tableTextPrimary, fontSize = 18.sp)
-                            Spacer(Modifier.height(8.dp))
-                            val docsisTabs = docsisTableEntries.mapIndexed { index, entry ->
-                                MeasurementTab(
-                                    label = "M${index + 1}",
-                                    entry = entry,
-                                    hasError = docsisHasError(entry)
-                                )
+                            fun measurementIndex(entry: MeasurementEntry): Int {
+                                val label = entry.label.substringAfterLast('/').uppercase(Locale.getDefault())
+                                val match = Regex("M\\s*(\\d+)").find(label)
+                                return match?.groupValues?.getOrNull(1)?.toIntOrNull() ?: Int.MAX_VALUE
                             }
-                            val docsisLabelForEntry = docsisTabs.associate { it.entry to it.label }
-                            MeasurementTabsWithPagerCard(
-                                tabs = docsisTabs,
-                                footerProvider = { entry, label ->
-                                    "$label = ${displayLabel(entry)}"
-                                },
-                                onDelete = onRequestDelete,
-                                allowExpand = true,
-                                alwaysShowContent = true,
-                                showFooterBlock = false,
-                                showFooterWhenCollapsed = true
-                            ) { entry ->
-                                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                    val chartData = entry.docsisLevels.keys.sorted().mapNotNull { freq ->
-                                        val level = entry.docsisLevels[freq] ?: return@mapNotNull null
-                                        val frequency = entry.docsisMeta[freq]?.frequencyMHz ?: freq
-                                        val isValid = entry.docsisLevelOk[freq] != false
-                                        UpstreamChartPoint(
-                                            frequencyMHz = frequency,
-                                            levelDbmv = level,
-                                            isValid = isValid
-                                        )
-                                    }
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .height(140.dp)
-                                            .clipToBounds()
-                                    ) {
-                                        UpstreamLevelsChart(
-                                            data = chartData,
-                                            barColor = accentColor,
-                                            errorColor = errorColor,
-                                            textColor = tableTextPrimary,
-                                            gridColor = dividerColor,
-                                            modifier = Modifier.fillMaxSize()
-                                        )
-                                    }
-                                    Text(
-                                        text = "MHz",
-                                        color = tableTextSecondary,
-                                        fontSize = 11.sp,
-                                        modifier = Modifier.align(Alignment.CenterHorizontally)
+
+                            val docsisTabs = docsisTableEntries
+                                .sortedBy(::measurementIndex)
+                                .mapIndexed { index, entry ->
+                                    MeasurementTab(
+                                        label = "M${index + 1}",
+                                        entry = entry,
+                                        hasError = docsisHasError(entry)
                                     )
-                                    docsisLabelForEntry[entry]?.let { label ->
-                                        MeasurementFooterRow(
-                                            entry = entry,
-                                            label = label,
-                                            hasError = docsisHasError(entry),
-                                            onDelete = onRequestDelete
-                                        )
-                                    }
-                                    Spacer(Modifier.height(12.dp))
-                                    val rows = entry.docsisLevels.keys.sorted().map { freq ->
-                                        val channel = entry.docsisMeta[freq]?.channel?.toString() ?: "—"
-                                        val frequency = entry.docsisMeta[freq]?.frequencyMHz ?: freq
-                                        val level = formatDbmv(entry.docsisLevels[freq])
-                                        val icfr = formatDbmv(entry.docsisIcfr[freq])
-                                        val invalidCells = if (entry.docsisLevelOk[freq] == false) setOf(2) else emptySet()
-                                        listOf(
-                                            channel,
-                                            formatMHz(frequency),
-                                            level,
-                                            icfr
-                                        ) to invalidCells
-                                    }
-                                    MeasurementTableCard(
-                                        title = "Upstream Channels",
-                                        headers = listOf("UCD", "Frecuencia (MHz)", "Nivel (dBmV)", "ICFR (dB)"),
-                                        containerColor = cardColor,
-                                        headerColor = headerColor,
-                                        borderColor = borderColor,
-                                        dividerColor = dividerColor,
-                                        textPrimary = tableTextPrimary,
-                                        textSecondary = tableTextSecondary,
-                                        resetKey = entry.label
-                                    ) {
-                                        rows.forEach { (cells, invalid) ->
-                                            MeasurementTableRow(
-                                                cells = cells,
-                                                invalidCells = invalid,
-                                                textPrimary = tableTextPrimary,
-                                                errorColor = errorColor,
-                                                dividerColor = dividerColor
+                                }
+                            val channelTabs = channelTableEntries
+                                .sortedBy(::measurementIndex)
+                                .mapIndexed { index, entry ->
+                                    MeasurementTab(
+                                        label = "M${index + 1}",
+                                        entry = entry,
+                                        hasError = channelHasError(entry)
+                                    )
+                                }
+
+                            var showDocsis by rememberSaveable(assetForDisplay.id) { mutableStateOf(false) }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                Text("ChannelExpert", color = tableTextSecondary, fontSize = 12.sp)
+                                Spacer(Modifier.width(8.dp))
+                                Switch(
+                                    checked = showDocsis,
+                                    onCheckedChange = { showDocsis = it }
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text("DocsisExpert", color = tableTextSecondary, fontSize = 12.sp)
+                            }
+                            Spacer(Modifier.height(8.dp))
+
+                            if (showDocsis) {
+                                Text("DOCSIS Expert $docsisCountLabel", color = tableTextPrimary, fontSize = 18.sp)
+                                Spacer(Modifier.height(8.dp))
+                                val docsisLabelForEntry = docsisTabs.associate { it.entry to it.label }
+                                MeasurementTabsWithPagerCard(
+                                    tabs = docsisTabs,
+                                    footerProvider = { entry, label ->
+                                        "$label = ${displayLabel(entry)}"
+                                    },
+                                    onDelete = onRequestDelete,
+                                    allowExpand = true,
+                                    alwaysShowContent = true,
+                                    showFooterBlock = false,
+                                    showFooterWhenCollapsed = true
+                                ) { entry ->
+                                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                        val chartData = entry.docsisLevels.keys.sorted().mapNotNull { freq ->
+                                            val level = entry.docsisLevels[freq] ?: return@mapNotNull null
+                                            val frequency = entry.docsisMeta[freq]?.frequencyMHz ?: freq
+                                            val isValid = entry.docsisLevelOk[freq] != false
+                                            UpstreamChartPoint(
+                                                frequencyMHz = frequency,
+                                                levelDbmv = level,
+                                                isValid = isValid
                                             )
+                                        }
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(140.dp)
+                                                .clipToBounds()
+                                        ) {
+                                            UpstreamLevelsChart(
+                                                data = chartData,
+                                                barColor = accentColor,
+                                                errorColor = errorColor,
+                                                textColor = tableTextPrimary,
+                                                gridColor = dividerColor,
+                                                modifier = Modifier.fillMaxSize()
+                                            )
+                                        }
+                                        Text(
+                                            text = "MHz",
+                                            color = tableTextSecondary,
+                                            fontSize = 11.sp,
+                                            modifier = Modifier.align(Alignment.CenterHorizontally)
+                                        )
+                                        docsisLabelForEntry[entry]?.let { label ->
+                                            MeasurementFooterRow(
+                                                entry = entry,
+                                                label = label,
+                                                hasError = docsisHasError(entry),
+                                                onDelete = onRequestDelete
+                                            )
+                                        }
+                                        Spacer(Modifier.height(12.dp))
+                                        val rows = entry.docsisLevels.keys.sorted().map { freq ->
+                                            val channel = entry.docsisMeta[freq]?.channel?.toString() ?: "—"
+                                            val frequency = entry.docsisMeta[freq]?.frequencyMHz ?: freq
+                                            val level = formatDbmv(entry.docsisLevels[freq])
+                                            val icfr = formatDbmv(entry.docsisIcfr[freq])
+                                            val invalidCells = if (entry.docsisLevelOk[freq] == false) setOf(2) else emptySet()
+                                            listOf(
+                                                channel,
+                                                formatMHz(frequency),
+                                                level,
+                                                icfr
+                                            ) to invalidCells
+                                        }
+                                        MeasurementTableCard(
+                                            title = "Upstream Channels",
+                                            headers = listOf("UCD", "Frecuencia (MHz)", "Nivel (dBmV)", "ICFR (dB)"),
+                                            containerColor = cardColor,
+                                            headerColor = headerColor,
+                                            borderColor = borderColor,
+                                            dividerColor = dividerColor,
+                                            textPrimary = tableTextPrimary,
+                                            textSecondary = tableTextSecondary,
+                                            resetKey = entry.label
+                                        ) {
+                                            rows.forEach { (cells, invalid) ->
+                                                MeasurementTableRow(
+                                                    cells = cells,
+                                                    invalidCells = invalid,
+                                                    textPrimary = tableTextPrimary,
+                                                    errorColor = errorColor,
+                                                    dividerColor = dividerColor
+                                                )
+                                            }
                                         }
                                     }
                                 }
-                            }
-
-                            Spacer(Modifier.height(14.dp))
-                            Text("Channel Expert $channelCountLabel", color = tableTextPrimary, fontSize = 18.sp)
-                            Spacer(Modifier.height(8.dp))
-                            val channelTabs = channelTableEntries.mapIndexed { index, entry ->
-                                MeasurementTab(
-                                    label = "M${index + 1}",
-                                    entry = entry,
-                                    hasError = channelHasError(entry)
-                                )
-                            }
-                            val channelLabelForEntry = channelTabs.associate { it.entry to it.label }
-                            MeasurementTabsWithPagerCard(
-                                tabs = channelTabs,
-                                footerProvider = { entry, label ->
-                                    "$label = ${displayLabel(entry)}"
-                                },
-                                onDelete = onRequestDelete,
-                                alwaysShowContent = true,
-                                showFooterBlock = false,
-                                showFooterWhenCollapsed = true
-                            ) { entry ->
-                                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                    val downstreamPoints = buildList {
-                                        entry.pilotLevels.forEach { (channel, level) ->
-                                            val frequency = entry.pilotMeta[channel]?.frequencyMHz
-                                            if (frequency != null) {
-                                                add(
-                                                    DownstreamChartPoint(
-                                                        frequencyMHz = frequency,
-                                                        levelDbmv = level,
-                                                        isValid = entry.pilotLevelOk[channel] != false
+                            } else {
+                                Text("Channel Expert $channelCountLabel", color = tableTextPrimary, fontSize = 18.sp)
+                                Spacer(Modifier.height(8.dp))
+                                val channelLabelForEntry = channelTabs.associate { it.entry to it.label }
+                                MeasurementTabsWithPagerCard(
+                                    tabs = channelTabs,
+                                    footerProvider = { entry, label ->
+                                        "$label = ${displayLabel(entry)}"
+                                    },
+                                    onDelete = onRequestDelete,
+                                    alwaysShowContent = true,
+                                    showFooterBlock = false,
+                                    showFooterWhenCollapsed = true
+                                ) { entry ->
+                                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                        val downstreamPoints = buildList {
+                                            entry.pilotLevels.forEach { (channel, level) ->
+                                                val frequency = entry.pilotMeta[channel]?.frequencyMHz
+                                                if (frequency != null) {
+                                                    add(
+                                                        DownstreamChartPoint(
+                                                            frequencyMHz = frequency,
+                                                            levelDbmv = level,
+                                                            isValid = entry.pilotLevelOk[channel] != false
+                                                        )
                                                     )
+                                                }
+                                            }
+                                            entry.digitalRows.forEach { row ->
+                                                val frequency = row.frequencyMHz
+                                                val level = row.levelDbmv
+                                                if (frequency != null && level != null) {
+                                                    val isRowValid = listOf(
+                                                        row.merOk,
+                                                        row.berPreOk,
+                                                        row.berPostOk,
+                                                        row.icfrOk
+                                                    ).all { it != false }
+                                                    add(
+                                                        DownstreamChartPoint(
+                                                            frequencyMHz = frequency,
+                                                            levelDbmv = level,
+                                                            isValid = isRowValid
+                                                        )
+                                                    )
+                                                }
+                                            }
+                                        }
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(150.dp)
+                                                .clipToBounds()
+                                        ) {
+                                            DownstreamLevelsChart(
+                                                points = downstreamPoints,
+                                                ofdmSeries = entry.ofdmSeries,
+                                                barColor = accentColor,
+                                                errorColor = errorColor,
+                                                textColor = tableTextPrimary,
+                                                gridColor = dividerColor,
+                                                modifier = Modifier.fillMaxSize()
+                                            )
+                                        }
+                                        Text(
+                                            text = "MHz",
+                                            color = tableTextSecondary,
+                                            fontSize = 11.sp,
+                                            modifier = Modifier.align(Alignment.CenterHorizontally)
+                                        )
+                                        channelLabelForEntry[entry]?.let { label ->
+                                            MeasurementFooterRow(
+                                                entry = entry,
+                                                label = label,
+                                                hasError = channelHasError(entry),
+                                                onDelete = onRequestDelete
+                                            )
+                                        }
+                                        Spacer(Modifier.height(8.dp))
+                                        MeasurementTableCard(
+                                            title = "Downstream Analogic Channels",
+                                            headers = listOf("Canal", "Freq (MHz)", "M1"),
+                                            containerColor = cardColor,
+                                            headerColor = headerColor,
+                                            borderColor = borderColor,
+                                            dividerColor = dividerColor,
+                                            textPrimary = tableTextPrimary,
+                                            textSecondary = tableTextSecondary,
+                                            resetKey = entry.label
+                                        ) {
+                                            val pilotChannels = listOf(50, 70, 110, 116, 136)
+                                            pilotChannels.forEach { channel ->
+                                                val frequency = entry.pilotMeta[channel]?.frequencyMHz
+                                                val level = entry.pilotLevels[channel]
+                                                val invalidCells = if (entry.pilotLevelOk[channel] == false) setOf(2) else emptySet()
+                                                MeasurementTableRow(
+                                                    cells = listOf(
+                                                        channel.toString(),
+                                                        formatMHz(frequency),
+                                                        formatDbmv(level)
+                                                    ),
+                                                    invalidCells = invalidCells,
+                                                    textPrimary = tableTextPrimary,
+                                                    errorColor = errorColor,
+                                                    dividerColor = dividerColor
                                                 )
                                             }
                                         }
-                                        entry.digitalRows.forEach { row ->
-                                            val frequency = row.frequencyMHz
-                                            val level = row.levelDbmv
-                                            if (frequency != null && level != null) {
-                                                val isRowValid = listOf(
-                                                    row.merOk,
-                                                    row.berPreOk,
-                                                    row.berPostOk,
-                                                    row.icfrOk
-                                                ).all { it != false }
-                                                add(
-                                                    DownstreamChartPoint(
-                                                        frequencyMHz = frequency,
-                                                        levelDbmv = level,
-                                                        isValid = isRowValid
-                                                    )
+                                        MeasurementTableCard(
+                                            title = "Downstream Digital Channels",
+                                            headers = listOf("Canal", "Freq (MHz)", "Nivel (dBmV)", "MER", "BER pre", "BER post", "ICFR"),
+                                            containerColor = cardColor,
+                                            headerColor = headerColor,
+                                            borderColor = borderColor,
+                                            dividerColor = dividerColor,
+                                            textPrimary = tableTextPrimary,
+                                            textSecondary = tableTextSecondary,
+                                            resetKey = entry.label
+                                        ) {
+                                            entry.digitalRows.forEach { row ->
+                                                val invalidCells = buildSet {
+                                                    if (row.merOk == false) add(3)
+                                                    if (row.berPreOk == false) add(4)
+                                                    if (row.berPostOk == false) add(5)
+                                                    if (row.icfrOk == false) add(6)
+                                                }
+                                                MeasurementTableRow(
+                                                    cells = listOf(
+                                                        row.channel.toString(),
+                                                        formatMHz(row.frequencyMHz),
+                                                        formatDbmv(row.levelDbmv),
+                                                        formatDbmv(row.mer),
+                                                        row.berPre?.toString() ?: "—",
+                                                        row.berPost?.toString() ?: "—",
+                                                        formatDbmv(row.icfr)
+                                                    ),
+                                                    invalidCells = invalidCells,
+                                                    textPrimary = tableTextPrimary,
+                                                    errorColor = errorColor,
+                                                    dividerColor = dividerColor
                                                 )
                                             }
-                                        }
-                                    }
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .height(150.dp)
-                                            .clipToBounds()
-                                    ) {
-                                        DownstreamLevelsChart(
-                                            points = downstreamPoints,
-                                            ofdmSeries = entry.ofdmSeries,
-                                            barColor = accentColor,
-                                            errorColor = errorColor,
-                                            textColor = tableTextPrimary,
-                                            gridColor = dividerColor,
-                                            modifier = Modifier.fillMaxSize()
-                                        )
-                                    }
-                                    Text(
-                                        text = "MHz",
-                                        color = tableTextSecondary,
-                                        fontSize = 11.sp,
-                                        modifier = Modifier.align(Alignment.CenterHorizontally)
-                                    )
-                                    channelLabelForEntry[entry]?.let { label ->
-                                        MeasurementFooterRow(
-                                            entry = entry,
-                                            label = label,
-                                            hasError = channelHasError(entry),
-                                            onDelete = onRequestDelete
-                                        )
-                                    }
-                                    Spacer(Modifier.height(8.dp))
-                                    MeasurementTableCard(
-                                        title = "Downstream Analogic Channels",
-                                        headers = listOf("Canal", "Freq (MHz)", "M1"),
-                                        containerColor = cardColor,
-                                        headerColor = headerColor,
-                                        borderColor = borderColor,
-                                        dividerColor = dividerColor,
-                                        textPrimary = tableTextPrimary,
-                                        textSecondary = tableTextSecondary,
-                                        resetKey = entry.label
-                                    ) {
-                                        val pilotChannels = listOf(50, 70, 110, 116, 136)
-                                        pilotChannels.forEach { channel ->
-                                            val frequency = entry.pilotMeta[channel]?.frequencyMHz
-                                            val level = entry.pilotLevels[channel]
-                                            val invalidCells = if (entry.pilotLevelOk[channel] == false) setOf(2) else emptySet()
-                                            MeasurementTableRow(
-                                                cells = listOf(
-                                                    channel.toString(),
-                                                    formatMHz(frequency),
-                                                    formatDbmv(level)
-                                                ),
-                                                invalidCells = invalidCells,
-                                                textPrimary = tableTextPrimary,
-                                                errorColor = errorColor,
-                                                dividerColor = dividerColor
-                                            )
-                                        }
-                                    }
-                                    MeasurementTableCard(
-                                        title = "Downstream Digital Channels",
-                                        headers = listOf("Canal", "Freq (MHz)", "Nivel (dBmV)", "MER", "BER pre", "BER post", "ICFR"),
-                                        containerColor = cardColor,
-                                        headerColor = headerColor,
-                                        borderColor = borderColor,
-                                        dividerColor = dividerColor,
-                                        textPrimary = tableTextPrimary,
-                                        textSecondary = tableTextSecondary,
-                                        resetKey = entry.label
-                                    ) {
-                                        entry.digitalRows.forEach { row ->
-                                            val invalidCells = buildSet {
-                                                if (row.merOk == false) add(3)
-                                                if (row.berPreOk == false) add(4)
-                                                if (row.berPostOk == false) add(5)
-                                                if (row.icfrOk == false) add(6)
-                                            }
-                                            MeasurementTableRow(
-                                                cells = listOf(
-                                                    row.channel.toString(),
-                                                    formatMHz(row.frequencyMHz),
-                                                    formatDbmv(row.levelDbmv),
-                                                    formatDbmv(row.mer),
-                                                    row.berPre?.toString() ?: "—",
-                                                    row.berPost?.toString() ?: "—",
-                                                    formatDbmv(row.icfr)
-                                                ),
-                                                invalidCells = invalidCells,
-                                                textPrimary = tableTextPrimary,
-                                                errorColor = errorColor,
-                                                dividerColor = dividerColor
-                                            )
                                         }
                                     }
                                 }
