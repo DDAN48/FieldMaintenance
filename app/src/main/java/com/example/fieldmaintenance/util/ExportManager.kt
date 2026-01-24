@@ -2203,6 +2203,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                   const themeToggle = document.getElementById('theme-toggle');
                   const mapSearchInput = document.getElementById('map-search-input');
                   const mapSearchButton = document.getElementById('map-search-button');
+                  const mapSearchClear = document.getElementById('map-search-clear');
                   const photoZoomIn = document.getElementById('photo-zoom-in');
                   const photoZoomOut = document.getElementById('photo-zoom-out');
                   const photoZoomReset = document.getElementById('photo-zoom-reset');
