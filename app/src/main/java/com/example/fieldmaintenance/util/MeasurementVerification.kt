@@ -432,19 +432,21 @@ private fun validateMeasurementValues(
             }
             if (rule.has("source")) {
                 val target = amplifierTargets?.get(channel)
-                if (target == null && assetType != AssetType.NODE) {
-                    issues.add("Falta tabla interna para canal $channel.")
+                if (target == null) {
+                    if (assetType != AssetType.NODE) {
+                        issues.add("Falta tabla interna para canal $channel.")
+                    }
+                    continue
+                }
+                val row = rows.firstOrNull { it.channel == channel }
+                val level = row?.levelDbmv
+                if (level == null) {
+                    issues.add("No se encontr? nivel para canal $channel.")
                 } else {
-                    val row = rows.firstOrNull { it.channel == channel }
-                    val level = row?.levelDbmv
-                    if (level == null) {
-                        issues.add("No se encontr? nivel para canal $channel.")
-                    } else {
-                        val tolerance = resolveTolerance(rule.optDouble("tolerance", 1.5), toleranceOverride)
-                        val adjusted = level + testPointOffset
-                        if (tolerance != null && (adjusted < target - tolerance || adjusted > target + tolerance)) {
-                            issues.add("Nivel fuera de rango en canal $channel.")
-                        }
+                    val tolerance = resolveTolerance(rule.optDouble("tolerance", 1.5), toleranceOverride)
+                    val adjusted = level + testPointOffset
+                    if (tolerance != null && (adjusted < target - tolerance || adjusted > target + tolerance)) {
+                        issues.add("Nivel fuera de rango en canal $channel.")
                     }
                 }
             } else {
