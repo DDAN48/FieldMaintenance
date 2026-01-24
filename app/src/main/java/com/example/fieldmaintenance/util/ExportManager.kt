@@ -2279,10 +2279,6 @@ val assets = repository.getAssetsByReportId(report.id).first()
                   const photoZoomIn = document.getElementById('photo-zoom-in');
                   const photoZoomOut = document.getElementById('photo-zoom-out');
                   const photoZoomReset = document.getElementById('photo-zoom-reset');
-                  let currentPhotos = [];
-                  let currentPhotoIndex = 0;
-                  let currentPhotoScale = 1;
-
                   function applyTheme(theme) {
                     document.documentElement.setAttribute('data-theme', theme);
                     if (themeToggle) {
