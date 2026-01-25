@@ -1346,7 +1346,10 @@ val assets = repository.getAssetsByReportId(report.id).first()
         DownloadStore.saveToDownloads(context, tmp, displayName, "application/pdf")
     }
     
-    suspend fun exportToZIP(report: MaintenanceReport): File = withContext(Dispatchers.IO) {
+    suspend fun exportToZIP(
+        report: MaintenanceReport,
+        baseName: String = exportBaseName(report)
+    ): File = withContext(Dispatchers.IO) {
         val assets = repository.getAssetsByReportId(report.id).first()
             .sortedBy { assetSortKey(it) }
         val passives = repository.getPassivesByReportId(report.id).first()
@@ -1465,7 +1468,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
             nodeAdjustmentsByAsset = nodeAdjustmentsByAsset
         )
 
-        val zipFile = File(context.getExternalFilesDir(null), "maintenance_${report.id}.zip")
+        val zipFile = File(context.getExternalFilesDir(null), "${baseName}.zip")
         if (zipFile.exists()) zipFile.delete()
         
         ZipFile(zipFile).apply {
@@ -1805,15 +1808,21 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     position: absolute;
                     top: 50%;
                     transform: translateY(-50%);
-                    background: rgba(0,0,0,0.55);
+                    background: rgba(240,240,240,0.9);
                     border: 1px solid var(--border);
-                    color: var(--text);
-                    padding: 12px 16px;
+                    color: #111;
+                    width: 44px;
+                    height: 44px;
                     border-radius: 50%;
                     cursor: pointer;
-                    font-size: 24px;
+                    font-size: 26px;
+                    font-weight: 700;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
                     z-index: 10;
                     user-select: none;
+                    box-shadow: 0 6px 14px rgba(0,0,0,0.35);
                   }
                   .photo-nav.prev { left: 8px; }
                   .photo-nav.next { right: 8px; }
@@ -1826,9 +1835,9 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     z-index: 10;
                   }
                   .photo-zoom-controls button {
-                    background: rgba(255,255,255,0.9);
+                    background: rgba(220,220,220,0.95);
                     border: 1px solid var(--border);
-                    color: #000;
+                    color: #222;
                     padding: 6px 10px;
                     border-radius: 8px;
                     cursor: pointer;
@@ -1848,6 +1857,12 @@ val assets = repository.getAssetsByReportId(report.id).first()
                   .adjustment-panel h3 {
                     margin: 0;
                     font-size: 16px;
+                  }
+                  .adjustment-panel .section-title {
+                    margin: 12px 0 6px;
+                  }
+                  .adjustment-panel .table {
+                    margin-bottom: 8px;
                   }
                   .table {
                     width: 100%;
@@ -1956,12 +1971,15 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     align-items: center;
                     justify-content: space-between;
                     gap: 12px;
-                    flex-wrap: wrap;
+                    flex-wrap: nowrap;
                   }
                   .measurement-tabs {
                     display: flex;
                     gap: 8px;
-                    flex-wrap: wrap;
+                    flex-wrap: nowrap;
+                    overflow-x: hidden;
+                    flex: 1;
+                    min-width: 0;
                   }
                   .measurement-tab {
                     border-radius: 999px;
@@ -2047,6 +2065,9 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     padding: 8px 12px;
                     background: rgba(0,0,0,0.25);
                   }
+                  .collapse.flat {
+                    border-radius: 0;
+                  }
                   .collapse summary {
                     cursor: pointer;
                     list-style: none;
@@ -2097,6 +2118,70 @@ val assets = repository.getAssetsByReportId(report.id).first()
                   .muted {
                     color: var(--muted);
                     font-size: 12px;
+                  }
+                  .observation-asset {
+                    margin-bottom: 12px;
+                  }
+                  .observation-asset-title {
+                    font-weight: 600;
+                    margin-bottom: 6px;
+                  }
+                  .observation-measurement-title {
+                    font-weight: 600;
+                    margin: 6px 0 4px;
+                  }
+                  .observation-measurement-list {
+                    margin: 0 0 6px 18px;
+                    padding: 0;
+                  }
+                  .measurement-type-toggle {
+                    display: flex;
+                    align-items: center;
+                    gap: 10px;
+                    margin-left: auto;
+                  }
+                  .measurement-type-toggle span {
+                    font-size: 12px;
+                    color: var(--muted);
+                  }
+                  .toggle-switch {
+                    position: relative;
+                    width: 38px;
+                    height: 20px;
+                    display: inline-block;
+                  }
+                  .toggle-switch input {
+                    opacity: 0;
+                    width: 0;
+                    height: 0;
+                  }
+                  .toggle-slider {
+                    position: absolute;
+                    cursor: pointer;
+                    top: 0;
+                    left: 0;
+                    right: 0;
+                    bottom: 0;
+                    background-color: #ccc;
+                    border-radius: 20px;
+                    transition: 0.2s;
+                  }
+                  .toggle-slider::before {
+                    position: absolute;
+                    content: "";
+                    height: 16px;
+                    width: 16px;
+                    left: 2px;
+                    bottom: 2px;
+                    background-color: white;
+                    border-radius: 50%;
+                    transition: 0.2s;
+                  }
+                  .toggle-switch input:checked + .toggle-slider {
+                    background-color: #4c7dff;
+                  }
+                  .toggle-switch input:checked + .toggle-slider::before {
+                    transform: translateX(18px);
                   }
                   @media (max-width: 900px) {
                     .asset-grid {
@@ -2151,9 +2236,8 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     </div>
                   </div>
                   <div class="card">
-                    <div class="asset-toolbar">
+                  <div class="asset-toolbar">
                       <select id="asset-select"></select>
-                      <strong id="asset-header"></strong>
                     </div>
                     <div class="asset-grid" style="margin-top:16px;">
                       <div>
@@ -2175,7 +2259,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                   </div>
                   <div class="card">
                     <div class="section-title">Detalle de intervención de pasivos</div>
-                    <details class="collapse" open>
+                    <details class="collapse">
                       <summary>Ver detalle</summary>
                       <div id="passive-section"></div>
                     </details>
@@ -2192,7 +2276,6 @@ val assets = repository.getAssetsByReportId(report.id).first()
                 <script>
                   const data = JSON.parse(document.getElementById('report-data').textContent);
                   const assetSelect = document.getElementById('asset-select');
-                  const assetHeader = document.getElementById('asset-header');
                   const photoImage = document.getElementById('photo-image');
                   const photoTitle = document.getElementById('photo-title');
                   const photoPrev = document.getElementById('photo-prev');
@@ -2207,10 +2290,6 @@ val assets = repository.getAssetsByReportId(report.id).first()
                   const photoZoomIn = document.getElementById('photo-zoom-in');
                   const photoZoomOut = document.getElementById('photo-zoom-out');
                   const photoZoomReset = document.getElementById('photo-zoom-reset');
-                  let currentPhotos = [];
-                  let currentPhotoIndex = 0;
-                  let currentPhotoScale = 1;
-
                   function applyTheme(theme) {
                     document.documentElement.setAttribute('data-theme', theme);
                     if (themeToggle) {
@@ -2277,13 +2356,61 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     if (!observationDetails.length) {
                       observationListEl.innerHTML = `<div class="muted">Sin observaciones.</div>`;
                     } else {
-                      const list = document.createElement('ul');
-                      observationDetails.forEach((detail) => {
-                        const li = document.createElement('li');
-                        li.innerHTML = `<strong>${'$'}{detail.assetHeader}</strong> - ${'$'}{detail.detail}`;
-                        list.appendChild(li);
+                      const assetsById = new Map();
+                      data.assets.forEach((asset) => {
+                        assetsById.set(asset.id, {
+                          assetHeader: asset.header,
+                          files: new Map()
+                        });
                       });
-                      observationListEl.appendChild(list);
+                      observationDetails.forEach((detail) => {
+                        const bucket = assetsById.get(detail.assetId) || {
+                          assetHeader: detail.assetHeader || 'Activo',
+                          files: new Map()
+                        };
+                        if (!assetsById.has(detail.assetId)) {
+                          assetsById.set(detail.assetId, bucket);
+                        }
+                        const fileName = detail.file || 'General';
+                        if (!bucket.files.has(fileName)) {
+                          bucket.files.set(fileName, []);
+                        }
+                        bucket.files.get(fileName).push(detail);
+                      });
+
+                      const orderedAssetIds = [
+                        ...data.assets.map((asset) => asset.id),
+                        ...Array.from(assetsById.keys()).filter((id) => !data.assets.find((asset) => asset.id === id))
+                      ];
+                      orderedAssetIds.forEach((assetId) => {
+                        const bucket = assetsById.get(assetId);
+                        if (!bucket || !bucket.files.size) return;
+                        const assetBlock = document.createElement('div');
+                        assetBlock.className = 'observation-asset';
+                        const assetTitle = document.createElement('div');
+                        assetTitle.className = 'observation-asset-title';
+                        assetTitle.textContent = bucket.assetHeader;
+                        assetBlock.appendChild(assetTitle);
+
+                        bucket.files.forEach((details, fileName) => {
+                          const measurementTitle = document.createElement('div');
+                          measurementTitle.className = 'observation-measurement-title';
+                          measurementTitle.textContent = fileName;
+                          assetBlock.appendChild(measurementTitle);
+                          const detailList = document.createElement('ul');
+                          detailList.className = 'observation-measurement-list';
+                          details.forEach((detail) => {
+                            const detailItem = document.createElement('li');
+                            detailItem.textContent = detail.detail;
+                            if (detail.type === 'rule_violation' || detail.detail.toLowerCase().includes('fuera de rango')) {
+                              detailItem.style.color = 'var(--bad)';
+                            }
+                            detailList.appendChild(detailItem);
+                          });
+                          assetBlock.appendChild(detailList);
+                        });
+                        observationListEl.appendChild(assetBlock);
+                      });
                     }
                   }
 
@@ -2310,7 +2437,6 @@ val assets = repository.getAssetsByReportId(report.id).first()
 
                   const mapPoints = buildMapPoints();
                   const mapEl = document.getElementById('summary-map');
-                  const mapSearchClear = document.getElementById('map-search-clear');
                   let mapInstance = null;
                   let mapSearchMarker = null;
 
@@ -2633,7 +2759,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                       });
                       if (collapsibleTitles.has(tableData.title)) {
                         const details = document.createElement('details');
-                        details.className = 'collapse';
+                        details.className = 'collapse flat';
                         const summary = document.createElement('summary');
                         summary.textContent = tableData.title;
                         details.appendChild(summary);
@@ -2675,7 +2801,9 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     tooltip.className = 'chart-tooltip';
                     const width = container.clientWidth || 600;
                     const height = 200;
-                    const padding = 80;
+                    const padding = { top: 24, right: 18, bottom: 26, left: 48 };
+                    const chartWidth = width - padding.left - padding.right;
+                    const chartHeight = height - padding.top - padding.bottom;
                     const levels = normalizedPoints.map((p) => p.levelDbmv).filter((v) => v != null);
                     if (!levels.length) {
                       container.textContent = 'Sin datos para graficar.';
@@ -2685,7 +2813,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     const min = Math.min(...levels);
                     const max = Math.max(...levels);
                     const span = max - min || 1;
-                    const barWidth = options.barWidth || (width - padding * 2) / normalizedPoints.length;
+                    const barWidth = options.barWidth || chartWidth / normalizedPoints.length;
                     const xMin = options.xMin ?? 0;
                     const xMax = options.xMax ?? 1000;
                     const yTicks = 4;
@@ -2693,10 +2821,10 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     svg.setAttribute('width', width);
                     svg.setAttribute('height', height);
                     for (let i = 0; i <= yTicks; i += 1) {
-                      const y = padding + (height - padding * 2) * (i / yTicks);
+                      const y = padding.top + chartHeight * (i / yTicks);
                       const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-                      line.setAttribute('x1', padding);
-                      line.setAttribute('x2', width - padding);
+                      line.setAttribute('x1', padding.left);
+                      line.setAttribute('x2', width - padding.right);
                       line.setAttribute('y1', y);
                       line.setAttribute('y2', y);
                       line.setAttribute('stroke', 'var(--chart-grid)');
@@ -2704,7 +2832,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                       svg.appendChild(line);
                       const value = (max - (span * i) / yTicks).toFixed(1);
                       const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-                      label.setAttribute('x', padding - 10);
+                      label.setAttribute('x', padding.left - 8);
                       label.setAttribute('y', y + 4);
                       label.setAttribute('text-anchor', 'end');
                       label.setAttribute('fill', 'var(--muted)');
@@ -2716,9 +2844,9 @@ val assets = repository.getAssetsByReportId(report.id).first()
                       const level = point.levelDbmv ?? 0;
                       const freq = Number(point.frequencyMHz);
                       const ratio = (freq - xMin) / (xMax - xMin);
-                      const x = padding + ratio * (width - padding * 2) - barWidth / 2;
-                      const barHeight = ((level - min) / span) * (height - padding * 2);
-                      const y = height - padding - barHeight;
+                      const x = padding.left + ratio * chartWidth - barWidth / 2;
+                      const barHeight = ((level - min) / span) * chartHeight;
+                      const y = height - padding.bottom - barHeight;
                       const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
                       rect.setAttribute('x', x);
                       rect.setAttribute('y', y);
@@ -2748,10 +2876,10 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     xTicks.forEach((tick) => {
                       if (tick < xMin || tick > xMax) return;
                       const ratio = (tick - xMin) / (xMax - xMin);
-                      const x = padding + ratio * (width - padding * 2);
+                      const x = padding.left + ratio * chartWidth;
                       const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
                       label.setAttribute('x', x);
-                      label.setAttribute('y', height - 12);
+                      label.setAttribute('y', height - padding.bottom + 12);
                       label.setAttribute('text-anchor', 'middle');
                       label.setAttribute('fill', 'var(--muted)');
                       label.setAttribute('font-size', '10');
@@ -2760,7 +2888,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     });
                     if (options.title) {
                       const title = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-                      title.setAttribute('x', padding);
+                      title.setAttribute('x', padding.left);
                       title.setAttribute('y', 16);
                       title.setAttribute('fill', 'var(--text)');
                       title.setAttribute('font-size', '12');
@@ -2769,20 +2897,20 @@ val assets = repository.getAssetsByReportId(report.id).first()
                       svg.appendChild(title);
                     }
                     const axis = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-                    axis.setAttribute('x', padding + (width - padding * 2) / 2);
-                    axis.setAttribute('y', height - 2);
+                    axis.setAttribute('x', padding.left + chartWidth / 2);
+                    axis.setAttribute('y', height - 4);
                     axis.setAttribute('text-anchor', 'middle');
                     axis.setAttribute('fill', 'var(--muted)');
                     axis.setAttribute('font-size', '10');
                     axis.textContent = 'MHz';
                     svg.appendChild(axis);
                     const axisY = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-                    axisY.setAttribute('x', 24);
+                    axisY.setAttribute('x', 14);
                     axisY.setAttribute('y', height / 2);
                     axisY.setAttribute('text-anchor', 'middle');
                     axisY.setAttribute('fill', 'var(--muted)');
                     axisY.setAttribute('font-size', '10');
-                    axisY.setAttribute('transform', `rotate(-90 24 ${'$'}{height / 2})`);
+                    axisY.setAttribute('transform', `rotate(-90 14 ${'$'}{height / 2})`);
                     axisY.textContent = 'dBmV';
                     svg.appendChild(axisY);
 
@@ -2825,7 +2953,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                         }
                     });
 
-                    wrapper.addEventListener('mousemove', (e) => {
+                    window.addEventListener('mousemove', (e) => {
                         if (!isDragging) return;
                         e.preventDefault();
                         pannedX = e.clientX - startX;
@@ -2833,7 +2961,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                         updateTransform();
                     });
 
-                    wrapper.addEventListener('mouseup', () => {
+                    window.addEventListener('mouseup', () => {
                         if (isDragging) {
                             isDragging = false;
                             wrapper.style.cursor = 'default';
@@ -2871,7 +2999,8 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     container.appendChild(wrapper);
                   }
 
-                  function renderMeasurementEntry(entry) {
+                  function renderMeasurementEntry(entry, options = {}) {
+                    const { showSwitchPill = true } = options;
                     const entryEl = document.createElement('div');
                     entryEl.className = 'measurement-entry';
                     const header = document.createElement('div');
@@ -2919,7 +3048,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                       entryEl.appendChild(chart);
                       const nameRow = document.createElement('div');
                       nameRow.className = 'measurement-name-row';
-                      if (entry.switchSelection) {
+                      if (showSwitchPill && entry.switchSelection) {
                         const pill = document.createElement('span');
                         pill.className = 'switch-pill';
                         pill.textContent = entry.switchSelection;
@@ -3000,6 +3129,15 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     return details;
                   }
 
+                  function extractMeasurementIndex(label) {
+                    const base = (label || '').split('/').pop() || '';
+                    const match = base.match(/M\s*(\d+)/i);
+                    if (match && match[1]) {
+                      return Number(match[1]);
+                    }
+                    return Number.POSITIVE_INFINITY;
+                  }
+
                   function renderMeasurements(assetId) {
                     measurementSection.innerHTML = '';
                     const asset = data.assets.find((a) => a.id === assetId);
@@ -3013,6 +3151,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     }
                     const groups = [bundle.rx, bundle.module].filter(Boolean);
                     groups.forEach((group) => {
+                      const isAmplifierGroup = asset?.type === 'AMPLIFIER' || group.label === 'Módulo';
                       const groupEl = document.createElement('div');
                       groupEl.className = 'measurement-group';
                       const header = document.createElement('div');
@@ -3021,7 +3160,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                       headerTop.className = 'measurement-header-top';
                       const title = document.createElement('div');
                       title.className = 'section-title';
-                      title.textContent = `Carga de Mediciones - ${'$'}{group.label}`;
+                      title.textContent = `Mediciones - ${'$'}{group.label}`;
                       headerTop.appendChild(title);
                       const tabs = document.createElement('div');
                       tabs.className = 'measurement-tabs';
@@ -3034,27 +3173,80 @@ val assets = repository.getAssetsByReportId(report.id).first()
                         header.appendChild(geo);
                       }
                       groupEl.appendChild(header);
+                      const entryContainer = document.createElement('div');
+                      groupEl.appendChild(entryContainer);
 
-                      const entryEls = group.entries.map((entry, index) => {
-                        const tab = document.createElement('button');
-                        tab.className = 'measurement-tab';
-                        tab.textContent = `M${'$'}{index + 1}`;
-                        tab.addEventListener('click', () => {
-                          entryEls.forEach((el) => el.classList.remove('active'));
-                          tabs.querySelectorAll('.measurement-tab').forEach((t) => t.classList.remove('active'));
-                          entryEls[index].classList.add('active');
-                          tab.classList.add('active');
+                      const entries = group.entries || [];
+                      const isModuleGroup = group.label === 'Módulo';
+                      const groupedEntries = {
+                        channelexpert: entries.filter((entry) => entry.type === 'channelexpert'),
+                        docsisexpert: entries.filter((entry) => entry.type === 'docsisexpert')
+                      };
+
+                      function renderTabsForEntries(filteredEntries) {
+                        tabs.innerHTML = '';
+                        entryContainer.innerHTML = '';
+                        const sortedEntries = filteredEntries
+                          .slice()
+                          .sort((a, b) => extractMeasurementIndex(a.label) - extractMeasurementIndex(b.label));
+                        const entryEls = sortedEntries.map((entry, index) => {
+                          const tab = document.createElement('button');
+                          tab.className = 'measurement-tab';
+                          tab.textContent = isAmplifierGroup && entry.switchSelection
+                            ? entry.switchSelection
+                            : `M${'$'}{index + 1}`;
+                          tab.addEventListener('click', () => {
+                            entryEls.forEach((el) => el.classList.remove('active'));
+                            tabs.querySelectorAll('.measurement-tab').forEach((t) => t.classList.remove('active'));
+                            entryEls[index].classList.add('active');
+                            tab.classList.add('active');
+                          });
+                          tabs.appendChild(tab);
+                          const entryEl = renderMeasurementEntry(entry, { showSwitchPill: !isAmplifierGroup });
+                          entryContainer.appendChild(entryEl);
+                          return entryEl;
                         });
-                        tabs.appendChild(tab);
-                        const entryEl = renderMeasurementEntry(entry);
-                        groupEl.appendChild(entryEl);
-                        return entryEl;
-                      });
 
-                      if (entryEls.length) {
-                        entryEls[0].classList.add('active');
-                        const firstTab = tabs.querySelector('.measurement-tab');
-                        if (firstTab) firstTab.classList.add('active');
+                        if (entryEls.length) {
+                          entryEls[0].classList.add('active');
+                          const firstTab = tabs.querySelector('.measurement-tab');
+                          if (firstTab) firstTab.classList.add('active');
+                        } else {
+                          const empty = document.createElement('div');
+                          empty.className = 'muted';
+                          empty.textContent = 'Sin mediciones cargadas.';
+                          entryContainer.appendChild(empty);
+                        }
+                      }
+
+                      if (isModuleGroup && groupedEntries.channelexpert.length && groupedEntries.docsisexpert.length) {
+                        const toggle = document.createElement('div');
+                        toggle.className = 'measurement-type-toggle';
+                        toggle.innerHTML = `
+                          <span>ChannelExpert</span>
+                          <label class="toggle-switch">
+                            <input type="checkbox" />
+                            <span class="toggle-slider"></span>
+                          </label>
+                          <span>DocsisExpert</span>
+                        `;
+                        headerTop.appendChild(toggle);
+                        const toggleInput = toggle.querySelector('input');
+                        const renderForType = () => {
+                          if (toggleInput.checked) {
+                            renderTabsForEntries(groupedEntries.docsisexpert);
+                          } else {
+                            renderTabsForEntries(groupedEntries.channelexpert);
+                          }
+                        };
+                        toggleInput.addEventListener('change', renderForType);
+                        renderForType();
+                      } else if (isModuleGroup && groupedEntries.docsisexpert.length) {
+                        renderTabsForEntries(groupedEntries.docsisexpert);
+                      } else if (isModuleGroup && groupedEntries.channelexpert.length) {
+                        renderTabsForEntries(groupedEntries.channelexpert);
+                      } else {
+                        renderTabsForEntries(entries);
                       }
                       if (group.observationDetails && group.observationDetails.length) {
                         const details = document.createElement('details');
@@ -3103,7 +3295,6 @@ val assets = repository.getAssetsByReportId(report.id).first()
                   function setAsset(assetId) {
                     const asset = data.assets.find((a) => a.id === assetId);
                     if (!asset) return;
-                    assetHeader.textContent = asset.header;
                     currentPhotos = asset.photos || [];
                     currentPhotoIndex = 0;
                     updatePhoto();
@@ -3368,37 +3559,24 @@ val assets = repository.getAssetsByReportId(report.id).first()
         )
     }
 
-    suspend fun exportToBundleZip(report: MaintenanceReport): File = withContext(Dispatchers.IO) {
-        val pdfFile = exportToPDF(report)
-        val jsonZip = exportToZIP(report)
-        val baseName = exportBaseName(report)
-
-        val bundleZip = File(context.getExternalFilesDir(null), "maintenance_${report.id}_bundle.zip")
-        if (bundleZip.exists()) bundleZip.delete()
-
-        ZipFile(bundleZip).apply {
-            addFile(
-                pdfFile,
-                ZipParameters().apply { fileNameInZip = "$baseName.pdf" }
-            )
-            addFile(
-                jsonZip,
-                ZipParameters().apply { fileNameInZip = "${baseName}_json.zip" }
-            )
-        }
-
-        bundleZip
+    suspend fun exportToBundleZip(
+        report: MaintenanceReport,
+        baseName: String = exportBaseName(report)
+    ): File = withContext(Dispatchers.IO) {
+        exportToZIP(report, baseName)
     }
 
     suspend fun exportZipToDownloads(report: MaintenanceReport): Uri = withContext(Dispatchers.IO) {
-        val tmp = exportToZIP(report)
-        val displayName = "${exportBaseName(report)}.zip"
+        val baseName = exportBaseName(report)
+        val tmp = exportToZIP(report, baseName)
+        val displayName = "${baseName}.zip"
         DownloadStore.saveToDownloads(context, tmp, displayName, "application/zip")
     }
 
     suspend fun exportBundleToDownloads(report: MaintenanceReport): Uri = withContext(Dispatchers.IO) {
-        val tmp = exportToBundleZip(report)
-        val displayName = "${exportBaseName(report)}.zip"
+        val baseName = exportBaseName(report)
+        val tmp = exportToBundleZip(report, baseName)
+        val displayName = "${baseName}.zip"
         DownloadStore.saveToDownloads(context, tmp, displayName, "application/zip")
     }
 
@@ -3434,7 +3612,8 @@ val assets = repository.getAssetsByReportId(report.id).first()
      */
     suspend fun exportZipToUri(report: MaintenanceReport, uri: Uri, contentResolver: ContentResolver = context.contentResolver) =
         withContext(Dispatchers.IO) {
-            val tmp = exportToZIP(report)
+            val baseName = exportBaseName(report)
+            val tmp = exportToZIP(report, baseName)
             require(tmp.exists()) { "ZIP temporal no existe" }
             if (tmp.length() <= 0L) throw IllegalStateException("ZIP temporal vacío")
 
@@ -3456,7 +3635,8 @@ val assets = repository.getAssetsByReportId(report.id).first()
 
     suspend fun exportBundleToUri(report: MaintenanceReport, uri: Uri, contentResolver: ContentResolver = context.contentResolver) =
         withContext(Dispatchers.IO) {
-            val tmp = exportToBundleZip(report)
+            val baseName = exportBaseName(report)
+            val tmp = exportToBundleZip(report, baseName)
             require(tmp.exists()) { "ZIP temporal no existe" }
             if (tmp.length() <= 0L) throw IllegalStateException("ZIP temporal vacío")
 
