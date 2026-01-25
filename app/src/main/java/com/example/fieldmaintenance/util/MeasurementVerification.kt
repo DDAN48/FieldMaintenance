@@ -716,6 +716,16 @@ suspend fun verifyMeasurementFiles(
                 }
                 return@forEach
             }
+            if (!isJsonLike(key) &&
+                !key.endsWith(".zip") &&
+                !key.endsWith(".gz") &&
+                !key.endsWith(".txt")
+            ) {
+                if (file.exists()) {
+                    file.delete()
+                }
+                return@forEach
+            }
             if (seenNames.add(key)) {
                 add(file)
             } else {
@@ -1156,6 +1166,9 @@ suspend fun verifyMeasurementFiles(
                     parseErrorCount += 1
                     parseErrorNames.add(file.name)
                 }
+                if (file.exists()) {
+                    file.delete()
+                }
             }
             name.endsWith(".gz") -> {
                 runCatching {
@@ -1163,6 +1176,9 @@ suspend fun verifyMeasurementFiles(
                 }.onFailure {
                     parseErrorCount += 1
                     parseErrorNames.add(file.name)
+                }
+                if (file.exists()) {
+                    file.delete()
                 }
             }
         }

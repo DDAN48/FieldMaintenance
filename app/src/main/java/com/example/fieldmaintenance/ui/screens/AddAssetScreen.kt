@@ -2320,6 +2320,7 @@ private fun AssetFileSection(
     var verificationSummaryRx by remember { mutableStateOf<MeasurementVerificationSummary?>(null) }
     var verificationSummaryModule by remember { mutableStateOf<MeasurementVerificationSummary?>(null) }
     var duplicateNotice by remember { mutableStateOf<List<String>>(emptyList()) }
+    var switchDuplicateNotice by remember { mutableStateOf<List<String>>(emptyList()) }
     var surplusNotice by remember { mutableStateOf<List<String>>(emptyList()) }
     var surplusSelection by remember { mutableStateOf<Set<String>>(emptySet()) }
     var surplusTargetCount by remember { mutableStateOf(0) }
@@ -2767,11 +2768,12 @@ private fun AssetFileSection(
                             tabs: List<MeasurementTab>,
                             options: List<String>,
                             savedSelections: Map<String, String?>
-                        ): Map<MeasurementEntry, String> {
+                        ): Pair<Map<MeasurementEntry, String>, List<String>> {
                             val selections = mutableMapOf<MeasurementEntry, String>()
                             var mainUsed = false
                             var inUsed = false
                             var auxdcUsed = false
+                            val duplicateLabels = mutableListOf<String>()
                             tabs.forEachIndexed { index, tab ->
                                 val saved = savedSelections[tab.entry.label]?.uppercase(Locale.getDefault())
                                 val inferred = if (saved == null) inferSwitchSelection(tab.entry.label, options) else null
@@ -2786,12 +2788,15 @@ private fun AssetFileSection(
                                 if (!isExplicit) {
                                     if (selection == "MAIN" && mainUsed) {
                                         selection = "AUX"
+                                        duplicateLabels.add(tab.entry.label)
                                     }
                                     if (selection == "IN" && inUsed) {
                                         selection = "AUX"
+                                        duplicateLabels.add(tab.entry.label)
                                     }
                                     if (selection == "AUXDC" && auxdcUsed) {
                                         selection = "AUX"
+                                        duplicateLabels.add(tab.entry.label)
                                     }
                                     if (selection == "AUXDC" && !options.contains("AUXDC")) {
                                         selection = "AUX"
@@ -2802,7 +2807,19 @@ private fun AssetFileSection(
                                 }
                                 selections[tab.entry] = selection
                             }
-                            return selections
+                            val seed = tabs.joinToString("|") { it.entry.label }.hashCode()
+                            val reserved = listOf("MAIN", "IN", "AUXDC")
+                            reserved.forEach { reservedKey ->
+                                val matching = selections.filterValues { it == reservedKey }.keys.toMutableList()
+                                if (matching.size > 1) {
+                                    matching.shuffle(kotlin.random.Random(seed))
+                                    matching.drop(1).forEach { entry ->
+                                        selections[entry] = "AUX"
+                                        duplicateLabels.add(entry.label)
+                                    }
+                                }
+                            }
+                            return selections to duplicateLabels
                         }
 
                         fun persistSwitchSelections(
@@ -3086,11 +3103,20 @@ private fun AssetFileSection(
                                                 )
                                             }
                                         }
-                                        val channelSwitchSelections = remember(channelTabs, channelSwitchOptions, savedSelections) {
+                                        val (channelSwitchSelections, switchDuplicates) = remember(
+                                            channelTabs,
+                                            channelSwitchOptions,
+                                            savedSelections
+                                        ) {
                                             buildSwitchSelections(channelTabs, channelSwitchOptions, savedSelections)
                                         }
                                         LaunchedEffect(channelSwitchSelections, assetForDisplay.id) {
                                             persistSwitchSelections(channelTabs, channelSwitchSelections, assetForDisplay.id)
+                                        }
+                                        LaunchedEffect(switchDuplicates, assetForDisplay.id) {
+                                            if (switchDuplicates.isNotEmpty() && switchDuplicateNotice.isEmpty()) {
+                                                switchDuplicateNotice = switchDuplicates
+                                            }
                                         }
                                         val initialSelection = channelSwitchSelections[entry] ?: "MAIN"
                                         var selected by remember(entry.label, initialSelection) {
@@ -3700,11 +3726,20 @@ private fun AssetFileSection(
                                                 )
                                             }
                                         }
-                                        val channelSwitchSelections = remember(channelTabs, channelSwitchOptions, savedSelections) {
+                                        val (channelSwitchSelections, switchDuplicates) = remember(
+                                            channelTabs,
+                                            channelSwitchOptions,
+                                            savedSelections
+                                        ) {
                                             buildSwitchSelections(channelTabs, channelSwitchOptions, savedSelections)
                                         }
                                         LaunchedEffect(channelSwitchSelections, assetForDisplay.id) {
                                             persistSwitchSelections(channelTabs, channelSwitchSelections, assetForDisplay.id)
+                                        }
+                                        LaunchedEffect(switchDuplicates, assetForDisplay.id) {
+                                            if (switchDuplicates.isNotEmpty() && switchDuplicateNotice.isEmpty()) {
+                                                switchDuplicateNotice = switchDuplicates
+                                            }
                                         }
                                         val initialSelection = channelSwitchSelections[entry] ?: "MAIN"
                                         var selected by remember(entry.label, initialSelection) {
@@ -3976,6 +4011,48 @@ private fun AssetFileSection(
                                 append(" por estar duplicada.")
                             },
                             style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            },
+            confirmButton = {}
+        )
+    }
+
+    if (switchDuplicateNotice.isNotEmpty()) {
+        AlertDialog(
+            onDismissRequest = { },
+            properties = DialogProperties(
+                dismissOnBackPress = false,
+                dismissOnClickOutside = false
+            ),
+            title = {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "Switch repetido detectado",
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(onClick = { switchDuplicateNotice = emptyList() }) {
+                        Icon(Icons.Default.Close, contentDescription = "Cerrar")
+                    }
+                }
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        "Se detectaron mediciones con IN/MAIN/AUXDC repetido. Se reasignaron como AUX:",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    switchDuplicateNotice.forEach { name ->
+                        Text(
+                            name,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                            fontWeight = FontWeight.Bold
                         )
                     }
                 }

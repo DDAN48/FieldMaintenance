@@ -1346,7 +1346,10 @@ val assets = repository.getAssetsByReportId(report.id).first()
         DownloadStore.saveToDownloads(context, tmp, displayName, "application/pdf")
     }
     
-    suspend fun exportToZIP(report: MaintenanceReport): File = withContext(Dispatchers.IO) {
+    suspend fun exportToZIP(
+        report: MaintenanceReport,
+        baseName: String = exportBaseName(report)
+    ): File = withContext(Dispatchers.IO) {
         val assets = repository.getAssetsByReportId(report.id).first()
             .sortedBy { assetSortKey(it) }
         val passives = repository.getPassivesByReportId(report.id).first()
@@ -1465,7 +1468,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
             nodeAdjustmentsByAsset = nodeAdjustmentsByAsset
         )
 
-        val zipFile = File(context.getExternalFilesDir(null), "maintenance_${report.id}.zip")
+        val zipFile = File(context.getExternalFilesDir(null), "${baseName}.zip")
         if (zipFile.exists()) zipFile.delete()
         
         ZipFile(zipFile).apply {
@@ -1968,12 +1971,13 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     align-items: center;
                     justify-content: space-between;
                     gap: 12px;
-                    flex-wrap: wrap;
+                    flex-wrap: nowrap;
                   }
                   .measurement-tabs {
                     display: flex;
                     gap: 8px;
-                    flex-wrap: wrap;
+                    flex-wrap: nowrap;
+                    overflow-x: auto;
                   }
                   .measurement-tab {
                     border-radius: 999px;
@@ -2132,6 +2136,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     display: flex;
                     align-items: center;
                     gap: 10px;
+                    margin-left: auto;
                   }
                   .measurement-type-toggle span {
                     font-size: 12px;
@@ -3552,19 +3557,24 @@ val assets = repository.getAssetsByReportId(report.id).first()
         )
     }
 
-    suspend fun exportToBundleZip(report: MaintenanceReport): File = withContext(Dispatchers.IO) {
-        exportToZIP(report)
+    suspend fun exportToBundleZip(
+        report: MaintenanceReport,
+        baseName: String = exportBaseName(report)
+    ): File = withContext(Dispatchers.IO) {
+        exportToZIP(report, baseName)
     }
 
     suspend fun exportZipToDownloads(report: MaintenanceReport): Uri = withContext(Dispatchers.IO) {
-        val tmp = exportToZIP(report)
-        val displayName = "${exportBaseName(report)}.zip"
+        val baseName = exportBaseName(report)
+        val tmp = exportToZIP(report, baseName)
+        val displayName = "${baseName}.zip"
         DownloadStore.saveToDownloads(context, tmp, displayName, "application/zip")
     }
 
     suspend fun exportBundleToDownloads(report: MaintenanceReport): Uri = withContext(Dispatchers.IO) {
-        val tmp = exportToBundleZip(report)
-        val displayName = "${exportBaseName(report)}.zip"
+        val baseName = exportBaseName(report)
+        val tmp = exportToBundleZip(report, baseName)
+        val displayName = "${baseName}.zip"
         DownloadStore.saveToDownloads(context, tmp, displayName, "application/zip")
     }
 
@@ -3600,7 +3610,8 @@ val assets = repository.getAssetsByReportId(report.id).first()
      */
     suspend fun exportZipToUri(report: MaintenanceReport, uri: Uri, contentResolver: ContentResolver = context.contentResolver) =
         withContext(Dispatchers.IO) {
-            val tmp = exportToZIP(report)
+            val baseName = exportBaseName(report)
+            val tmp = exportToZIP(report, baseName)
             require(tmp.exists()) { "ZIP temporal no existe" }
             if (tmp.length() <= 0L) throw IllegalStateException("ZIP temporal vacío")
 
@@ -3622,7 +3633,8 @@ val assets = repository.getAssetsByReportId(report.id).first()
 
     suspend fun exportBundleToUri(report: MaintenanceReport, uri: Uri, contentResolver: ContentResolver = context.contentResolver) =
         withContext(Dispatchers.IO) {
-            val tmp = exportToBundleZip(report)
+            val baseName = exportBaseName(report)
+            val tmp = exportToBundleZip(report, baseName)
             require(tmp.exists()) { "ZIP temporal no existe" }
             if (tmp.length() <= 0L) throw IllegalStateException("ZIP temporal vacío")
 
