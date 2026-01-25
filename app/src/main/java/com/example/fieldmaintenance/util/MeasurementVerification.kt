@@ -706,6 +706,17 @@ suspend fun verifyMeasurementFiles(
         null
     }
 
+    fun isJsonLike(name: String): Boolean {
+        val lower = name.lowercase(Locale.getDefault())
+        val jsonNumbered = Regex(".*\\.json\\d+$")
+        val jsonDotNumbered = Regex(".*\\.json\\.\\d+$")
+        val jsonHyphenNumbered = Regex(".*\\.json-\\d+$")
+        return lower.endsWith(".json") ||
+            jsonNumbered.matches(lower) ||
+            jsonDotNumbered.matches(lower) ||
+            jsonHyphenNumbered.matches(lower)
+    }
+
     val dedupedFiles = buildList {
         val seenNames = mutableSetOf<String>()
         files.forEach { file ->
@@ -1074,17 +1085,6 @@ suspend fun verifyMeasurementFiles(
                 parseErrorNames.add(sourceLabel)
             }
         }
-    }
-
-    fun isJsonLike(name: String): Boolean {
-        val lower = name.lowercase(Locale.getDefault())
-        val jsonNumbered = Regex(".*\\.json\\d+$")
-        val jsonDotNumbered = Regex(".*\\.json\\.\\d+$")
-        val jsonHyphenNumbered = Regex(".*\\.json-\\d+$")
-        return lower.endsWith(".json") ||
-            jsonNumbered.matches(lower) ||
-            jsonDotNumbered.matches(lower) ||
-            jsonHyphenNumbered.matches(lower)
     }
 
     fun isZipBytes(bytes: ByteArray): Boolean {
