@@ -32,7 +32,7 @@
   "channelexpert": {
     "common": {
       "mer": {"min": 39},
-      "berPre": {"max": 1.0e-8},
+      "berPre": {"max": 1.0e-7},
       "berPost": {"max": 1.0e-8},
       "icfr": {"max": 2}
     },
@@ -45,11 +45,11 @@
           "digitalTolerance": 1
         },
         "channels": {
-          "50": {"target": 41, "tolerance": 1.5},
-          "70": {"target": 44, "tolerance": 1.5},
-          "110": {"target": 47, "tolerance": 1.5},
-          "116": {"target": 47, "tolerance": 1.5},
-          "136": {"target": 49, "tolerance": 1.5}
+          "50": {"target": 41, "tolerance": 3},
+          "70": {"target": 44, "tolerance": 3},
+          "110": {"target": 47, "tolerance": 3},
+          "116": {"target": 47, "tolerance": 3},
+          "136": {"target": 49, "tolerance": 3}
         }
       },
       "85_105": {
@@ -60,31 +60,31 @@
           "digitalTolerance": 1
         },
         "channels": {
-          "50": {"target": 41, "tolerance": 1.5},
-          "70": {"target": 44, "tolerance": 1.5},
-          "110": {"target": 47, "tolerance": 1.5},
-          "116": {"target": 47, "tolerance": 1.5},
-          "136": {"target": 49, "tolerance": 1.5}
+          "50": {"target": 41, "tolerance": 3},
+          "70": {"target": 44, "tolerance": 3},
+          "110": {"target": 47, "tolerance": 3},
+          "116": {"target": 47, "tolerance": 3},
+          "136": {"target": 49, "tolerance": 3}
         }
       }
     },
     "amplifier": {
       "42_55": {
         "channels": {
-          "50": {"source": "table", "tolerance": 1.5},
-          "70": {"source": "table", "tolerance": 1.5},
-          "110": {"source": "table", "tolerance": 1.5},
-          "116": {"source": "table", "tolerance": 1.5},
-          "136": {"source": "table", "tolerance": 1.5}
+          "50": {"source": "table", "tolerance": 3},
+          "70": {"source": "table", "tolerance": 3},
+          "110": {"source": "table", "tolerance": 3},
+          "116": {"source": "table", "tolerance": 3},
+          "136": {"source": "table", "tolerance": 3}
         }
       },
       "85_105": {
         "channels": {
-          "50": {"source": "table", "tolerance": 1.5},
-          "70": {"source": "table", "tolerance": 1.5},
-          "110": {"source": "table", "tolerance": 1.5},
-          "116": {"source": "table", "tolerance": 1.5},
-          "136": {"source": "table", "tolerance": 1.5}
+          "50": {"source": "table", "tolerance": 3},
+          "70": {"source": "table", "tolerance": 3},
+          "110": {"source": "table", "tolerance": 3},
+          "116": {"source": "table", "tolerance": 3},
+          "136": {"source": "table", "tolerance": 3}
         }
       }
     }
