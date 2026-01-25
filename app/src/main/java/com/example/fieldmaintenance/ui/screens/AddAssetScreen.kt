@@ -101,6 +101,7 @@ import com.example.fieldmaintenance.ui.navigation.Screen
 import com.example.fieldmaintenance.ui.viewmodel.ReportViewModel
 import com.example.fieldmaintenance.ui.viewmodel.ReportViewModelFactory
 import com.example.fieldmaintenance.util.DatabaseProvider
+import com.example.fieldmaintenance.util.ImageCompressor
 import com.example.fieldmaintenance.util.ImageStore
 import com.example.fieldmaintenance.util.PhotoManager
 import com.example.fieldmaintenance.util.MaintenanceStorage
@@ -505,6 +506,13 @@ fun AddAssetScreen(
     var opticsPhotoCount by remember { mutableStateOf(0) }
     var monitoringPhotoCount by remember { mutableStateOf(0) }
     var spectrumPhotoCount by remember { mutableStateOf(0) }
+    val allPhotos by repository.getPhotosByAssetId(workingAssetId).collectAsState(initial = emptyList())
+    LaunchedEffect(allPhotos) {
+        modulePhotoCount = allPhotos.count { it.photoType == PhotoType.MODULE }
+        opticsPhotoCount = allPhotos.count { it.photoType == PhotoType.OPTICS }
+        monitoringPhotoCount = allPhotos.count { it.photoType == PhotoType.MONITORING }
+        spectrumPhotoCount = allPhotos.count { it.photoType == PhotoType.SPECTRUM }
+    }
     var autoSaved by rememberSaveable(workingAssetId) { mutableStateOf(false) }
     var showIdentityDialog by rememberSaveable { mutableStateOf(false) }
     var showPhotosDialog by rememberSaveable { mutableStateOf(false) }
@@ -1708,6 +1716,27 @@ fun PhotoSection(
     val isOverMax = photos.size > maxAllowed
     val isAtMax = photos.size >= maxAllowed
     val allowsGallery = photoType != PhotoType.MODULE && photoType != PhotoType.OPTICS
+    fun maxPhotoBytes(type: PhotoType): Int {
+        return if (type == PhotoType.SPECTRUM || type == PhotoType.MONITORING) {
+            200 * 1024
+        } else {
+            600 * 1024
+        }
+    }
+    suspend fun compressPhotoIfNeeded(file: File) {
+        val maxBytes = maxPhotoBytes(photoType)
+        withContext(Dispatchers.IO) {
+            if (!file.exists() || file.length() <= maxBytes) return@withContext
+            val tmp = File(file.parentFile, "tmp_${file.name}")
+            runCatching {
+                ImageCompressor.compressForExport(sourceFile = file, destFile = tmp, maxBytes = maxBytes)
+                if (tmp.exists()) {
+                    tmp.copyTo(file, overwrite = true)
+                }
+            }
+            runCatching { tmp.delete() }
+        }
+    }
 
     var photoToDelete by remember { mutableStateOf<com.example.fieldmaintenance.data.model.Photo?>(null) }
     var photoToPreview by remember { mutableStateOf<com.example.fieldmaintenance.data.model.Photo?>(null) }
@@ -1732,6 +1761,7 @@ fun PhotoSection(
                     )
                     val dest = File(dir, "gallery_${System.currentTimeMillis()}.jpg")
                     ImageStore.copyUriToFile(context, it, dest)
+                    compressPhotoIfNeeded(dest)
                     repository.insertPhoto(
                         com.example.fieldmaintenance.data.model.Photo(
                             assetId = assetId,
@@ -1770,6 +1800,7 @@ fun PhotoSection(
             if (labelInfo != null) {
                 annotateImageWithLabel(file, labelInfo)
             }
+            compressPhotoIfNeeded(file)
             repository.insertPhoto(
                 com.example.fieldmaintenance.data.model.Photo(
                     assetId = assetId,

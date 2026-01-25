@@ -1977,7 +1977,9 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     display: flex;
                     gap: 8px;
                     flex-wrap: nowrap;
-                    overflow-x: auto;
+                    overflow-x: hidden;
+                    flex: 1;
+                    min-width: 0;
                   }
                   .measurement-tab {
                     border-radius: 999px;
@@ -3158,7 +3160,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                       headerTop.className = 'measurement-header-top';
                       const title = document.createElement('div');
                       title.className = 'section-title';
-                      title.textContent = `Carga de Mediciones - ${'$'}{group.label}`;
+                      title.textContent = `Mediciones - ${'$'}{group.label}`;
                       headerTop.appendChild(title);
                       const tabs = document.createElement('div');
                       tabs.className = 'measurement-tabs';
