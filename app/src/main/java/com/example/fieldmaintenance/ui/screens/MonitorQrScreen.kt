@@ -94,7 +94,7 @@ fun MonitorQrScreen(navController: androidx.navigation.NavController, reportId: 
         value = withContext(Dispatchers.IO) {
             val current = report ?: return@withContext null
             val reportFolderName = MaintenanceStorage.reportFolderName(current.eventName, reportId)
-            fun findGeoForAsset(asset: com.example.fieldmaintenance.data.model.Asset, isModule: Boolean): GeoPoint? {
+            suspend fun findGeoForAsset(asset: com.example.fieldmaintenance.data.model.Asset, isModule: Boolean): GeoPoint? {
                 val targetAsset = if (isModule) asset.copy(type = AssetType.AMPLIFIER) else asset
                 val dir = MaintenanceStorage.ensureAssetDir(context, reportFolderName, targetAsset)
                 val files = dir.listFiles()?.sortedBy { it.name } ?: emptyList()
