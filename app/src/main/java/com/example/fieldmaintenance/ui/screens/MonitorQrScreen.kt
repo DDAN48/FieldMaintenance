@@ -5,8 +5,6 @@
 
 package com.example.fieldmaintenance.ui.screens
 
-import android.graphics.Bitmap
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,10 +12,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -36,16 +31,8 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material.icons.filled.ChevronLeft
-import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Remove
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -64,11 +51,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
-import coil.compose.rememberAsyncImagePainter
 import com.example.fieldmaintenance.data.model.AssetType
 import com.example.fieldmaintenance.data.model.PassiveType
-import com.example.fieldmaintenance.data.model.Photo
+import com.example.fieldmaintenance.data.model.PhotoType
 import com.example.fieldmaintenance.ui.components.ReportBottomBar
 import com.example.fieldmaintenance.ui.components.ReportTab
 import com.example.fieldmaintenance.ui.navigation.Screen
@@ -77,7 +62,6 @@ import com.example.fieldmaintenance.ui.viewmodel.ReportViewModelFactory
 import com.example.fieldmaintenance.util.DatabaseProvider
 import com.example.fieldmaintenance.util.EmailManager
 import com.example.fieldmaintenance.util.ExportManager
-import com.example.fieldmaintenance.util.GeoPoint
 import com.example.fieldmaintenance.util.hasIncompleteAssets
 import com.example.fieldmaintenance.util.loadDiscardedLabels
 import com.example.fieldmaintenance.util.requiredCounts
@@ -88,7 +72,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
-import java.net.URL
 
 @Composable
 fun MonitorQrScreen(navController: androidx.navigation.NavController, reportId: String) {
@@ -115,7 +98,6 @@ fun MonitorQrScreen(navController: androidx.navigation.NavController, reportId: 
             val current = report ?: return@withContext SummaryData()
             val reportFolderName = MaintenanceStorage.reportFolderName(current.eventName, reportId)
             val observations = mutableListOf<ObservationEntry>()
-            var mapPoint: GeoPoint? = null
             suspend fun addObservationsForAsset(
                 asset: com.example.fieldmaintenance.data.model.Asset,
                 isModule: Boolean
@@ -135,9 +117,6 @@ fun MonitorQrScreen(navController: androidx.navigation.NavController, reportId: 
                     expectedDocsisOverride = required.expectedDocsis,
                     expectedChannelOverride = required.expectedChannel
                 )
-                if (mapPoint == null && summary.geoLocation != null) {
-                    mapPoint = summary.geoLocation
-                }
                 summary.geoIssueDetails.forEach { detail ->
                     observations.add(
                         ObservationEntry(
@@ -168,13 +147,9 @@ fun MonitorQrScreen(navController: androidx.navigation.NavController, reportId: 
                 }
             }
             SummaryData(
-                mapPoint = mapPoint,
                 observations = observations
             )
         }
-    }
-    val mapBitmap by produceState<Bitmap?>(initialValue = null, summaryData.mapPoint) {
-        value = summaryData.mapPoint?.let { loadStaticMap(it.latitude, it.longitude) }
     }
 
     Scaffold(
@@ -214,14 +189,7 @@ fun MonitorQrScreen(navController: androidx.navigation.NavController, reportId: 
                 SummaryInfoCard(report = report)
                 SummaryStatsCard(passiveCounts = passiveCounts, assets = assets, repository = repository)
                 ObservationsSummaryCard(summaryData = summaryData)
-                SummaryMapCard(mapBitmap = mapBitmap, mapPoint = summaryData.mapPoint)
-                AssetPhotoViewer(
-                    assets = assets,
-                    report = report,
-                    repository = repository
-                )
-                AssetObservationsList(summaryData = summaryData)
-                PassivesDetailCard(passives = passives)
+                PhotoUploadsCard(assets = assets, report = report, repository = repository)
             }
         }
 
@@ -320,6 +288,7 @@ private fun SummaryStatsCard(
 private fun ObservationsSummaryCard(summaryData: SummaryData) {
     var expanded by remember { mutableStateOf(false) }
     val total = summaryData.observations.size
+    val grouped = summaryData.observations.groupBy { it.assetLabel }
     OutlinedCard(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.outlinedCardColors(),
@@ -343,314 +312,98 @@ private fun ObservationsSummaryCard(summaryData: SummaryData) {
                 }
             }
             if (expanded) {
-                ObservationList(observations = summaryData.observations)
+                if (grouped.isEmpty()) {
+                    Text("Sin observaciones.", style = MaterialTheme.typography.bodySmall)
+                } else {
+                    grouped.forEach { (assetLabel, entries) ->
+                        Text(
+                            "Observaciones en Mediciones - $assetLabel",
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        val byFile = entries.groupBy { it.file.ifBlank { "General" } }
+                        byFile.forEach { (file, details) ->
+                            Text(file, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodySmall)
+                            details.forEach { entry ->
+                                Text(
+                                    text = "• ${entry.detail}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (entry.isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(6.dp))
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                    }
+                }
             }
         }
     }
 }
 
 @Composable
-private fun SummaryMapCard(mapBitmap: Bitmap?, mapPoint: GeoPoint?) {
-    OutlinedCard(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.outlinedCardColors(),
-        border = androidx.compose.foundation.BorderStroke(1.dp, androidx.compose.ui.graphics.Color.Black)
-    ) {
-        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Ubicación", style = MaterialTheme.typography.titleSmall)
-            if (mapBitmap != null) {
-                Image(
-                    bitmap = mapBitmap.asImageBitmap(),
-                    contentDescription = null,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(200.dp)
-                )
-            } else {
-                Text("Sin coordenadas disponibles.", style = MaterialTheme.typography.bodySmall)
-            }
-            if (mapPoint != null) {
-                Text(
-                    "${String.format("%.5f", mapPoint.latitude)}, ${String.format("%.5f", mapPoint.longitude)}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.primary
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun AssetPhotoViewer(
+private fun PhotoUploadsCard(
     assets: List<com.example.fieldmaintenance.data.model.Asset>,
     report: com.example.fieldmaintenance.data.model.MaintenanceReport?,
     repository: com.example.fieldmaintenance.data.repository.MaintenanceRepository
 ) {
-    var expanded by remember { mutableStateOf(false) }
-    var selectedId by remember(assets) { mutableStateOf(assets.firstOrNull()?.id ?: "") }
-    val selectedAsset = assets.firstOrNull { it.id == selectedId }
-    val photos by repository.getPhotosByAssetId(selectedId).collectAsState(initial = emptyList())
-    var index by remember(selectedId, photos) { mutableStateOf(0) }
-    var scale by remember { mutableStateOf(1f) }
-    var offsetX by remember { mutableStateOf(0f) }
-    var offsetY by remember { mutableStateOf(0f) }
+    val photoStatuses by produceState(
+        initialValue = emptyList<PhotoUploadStatus>(),
+        assets,
+        report
+    ) {
+        value = withContext(Dispatchers.IO) {
+            assets.map { asset ->
+                val photos = repository.listPhotosByAssetId(asset.id)
+                val techNormalized = asset.technology?.trim()?.lowercase() ?: ""
+                val moduleRequired = !(asset.type == AssetType.NODE && techNormalized == "rphy")
+                val opticsRequired = asset.type == AssetType.NODE &&
+                    !(techNormalized == "rphy" || techNormalized == "vccap")
+                val moduleCount = photos.count { it.photoType == PhotoType.MODULE }
+                val opticsCount = photos.count { it.photoType == PhotoType.OPTICS }
+                val missing = buildList {
+                    if (moduleRequired && moduleCount < 2) {
+                        add("Módulo (faltan ${2 - moduleCount})")
+                    }
+                    if (opticsRequired && opticsCount < 1) {
+                        add("Óptica (falta 1)")
+                    }
+                }
+                PhotoUploadStatus(
+                    assetLabel = assetLabelFor(report?.nodeName ?: "", asset),
+                    missing = missing
+                )
+            }
+        }
+    }
 
     OutlinedCard(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.outlinedCardColors(),
         border = androidx.compose.foundation.BorderStroke(1.dp, Color.Black)
     ) {
-        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("Fotos por activo", style = MaterialTheme.typography.titleSmall)
-                IconButton(onClick = { expanded = !expanded }) {
-                    Icon(
-                        imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                        contentDescription = null
-                    )
-                }
-            }
-            if (expanded && assets.isNotEmpty()) {
-                var menuExpanded by remember { mutableStateOf(false) }
-                ExposedDropdownMenuBox(
-                    expanded = menuExpanded,
-                    onExpandedChange = { menuExpanded = !menuExpanded }
-                ) {
-                    OutlinedTextField(
-                        value = selectedAsset?.let { assetLabelFor(report?.nodeName ?: "", it) } ?: "",
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("Activo") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = menuExpanded) },
-                        modifier = Modifier
-                            .menuAnchor()
-                            .fillMaxWidth()
-                    )
-                    ExposedDropdownMenu(
-                        expanded = menuExpanded,
-                        onDismissRequest = { menuExpanded = false }
-                    ) {
-                        assets.forEach { asset ->
-                            DropdownMenuItem(
-                                text = { Text(assetLabelFor(report?.nodeName ?: "", asset)) },
-                                onClick = {
-                                    selectedId = asset.id
-                                    index = 0
-                                    scale = 1f
-                                    offsetX = 0f
-                                    offsetY = 0f
-                                    menuExpanded = false
-                                }
-                            )
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Cargas Fotográficas", style = MaterialTheme.typography.titleSmall)
+            if (assets.isEmpty()) {
+                Text("Sin activos.", style = MaterialTheme.typography.bodySmall)
+            } else {
+                photoStatuses.forEach { status ->
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Text(status.assetLabel, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall)
+                        val description = if (status.missing.isEmpty()) {
+                            "Completo"
+                        } else {
+                            "Faltan: ${status.missing.joinToString()}"
                         }
-                    }
-                }
-
-                if (photos.isEmpty()) {
-                    Text("Sin fotos cargadas.", style = MaterialTheme.typography.bodySmall)
-                } else {
-                    val photo = photos.getOrNull(index.coerceIn(0, photos.lastIndex))
-                    if (photo != null) {
-                        PhotoViewer(
-                            photo = photo,
-                            index = index,
-                            total = photos.size,
-                            onPrev = { index = (index - 1 + photos.size) % photos.size },
-                            onNext = { index = (index + 1) % photos.size },
-                            scale = scale,
-                            onScaleChange = { scale = it },
-                            offsetX = offsetX,
-                            offsetY = offsetY,
-                            onOffsetChange = { x, y -> offsetX = x; offsetY = y }
+                        Text(
+                            description,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (status.missing.isEmpty()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
                         )
                     }
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun PhotoViewer(
-    photo: Photo,
-    index: Int,
-    total: Int,
-    onPrev: () -> Unit,
-    onNext: () -> Unit,
-    scale: Float,
-    onScaleChange: (Float) -> Unit,
-    offsetX: Float,
-    offsetY: Float,
-    onOffsetChange: (Float, Float) -> Unit
-) {
-    val painter = rememberAsyncImagePainter(File(photo.filePath))
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(260.dp)
-            .clipToBounds()
-            .shadow(1.dp)
-    ) {
-        Image(
-            painter = painter,
-            contentDescription = null,
-            modifier = Modifier
-                .fillMaxSize()
-                .graphicsLayer(
-                    scaleX = scale,
-                    scaleY = scale,
-                    translationX = offsetX,
-                    translationY = offsetY
-                )
-        )
-    }
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        IconButton(onClick = onPrev) {
-            Icon(Icons.Default.ChevronLeft, contentDescription = "Anterior")
-        }
-        Text(
-            text = "${photo.photoType.name} ${index + 1}/$total",
-            style = MaterialTheme.typography.bodySmall
-        )
-        IconButton(onClick = onNext) {
-            Icon(Icons.Default.ChevronRight, contentDescription = "Siguiente")
-        }
-    }
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.Center,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        IconButton(onClick = { onScaleChange((scale + 0.25f).coerceAtMost(3f)) }) {
-            Icon(Icons.Default.Add, contentDescription = "Zoom in")
-        }
-        IconButton(onClick = { onScaleChange((scale - 0.25f).coerceAtLeast(1f)) }) {
-            Icon(Icons.Default.Remove, contentDescription = "Zoom out")
-        }
-        Text(
-            text = "Reset",
-            modifier = Modifier
-                .clickable {
-                    onScaleChange(1f)
-                    onOffsetChange(0f, 0f)
-                }
-                .padding(horizontal = 8.dp, vertical = 4.dp),
-            style = MaterialTheme.typography.bodySmall
-        )
-    }
-}
-
-@Composable
-private fun AssetObservationsList(summaryData: SummaryData) {
-    val grouped = summaryData.observations.groupBy { it.assetLabel }
-    if (grouped.isEmpty()) {
-        OutlinedCard(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.outlinedCardColors(),
-            border = androidx.compose.foundation.BorderStroke(1.dp, Color.Black)
-        ) {
-            Column(modifier = Modifier.padding(12.dp)) {
-                Text("Observaciones en Mediciones", style = MaterialTheme.typography.titleSmall)
-                Text("Sin observaciones.", style = MaterialTheme.typography.bodySmall)
-            }
-        }
-        return
-    }
-    grouped.forEach { (assetLabel, entries) ->
-        var expanded by remember { mutableStateOf(false) }
-        OutlinedCard(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.outlinedCardColors(),
-            border = androidx.compose.foundation.BorderStroke(1.dp, Color.Black)
-        ) {
-            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { expanded = !expanded },
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("Observaciones en Mediciones - $assetLabel", style = MaterialTheme.typography.titleSmall)
-                    Icon(
-                        imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                        contentDescription = null
-                    )
-                }
-                if (expanded) {
-                    ObservationList(observations = entries)
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun PassivesDetailCard(passives: List<com.example.fieldmaintenance.data.model.PassiveItem>) {
-    var expanded by remember { mutableStateOf(false) }
-    OutlinedCard(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.outlinedCardColors(),
-        border = androidx.compose.foundation.BorderStroke(1.dp, Color.Black)
-    ) {
-        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { expanded = !expanded },
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("Detalle de intervención de pasivos", style = MaterialTheme.typography.titleSmall)
-                Icon(
-                    imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                    contentDescription = null
-                )
-            }
-            if (expanded) {
-                if (passives.isEmpty()) {
-                    Text("Sin pasivos cargados.", style = MaterialTheme.typography.bodySmall)
-                } else {
-                    passives.forEach { passive ->
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 4.dp)
-                        ) {
-                            Text(passive.type.name, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall)
-                            Text(passive.address.ifBlank { "—" }, style = MaterialTheme.typography.bodySmall)
-                            if (passive.observation.isNotBlank()) {
-                                Text(passive.observation, style = MaterialTheme.typography.bodySmall)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ObservationList(observations: List<ObservationEntry>) {
-    val grouped = observations.groupBy { it.file.ifBlank { "General" } }
-    grouped.forEach { (file, details) ->
-        Text(file, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall)
-        details.forEach { entry ->
-            Text(
-                text = "• ${entry.detail}",
-                style = MaterialTheme.typography.bodySmall,
-                color = if (entry.isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
-            )
-        }
-        Spacer(modifier = Modifier.height(6.dp))
     }
 }
 
@@ -678,8 +431,12 @@ private data class ObservationEntry(
 )
 
 private data class SummaryData(
-    val mapPoint: GeoPoint? = null,
     val observations: List<ObservationEntry> = emptyList()
+)
+
+private data class PhotoUploadStatus(
+    val assetLabel: String,
+    val missing: List<String>
 )
 
 @Composable
@@ -729,15 +486,4 @@ private suspend fun countAdjustedAssets(
         if (ok) count++
     }
     return count
-}
-
-private suspend fun loadStaticMap(latitude: Double, longitude: Double): Bitmap? {
-    return withContext(Dispatchers.IO) {
-        val url = "https://staticmap.openstreetmap.de/staticmap.php?center=$latitude,$longitude&zoom=15&size=300x200&markers=$latitude,$longitude,red-pushpin"
-        runCatching {
-            URL(url).openStream().use { stream ->
-                android.graphics.BitmapFactory.decodeStream(stream)
-            }
-        }.getOrNull()
-    }
 }

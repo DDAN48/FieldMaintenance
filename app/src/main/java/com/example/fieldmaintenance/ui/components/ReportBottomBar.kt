@@ -4,9 +4,9 @@ package com.example.fieldmaintenance.ui.components
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.MenuBook
-import androidx.compose.material.icons.automirrored.filled.ShowChart
 import androidx.compose.material.icons.filled.DonutSmall
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Summarize
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -95,8 +95,8 @@ fun ReportBottomBar(
                         launchSingleTop = true
                     }
                 },
-                icon = { Icon(Icons.AutoMirrored.Filled.ShowChart, contentDescription = "Monitoria y QR") },
-                label = { Text("Monitor") },
+                icon = { Icon(Icons.Default.Summarize, contentDescription = "Resumen") },
+                label = { Text("Resumen") },
                 colors = NavigationBarItemDefaults.colors(
                     selectedIconColor = MaterialTheme.colorScheme.primary,
                     selectedTextColor = MaterialTheme.colorScheme.primary,
@@ -107,5 +107,4 @@ fun ReportBottomBar(
         }
     }
 }
-
 
