@@ -8,6 +8,7 @@ package com.example.fieldmaintenance.ui.screens
 import android.graphics.Bitmap
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -664,7 +665,7 @@ private fun assetLabelFor(nodeName: String, asset: com.example.fieldmaintenance.
             }
             "Activo ${nodeName.ifBlank { "Nodo" }} $code ${asset.frequencyMHz} MHz"
         }
-        if (ok) count++
+        else -> "Activo ${nodeName.ifBlank { "Nodo" }} ${asset.frequencyMHz} MHz"
     }
 }
 

@@ -3192,7 +3192,7 @@ private fun AssetFileSection(
                                     Spacer(Modifier.height(8.dp))
                                     MeasurementTableCard(
                                         title = "Downstream Analogic Channels",
-                                        headers = listOf("Canal", "Freq (MHz)", "M1"),
+                                        headers = listOf("Canal", "Freq (MHz)", "Nivel (dBmV)"),
                                         containerColor = cardColor,
                                         headerColor = headerColor,
                                         borderColor = borderColor,
@@ -3472,7 +3472,7 @@ private fun AssetFileSection(
                                         Spacer(Modifier.height(8.dp))
                                         MeasurementTableCard(
                                             title = "Downstream Analogic Channels",
-                                            headers = listOf("Canal", "Freq (MHz)", "M1"),
+                                            headers = listOf("Canal", "Freq (MHz)", "Nivel (dBmV)"),
                                             containerColor = cardColor,
                                             headerColor = headerColor,
                                             borderColor = borderColor,
@@ -3815,7 +3815,7 @@ private fun AssetFileSection(
                                     Spacer(Modifier.height(8.dp))
                                     MeasurementTableCard(
                                         title = "Downstream Analogic Channels",
-                                        headers = listOf("Canal", "Freq (MHz)", "M1"),
+                                        headers = listOf("Canal", "Freq (MHz)", "Nivel (dBmV)"),
                                         containerColor = cardColor,
                                         headerColor = headerColor,
                                         borderColor = borderColor,
