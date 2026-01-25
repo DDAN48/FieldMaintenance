@@ -5,65 +5,51 @@
 
 package com.example.fieldmaintenance.ui.screens
 
-import android.Manifest
-import android.content.pm.PackageManager
-import android.net.Uri
-import android.widget.Toast
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.CameraAlt
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Download
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedCard
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
-import coil.compose.rememberAsyncImagePainter
-import com.example.fieldmaintenance.data.model.ReportPhoto
-import com.example.fieldmaintenance.data.model.ReportPhotoType
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Color
+import com.example.fieldmaintenance.data.model.AssetType
+import com.example.fieldmaintenance.data.model.PassiveType
+import com.example.fieldmaintenance.data.model.PhotoType
 import com.example.fieldmaintenance.ui.components.ReportBottomBar
 import com.example.fieldmaintenance.ui.components.ReportTab
 import com.example.fieldmaintenance.ui.navigation.Screen
@@ -72,15 +58,16 @@ import com.example.fieldmaintenance.ui.viewmodel.ReportViewModelFactory
 import com.example.fieldmaintenance.util.DatabaseProvider
 import com.example.fieldmaintenance.util.EmailManager
 import com.example.fieldmaintenance.util.ExportManager
-import com.example.fieldmaintenance.util.ImageStore
-import com.example.fieldmaintenance.util.PhotoManager
-import com.example.fieldmaintenance.util.SettingsStore
-import com.example.fieldmaintenance.util.AppSettings
 import com.example.fieldmaintenance.util.hasIncompleteAssets
+import com.example.fieldmaintenance.util.loadDiscardedLabels
+import com.example.fieldmaintenance.util.requiredCounts
+import com.example.fieldmaintenance.util.verifyMeasurementFiles
+import com.example.fieldmaintenance.util.MaintenanceStorage
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
-import java.util.UUID
 
 @Composable
 fun MonitorQrScreen(navController: androidx.navigation.NavController, reportId: String) {
@@ -99,89 +86,66 @@ fun MonitorQrScreen(navController: androidx.navigation.NavController, reportId: 
     var isExporting by remember { mutableStateOf(false) }
     var hasMissingAssets by remember { mutableStateOf(false) }
 
-    val photos by repository.getReportPhotosByReportId(reportId).collectAsState(initial = emptyList())
-    val byType = photos.groupBy { it.type }
-
-    var pendingDelete by remember { mutableStateOf<ReportPhoto?>(null) }
-
-    // Camera handling
-    var pendingCameraFilePath by rememberSaveable { mutableStateOf<String?>(null) }
-    var pendingCameraType by rememberSaveable { mutableStateOf<ReportPhotoType?>(null) }
-
-    val cameraPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        if (!granted) {
-            Toast.makeText(context, "Permiso de cámara requerido", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    val takePictureLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.TakePicture()
-    ) { success ->
-        val path = pendingCameraFilePath
-        val type = pendingCameraType
-        if (path == null || type == null) return@rememberLauncherForActivityResult
-
-        val file = File(path)
-        val ok = success || (file.exists() && file.length() > 0)
-        if (!ok) {
-            Toast.makeText(context, "No se pudo capturar la foto", Toast.LENGTH_SHORT).show()
-            return@rememberLauncherForActivityResult
-        }
-
-        scope.launch {
-            upsertReportPhotoReplacingIfNeeded(
-                reportId = reportId,
-                type = type,
-                sourceFile = file,
-                repository = repository,
-                context = context
-            )
-        }
-    }
-
-    val pickImageLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        val type = pendingCameraType
-        if (uri == null || type == null) return@rememberLauncherForActivityResult
-        scope.launch {
-            val destDir = ImageStore.reportPhotoDir(context, reportId, type.name.lowercase())
-            val dest = File(destDir, "${type.name.lowercase()}_${UUID.randomUUID()}.jpg")
-            runCatching { ImageStore.copyUriToFile(context, uri, dest) }
-                .onFailure {
-                    snackbarHostState.showSnackbar("No se pudo copiar la imagen")
-                    return@launch
+    val assets by viewModel.assets.collectAsState()
+    val passives by repository.getPassivesByReportId(reportId).collectAsState(initial = emptyList())
+    val passiveCounts = remember(passives) { passives.groupingBy { it.type }.eachCount() }
+    val summaryData by produceState<SummaryData>(initialValue = SummaryData(), report, assets) {
+        value = withContext(Dispatchers.IO) {
+            val current = report ?: return@withContext SummaryData()
+            val reportFolderName = MaintenanceStorage.reportFolderName(current.eventName, reportId)
+            val observations = mutableListOf<ObservationEntry>()
+            suspend fun addObservationsForAsset(
+                asset: com.example.fieldmaintenance.data.model.Asset,
+                isModule: Boolean
+            ) {
+                val targetAsset = if (isModule) asset.copy(type = AssetType.AMPLIFIER) else asset
+                val dir = MaintenanceStorage.ensureAssetDir(context, reportFolderName, targetAsset)
+                val files = dir.listFiles()?.sortedBy { it.name } ?: emptyList()
+                if (files.isEmpty()) return
+                val discarded = loadDiscardedLabels(File(dir, ".discarded_measurements.txt"))
+                val required = requiredCounts(targetAsset.type, isModule = isModule)
+                val summary = verifyMeasurementFiles(
+                    context = context,
+                    files = files,
+                    asset = targetAsset,
+                    repository = repository,
+                    discardedLabels = discarded,
+                    expectedDocsisOverride = required.expectedDocsis,
+                    expectedChannelOverride = required.expectedChannel
+                )
+                summary.geoIssueDetails.forEach { detail ->
+                    observations.add(
+                        ObservationEntry(
+                            assetId = asset.id,
+                            assetLabel = assetLabelFor(current.nodeName, asset),
+                            file = detail.file,
+                            detail = detail.detail,
+                            isError = true
+                        )
+                    )
                 }
-            upsertReportPhotoReplacingIfNeeded(
-                reportId = reportId,
-                type = type,
-                sourceFile = dest,
-                repository = repository,
-                context = context
+                summary.validationIssueDetails.forEach { detail ->
+                    observations.add(
+                        ObservationEntry(
+                            assetId = asset.id,
+                            assetLabel = assetLabelFor(current.nodeName, asset),
+                            file = detail.file,
+                            detail = detail.detail,
+                            isError = detail.isRuleViolation || detail.detail.contains("fuera de rango", ignoreCase = true)
+                        )
+                    )
+                }
+            }
+            assets.forEach { asset ->
+                addObservationsForAsset(asset, isModule = false)
+                if (asset.type == AssetType.NODE) {
+                    addObservationsForAsset(asset, isModule = true)
+                }
+            }
+            SummaryData(
+                observations = observations
             )
         }
-    }
-
-    fun requestCameraAndLaunch(type: ReportPhotoType) {
-        val perm = Manifest.permission.CAMERA
-        if (ContextCompat.checkSelfPermission(context, perm) != PackageManager.PERMISSION_GRANTED) {
-            pendingCameraType = type
-            cameraPermissionLauncher.launch(perm)
-            return
-        }
-        val file = PhotoManager.createImageFile(context, "report_${type.name.lowercase()}")
-        pendingCameraFilePath = file.absolutePath
-        pendingCameraType = type
-        val uri = PhotoManager.getFileUri(context, file)
-        runCatching { takePictureLauncher.launch(uri) }
-            .onFailure { Toast.makeText(context, "Error al abrir cámara", Toast.LENGTH_SHORT).show() }
-    }
-
-    fun openGallery(type: ReportPhotoType) {
-        pendingCameraType = type
-        pickImageLauncher.launch("image/*")
     }
 
     Scaffold(
@@ -189,7 +153,7 @@ fun MonitorQrScreen(navController: androidx.navigation.NavController, reportId: 
         bottomBar = { ReportBottomBar(navController = navController, reportId = reportId, selected = ReportTab.MONITOR) },
         topBar = {
             TopAppBar(
-                title = { Text("Monitoria y QR") },
+                title = { Text("Resumen") },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Atrás")
@@ -209,43 +173,21 @@ fun MonitorQrScreen(navController: androidx.navigation.NavController, reportId: 
                 )
             )
         }
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            ReportPhotoSection(
-                title = "Resultado de QR",
-                maxCount = 1,
-                photos = byType[ReportPhotoType.QR_RESULT].orEmpty(),
-                onCamera = { requestCameraAndLaunch(ReportPhotoType.QR_RESULT) },
-                onGallery = { openGallery(ReportPhotoType.QR_RESULT) },
-                onDelete = { pendingDelete = it }
-            )
-
-            ReportPhotoSection(
-                title = "Parámetros de Nodo",
-                maxCount = 1,
-                photos = byType[ReportPhotoType.NODE_PARAMS].orEmpty(),
-                onCamera = { requestCameraAndLaunch(ReportPhotoType.NODE_PARAMS) },
-                onGallery = { openGallery(ReportPhotoType.NODE_PARAMS) },
-                onDelete = { pendingDelete = it }
-            )
-
-            ReportPhotoSection(
-                title = "Otros Parámetros",
-                maxCount = 2,
-                photos = byType[ReportPhotoType.OTHER_PARAMS].orEmpty(),
-                onCamera = { requestCameraAndLaunch(ReportPhotoType.OTHER_PARAMS) },
-                onGallery = { openGallery(ReportPhotoType.OTHER_PARAMS) },
-                onDelete = { pendingDelete = it }
-            )
+        ) { padding ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .verticalScroll(rememberScrollState())
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                SummaryInfoCard(report = report)
+                SummaryStatsCard(passiveCounts = passiveCounts, assets = assets, repository = repository)
+                ObservationsSummaryCard(summaryData = summaryData)
+                PhotoUploadsCard(assets = assets, report = report, repository = repository)
+            }
         }
-    }
 
     if (showFinalizeDialog && report != null) {
         FinalizeReportDialog(
@@ -292,91 +234,102 @@ fun MonitorQrScreen(navController: androidx.navigation.NavController, reportId: 
         hasMissingAssets = hasIncompleteAssets(context, reportId, report, repository)
     }
 
-    pendingDelete?.let { photo ->
-        AlertDialog(
-            onDismissRequest = { pendingDelete = null },
-            title = { Text("Eliminar foto") },
-            text = { Text("¿Deseas eliminar esta foto?") },
-            confirmButton = {
-                Button(onClick = {
-                    scope.launch {
-                        repository.deleteReportPhoto(photo)
-                        pendingDelete = null
-                        snackbarHostState.showSnackbar("Foto eliminada")
-                    }
-                }) { Text("Eliminar") }
-            },
-            dismissButton = {
-                OutlinedButton(onClick = { pendingDelete = null }) { Text("Cancelar") }
-            }
-        )
-    }
 }
 
 @Composable
-private fun ReportPhotoSection(
-    title: String,
-    maxCount: Int,
-    photos: List<ReportPhoto>,
-    onCamera: () -> Unit,
-    onGallery: () -> Unit,
-    onDelete: (ReportPhoto) -> Unit
-) {
+private fun SummaryInfoCard(report: com.example.fieldmaintenance.data.model.MaintenanceReport?) {
     OutlinedCard(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.outlinedCardColors(),
         border = androidx.compose.foundation.BorderStroke(1.dp, androidx.compose.ui.graphics.Color.Black)
     ) {
-        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(title, style = MaterialTheme.typography.titleSmall)
-                Text("${photos.size}/$maxCount", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
-            }
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Información General", style = MaterialTheme.typography.titleSmall)
+            SummaryRow(label = "Nodo", value = report?.nodeName)
+            SummaryRow(label = "Evento", value = report?.eventName)
+            SummaryRow(label = "Responsable", value = report?.responsible)
+            SummaryRow(label = "Contratista", value = report?.contractor)
+            SummaryRow(label = "Número del medidor", value = report?.meterNumber)
+        }
+    }
+}
 
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedButton(
-                    onClick = onGallery,
-                    modifier = Modifier.weight(1f),
-                    enabled = photos.size < maxCount
-                ) {
-                    Icon(Icons.Default.Image, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                    Spacer(Modifier.width(6.dp))
-                    Text("Galería")
-                }
-                OutlinedButton(
-                    onClick = onCamera,
-                    modifier = Modifier.weight(1f),
-                    enabled = photos.size < maxCount
-                ) {
-                    Icon(Icons.Default.CameraAlt, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                    Spacer(Modifier.width(6.dp))
-                    Text("Cámara")
+@Composable
+private fun SummaryStatsCard(
+    passiveCounts: Map<PassiveType, Int>,
+    assets: List<com.example.fieldmaintenance.data.model.Asset>,
+    repository: com.example.fieldmaintenance.data.repository.MaintenanceRepository
+) {
+    var adjustedCount by remember { mutableStateOf(0) }
+    LaunchedEffect(assets) {
+        adjustedCount = countAdjustedAssets(assets, repository)
+    }
+    OutlinedCard(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.outlinedCardColors(),
+        border = androidx.compose.foundation.BorderStroke(1.dp, androidx.compose.ui.graphics.Color.Black)
+    ) {
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Resumen de Pasivos", style = MaterialTheme.typography.titleSmall)
+            SummaryRow(label = "Taps Spliteado a reforma", value = passiveCounts[PassiveType.TAPS_SPLITEADO_A_REFORMA]?.toString())
+            SummaryRow(label = "Acometidas cortadas", value = passiveCounts[PassiveType.ACOMETIDAS_CORTADAS]?.toString())
+            SummaryRow(label = "Antirrobo Colocado", value = passiveCounts[PassiveType.COLOCA_ANTIRROBO_A_TAP]?.toString())
+            SummaryRow(label = "Pasivos normalizado o reparado", value = passiveCounts[PassiveType.PASIVO_NORMALIZADO_O_REPARADO]?.toString())
+            SummaryRow(label = "Activos ajustados", value = adjustedCount.toString())
+        }
+    }
+}
+
+@Composable
+private fun ObservationsSummaryCard(summaryData: SummaryData) {
+    var expanded by remember { mutableStateOf(false) }
+    val total = summaryData.observations.size
+    val grouped = summaryData.observations.groupBy { it.assetLabel }
+    OutlinedCard(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.outlinedCardColors(),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color.Black)
+    ) {
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { expanded = !expanded },
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Observaciones en Mediciones:", style = MaterialTheme.typography.titleSmall)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(total.toString(), fontWeight = FontWeight.Bold)
+                    Icon(
+                        imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                        contentDescription = null
+                    )
                 }
             }
-
-            if (photos.isNotEmpty()) {
-                Text(
-                    text = "${photos.size} foto(s) seleccionada(s)",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    items(photos, key = { it.id }) { p ->
-                        OutlinedCard(
-                            modifier = Modifier
-                                .size(96.dp)
-                                .combinedClickable(
-                                    onClick = {},
-                                    onLongClick = { onDelete(p) }
-                                ),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, androidx.compose.ui.graphics.Color.Black)
-                        ) {
-                            androidx.compose.foundation.Image(
-                                painter = rememberAsyncImagePainter(File(p.filePath)),
-                                contentDescription = null,
-                                modifier = Modifier.fillMaxSize()
-                            )
+            if (expanded) {
+                if (grouped.isEmpty()) {
+                    Text("Sin observaciones.", style = MaterialTheme.typography.bodySmall)
+                } else {
+                    grouped.forEach { (assetLabel, entries) ->
+                        Text(
+                            "Observaciones en Mediciones - $assetLabel",
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        val byFile = entries.groupBy { it.file.ifBlank { "General" } }
+                        byFile.forEach { (file, details) ->
+                            Text(file, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodySmall)
+                            details.forEach { entry ->
+                                Text(
+                                    text = "• ${entry.detail}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (entry.isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(6.dp))
                         }
+                        Spacer(modifier = Modifier.height(4.dp))
                     }
                 }
             }
@@ -384,35 +337,149 @@ private fun ReportPhotoSection(
     }
 }
 
-private suspend fun upsertReportPhotoReplacingIfNeeded(
-    reportId: String,
-    type: ReportPhotoType,
-    sourceFile: File,
-    repository: com.example.fieldmaintenance.data.repository.MaintenanceRepository,
-    context: android.content.Context
+@Composable
+private fun PhotoUploadsCard(
+    assets: List<com.example.fieldmaintenance.data.model.Asset>,
+    report: com.example.fieldmaintenance.data.model.MaintenanceReport?,
+    repository: com.example.fieldmaintenance.data.repository.MaintenanceRepository
 ) {
-    val existing = repository.listReportPhotosByReportId(reportId).filter { it.type == type }
-    val max = if (type == ReportPhotoType.OTHER_PARAMS) 2 else 1
-
-    if (existing.size >= max) {
-        // Replace the oldest for max==1; for max==2 replace the oldest.
-        val toReplace = existing.minByOrNull { it.createdAt }
-        if (toReplace != null) {
-            repository.deleteReportPhoto(toReplace)
+    val photoStatuses by produceState(
+        initialValue = emptyList<PhotoUploadStatus>(),
+        assets,
+        report
+    ) {
+        value = withContext(Dispatchers.IO) {
+            assets.map { asset ->
+                val photos = repository.listPhotosByAssetId(asset.id)
+                val techNormalized = asset.technology?.trim()?.lowercase() ?: ""
+                val moduleRequired = !(asset.type == AssetType.NODE && techNormalized == "rphy")
+                val opticsRequired = asset.type == AssetType.NODE &&
+                    !(techNormalized == "rphy" || techNormalized == "vccap")
+                val moduleCount = photos.count { it.photoType == PhotoType.MODULE }
+                val opticsCount = photos.count { it.photoType == PhotoType.OPTICS }
+                val missing = buildList {
+                    if (moduleRequired && moduleCount < 2) {
+                        add("Módulo (faltan ${2 - moduleCount})")
+                    }
+                    if (opticsRequired && opticsCount < 1) {
+                        add("Óptica (falta 1)")
+                    }
+                }
+                PhotoUploadStatus(
+                    assetLabel = assetLabelFor(report?.nodeName ?: "", asset),
+                    missing = missing
+                )
+            }
         }
     }
 
-    // Ensure file is inside app report storage folder.
-    val destDir = ImageStore.reportPhotoDir(context, reportId, type.name.lowercase())
-    val dest = if (sourceFile.parentFile == destDir) sourceFile
-    else File(destDir, sourceFile.name).also { runCatching { sourceFile.copyTo(it, overwrite = true) } }
+    OutlinedCard(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.outlinedCardColors(),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color.Black)
+    ) {
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Cargas Fotográficas", style = MaterialTheme.typography.titleSmall)
+            if (assets.isEmpty()) {
+                Text("Sin activos.", style = MaterialTheme.typography.bodySmall)
+            } else {
+                photoStatuses.forEach { status ->
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Text(status.assetLabel, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall)
+                        val description = if (status.missing.isEmpty()) {
+                            "Completo"
+                        } else {
+                            "Faltan: ${status.missing.joinToString()}"
+                        }
+                        Text(
+                            description,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (status.missing.isEmpty()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
 
-    repository.upsertReportPhoto(
-        ReportPhoto(
-            reportId = reportId,
-            type = type,
-            filePath = dest.absolutePath,
-            fileName = dest.name
-        )
-    )
+private fun assetLabelFor(nodeName: String, asset: com.example.fieldmaintenance.data.model.Asset): String {
+    return when (asset.type) {
+        AssetType.NODE -> "Activo ${nodeName.ifBlank { "Nodo" }} ${asset.frequencyMHz} MHz"
+        AssetType.AMPLIFIER -> {
+            val code = if (asset.port != null && asset.portIndex != null) {
+                "${asset.port.name}${String.format("%02d", asset.portIndex)}"
+            } else {
+                "SIN-COD"
+            }
+            "Activo ${nodeName.ifBlank { "Nodo" }} $code ${asset.frequencyMHz} MHz"
+        }
+        else -> "Activo ${nodeName.ifBlank { "Nodo" }} ${asset.frequencyMHz} MHz"
+    }
+}
+
+private data class ObservationEntry(
+    val assetId: String,
+    val assetLabel: String,
+    val file: String,
+    val detail: String,
+    val isError: Boolean
+)
+
+private data class SummaryData(
+    val observations: List<ObservationEntry> = emptyList()
+)
+
+private data class PhotoUploadStatus(
+    val assetLabel: String,
+    val missing: List<String>
+)
+
+@Composable
+private fun SummaryRow(label: String, value: String?) {
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(label, style = MaterialTheme.typography.bodySmall)
+        Text(value?.ifBlank { "—" } ?: "—", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+    }
+}
+
+private suspend fun countAdjustedAssets(
+    assets: List<com.example.fieldmaintenance.data.model.Asset>,
+    repository: com.example.fieldmaintenance.data.repository.MaintenanceRepository
+): Int {
+    fun moduleOk(photos: List<com.example.fieldmaintenance.data.model.Photo>): Boolean =
+        photos.count { it.photoType == com.example.fieldmaintenance.data.model.PhotoType.MODULE } == 2
+    fun opticsOk(photos: List<com.example.fieldmaintenance.data.model.Photo>): Boolean {
+        val c = photos.count { it.photoType == com.example.fieldmaintenance.data.model.PhotoType.OPTICS }
+        return c in 1..2
+    }
+    var count = 0
+    for (asset in assets) {
+        val photos = repository.listPhotosByAssetId(asset.id)
+        val baseOk = asset.frequencyMHz > 0 && moduleOk(photos)
+        if (!baseOk) continue
+        val ok = when (asset.type) {
+            AssetType.NODE -> opticsOk(photos)
+            AssetType.AMPLIFIER -> {
+                val fieldsOk = asset.amplifierMode != null && asset.port != null && asset.portIndex != null
+                if (!fieldsOk) false
+                else {
+                    val adj = repository.getAmplifierAdjustmentOne(asset.id)
+                    adj != null &&
+                        adj.inputCh50Dbmv != null &&
+                        adj.inputCh116Dbmv != null &&
+                        (adj.inputHighFreqMHz == null || adj.inputHighFreqMHz == 750 || adj.inputHighFreqMHz == 870) &&
+                        adj.planLowDbmv != null &&
+                        adj.planHighDbmv != null &&
+                        adj.outCh50Dbmv != null &&
+                        adj.outCh70Dbmv != null &&
+                        adj.outCh110Dbmv != null &&
+                        adj.outCh116Dbmv != null &&
+                        adj.outCh136Dbmv != null
+                }
+            }
+        }
+        if (ok) count++
+    }
+    return count
 }
