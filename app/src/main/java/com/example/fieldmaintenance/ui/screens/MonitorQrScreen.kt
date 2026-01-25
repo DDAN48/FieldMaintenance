@@ -664,6 +664,7 @@ private fun assetLabelFor(nodeName: String, asset: com.example.fieldmaintenance.
             }
             "Activo ${nodeName.ifBlank { "Nodo" }} $code ${asset.frequencyMHz} MHz"
         }
+        if (ok) count++
     }
 }
 
