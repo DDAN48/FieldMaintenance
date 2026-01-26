@@ -3,6 +3,7 @@ package com.example.fieldmaintenance.util
 import android.content.Context
 import com.example.fieldmaintenance.data.model.Asset
 import com.example.fieldmaintenance.data.model.AssetType
+import com.example.fieldmaintenance.data.model.PhotoType
 import com.example.fieldmaintenance.data.repository.MaintenanceRepository
 import java.io.ByteArrayInputStream
 import java.io.File
@@ -631,7 +632,8 @@ suspend fun verifyMeasurementFiles(
     repository: MaintenanceRepository,
     discardedLabels: Set<String>,
     expectedDocsisOverride: Int? = null,
-    expectedChannelOverride: Int? = null
+    expectedChannelOverride: Int? = null,
+    extraGeoPoints: List<GeoPoint> = emptyList()
 ): MeasurementVerificationSummary {
     val assetType = asset.type
     val expectedDocsis = expectedDocsisOverride ?: when (assetType) {
@@ -1248,9 +1250,25 @@ suspend fun verifyMeasurementFiles(
     var representativeGeo: GeoPoint? = null
     val geoWarnings = mutableListOf<String>()
 
-    val geoPoints = measurementEntries
-        .filter { !it.isDiscarded && (it.type == "docsisexpert" || it.type == "channelexpert") }
-        .mapNotNull { it.geoLocation }
+    val photoGeoPoints = repository.getPhotosByAssetIdAndType(asset.id, PhotoType.MODULE)
+        .mapNotNull { photo ->
+            val latitude = photo.latitude
+            val longitude = photo.longitude
+            if (latitude != null && longitude != null) {
+                GeoPoint(latitude = latitude, longitude = longitude)
+            } else {
+                null
+            }
+        }
+    val geoPoints = buildList {
+        addAll(
+            measurementEntries
+                .filter { !it.isDiscarded && (it.type == "docsisexpert" || it.type == "channelexpert") }
+                .mapNotNull { it.geoLocation }
+        )
+        addAll(extraGeoPoints)
+        addAll(photoGeoPoints)
+    }
 
     if (geoPoints.isNotEmpty()) {
         val buckets = mutableMapOf<Pair<Int, Int>, MutableList<GeoPoint>>()

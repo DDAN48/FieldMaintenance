@@ -87,6 +87,11 @@ class ExportManager(private val context: Context, private val repository: Mainte
         }
     }
 
+    private data class MeasurementGroupResult(
+        val group: HtmlMeasurementGroup?,
+        val summary: MeasurementVerificationSummary?
+    )
+
     private fun collectSwitchSelections(assets: List<Asset>): Map<String, Map<String, String>> {
         val allPrefs = switchPrefs.all
         val result = mutableMapOf<String, MutableMap<String, String>>()
@@ -3337,13 +3342,17 @@ val assets = repository.getAssetsByReportId(report.id).first()
         for (asset in assets) {
             val rxDir = File(measurementRoot, MaintenanceStorage.assetFolderName(asset))
             val rxLabel = if (asset.type == AssetType.AMPLIFIER) "Módulo" else "RX"
-            val rxBundle = buildMeasurementGroup(
+            val rxResult = buildMeasurementGroup(
                 rxLabel,
                 asset,
                 assetHeaderLine(report, asset),
                 rxDir,
                 switchSelections[asset.id].orEmpty()
             )
+            val rxChannelGeoPoints = rxResult.summary?.result?.measurementEntries
+                ?.filter { !it.isDiscarded && it.type == "channelexpert" }
+                ?.mapNotNull { it.geoLocation }
+                ?: emptyList()
             val moduleBundle = if (asset.type == AssetType.NODE) {
                 val moduleAsset = asset.copy(type = AssetType.AMPLIFIER)
                 val moduleDir = File(measurementRoot, MaintenanceStorage.assetFolderName(moduleAsset))
@@ -3352,12 +3361,13 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     moduleAsset,
                     assetHeaderLine(report, asset),
                     moduleDir,
-                    switchSelections[moduleAsset.id].orEmpty()
-                )
+                    switchSelections[moduleAsset.id].orEmpty(),
+                    extraGeoPoints = rxChannelGeoPoints
+                ).group
             } else {
                 null
             }
-            result[asset.id] = HtmlMeasurementBundle(rx = rxBundle, module = moduleBundle)
+            result[asset.id] = HtmlMeasurementBundle(rx = rxResult.group, module = moduleBundle)
         }
         return result
     }
@@ -3367,10 +3377,11 @@ val assets = repository.getAssetsByReportId(report.id).first()
         asset: Asset,
         assetHeader: String,
         dir: File,
-        switchSelections: Map<String, String>
-    ): HtmlMeasurementGroup? {
+        switchSelections: Map<String, String>,
+        extraGeoPoints: List<GeoPoint> = emptyList()
+    ): MeasurementGroupResult {
         val files = dir.listFiles()?.filter { it.isFile } ?: emptyList()
-        if (files.isEmpty()) return null
+        if (files.isEmpty()) return MeasurementGroupResult(group = null, summary = null)
         val discardedLabels = loadDiscardedLabels(File(dir, ".discarded_measurements.txt"))
         val required = requiredCounts(asset.type, isModule = label == "Módulo")
         val summary = verifyMeasurementFiles(
@@ -3380,38 +3391,44 @@ val assets = repository.getAssetsByReportId(report.id).first()
             repository = repository,
             discardedLabels = discardedLabels,
             expectedDocsisOverride = required.expectedDocsis,
-            expectedChannelOverride = required.expectedChannel
+            expectedChannelOverride = required.expectedChannel,
+            extraGeoPoints = extraGeoPoints
         )
         val entries = summary.result.measurementEntries
             .filter { it.type == "docsisexpert" || it.type == "channelexpert" }
             .map { entry ->
                 entry.toHtmlMeasurementEntry(switchSelections[entry.label])
             }
-        if (entries.isEmpty()) return null
-        return HtmlMeasurementGroup(
-            label = label,
-            geoLocation = summary.geoLocation,
-            observationTotal = summary.observationTotal,
-            observationDetails = (summary.geoIssueDetails.map { detail ->
-                HtmlObservationDetail(
-                    assetId = asset.id,
-                    assetHeader = assetHeader,
-                    type = detail.type,
-                    file = detail.file,
-                    detail = detail.detail,
-                    isRuleViolation = false
-                )
-            } + summary.validationIssueDetails.map { detail ->
-                HtmlObservationDetail(
-                    assetId = asset.id,
-                    assetHeader = assetHeader,
-                    type = detail.type,
-                    file = detail.file,
-                    detail = detail.detail,
-                    isRuleViolation = detail.isRuleViolation
-                )
-            }),
-            entries = entries
+        if (entries.isEmpty()) {
+            return MeasurementGroupResult(group = null, summary = summary)
+        }
+        return MeasurementGroupResult(
+            group = HtmlMeasurementGroup(
+                label = label,
+                geoLocation = summary.geoLocation,
+                observationTotal = summary.observationTotal,
+                observationDetails = (summary.geoIssueDetails.map { detail ->
+                    HtmlObservationDetail(
+                        assetId = asset.id,
+                        assetHeader = assetHeader,
+                        type = detail.type,
+                        file = detail.file,
+                        detail = detail.detail,
+                        isRuleViolation = false
+                    )
+                } + summary.validationIssueDetails.map { detail ->
+                    HtmlObservationDetail(
+                        assetId = asset.id,
+                        assetHeader = assetHeader,
+                        type = detail.type,
+                        file = detail.file,
+                        detail = detail.detail,
+                        isRuleViolation = detail.isRuleViolation
+                    )
+                }),
+                entries = entries
+            ),
+            summary = summary
         )
     }
 

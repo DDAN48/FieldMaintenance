@@ -108,6 +108,7 @@ import com.example.fieldmaintenance.util.MaintenanceStorage
 import com.example.fieldmaintenance.util.PlanCache
 import com.example.fieldmaintenance.util.PlanRepository
 import com.example.fieldmaintenance.util.hasIncompleteAssets
+import com.example.fieldmaintenance.util.GeoPoint
 import com.example.fieldmaintenance.util.MeasurementEntry
 import com.example.fieldmaintenance.util.MeasurementVerificationSummary
 import com.example.fieldmaintenance.util.ValidationIssueDetail
@@ -2367,6 +2368,13 @@ private fun AssetFileSection(
         }
     }
 
+    fun channelExpertGeoPoints(summary: MeasurementVerificationSummary?): List<GeoPoint> {
+        return summary?.result?.measurementEntries
+            ?.filter { !it.isDiscarded && it.type == "channelexpert" }
+            ?.mapNotNull { it.geoLocation }
+            ?: emptyList()
+    }
+
     fun toggleDiscardRx(entry: MeasurementEntry) {
         if (!entry.fromZip) return
         val updated = rxDiscardedLabels.toMutableSet()
@@ -2410,7 +2418,8 @@ private fun AssetFileSection(
                 repository,
                 updated,
                 expectedDocsisOverride = moduleRequired.expectedDocsis,
-                expectedChannelOverride = moduleRequired.expectedChannel
+                expectedChannelOverride = moduleRequired.expectedChannel,
+                extraGeoPoints = channelExpertGeoPoints(verificationSummaryRx)
             )
         }
     }
@@ -2449,7 +2458,7 @@ private fun AssetFileSection(
         }
     }
 
-    LaunchedEffect(moduleFiles, moduleDiscardedLabels) {
+    LaunchedEffect(moduleFiles, moduleDiscardedLabels, verificationSummaryRx) {
         if (!isNodeAsset) return@LaunchedEffect
         val moduleRequired = requiredCounts(moduleAsset.type, isModule = true)
         if (moduleFiles.isNotEmpty()) {
@@ -2460,7 +2469,8 @@ private fun AssetFileSection(
                 repository,
                 moduleDiscardedLabels,
                 expectedDocsisOverride = moduleRequired.expectedDocsis,
-                expectedChannelOverride = moduleRequired.expectedChannel
+                expectedChannelOverride = moduleRequired.expectedChannel,
+                extraGeoPoints = channelExpertGeoPoints(verificationSummaryRx)
             )
             verificationSummaryModule = summary
             val duplicates = summary.result.duplicateFileNames + summary.result.duplicateEntryNames
@@ -2519,7 +2529,8 @@ private fun AssetFileSection(
                     repository,
                     if (isModule) moduleDiscardedLabels else rxDiscardedLabels,
                     expectedDocsisOverride = required.expectedDocsis,
-                    expectedChannelOverride = required.expectedChannel
+                    expectedChannelOverride = required.expectedChannel,
+                    extraGeoPoints = if (isModule) channelExpertGeoPoints(verificationSummaryRx) else emptyList()
                 )
             } else {
                 null
@@ -4020,7 +4031,8 @@ private fun AssetFileSection(
                                         repository,
                                         if (isModule) moduleDiscardedLabels else rxDiscardedLabels,
                                         expectedDocsisOverride = required.expectedDocsis,
-                                        expectedChannelOverride = required.expectedChannel
+                                        expectedChannelOverride = required.expectedChannel,
+                                        extraGeoPoints = if (isModule) channelExpertGeoPoints(verificationSummaryRx) else emptyList()
                                     )
                                 } else {
                                     null
@@ -4215,7 +4227,8 @@ private fun AssetFileSection(
                                     repository,
                                     moduleDiscardedLabels,
                                     expectedDocsisOverride = moduleRequired.expectedDocsis,
-                                    expectedChannelOverride = moduleRequired.expectedChannel
+                                    expectedChannelOverride = moduleRequired.expectedChannel,
+                                    extraGeoPoints = channelExpertGeoPoints(verificationSummaryRx)
                                 )
                             } else {
                                 val rxRequired = requiredCounts(asset.type, isModule = false)
