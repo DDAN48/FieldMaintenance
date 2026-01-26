@@ -539,7 +539,10 @@ fun AddAssetScreen(
             ampAdj != null &&
             ampAdj.inputCh50Dbmv != null &&
             ampAdj.inputCh116Dbmv != null &&
-            (ampAdj.inputHighFreqMHz == 750 || ampAdj.inputHighFreqMHz == 870) &&
+            (ampAdj.inputHighFreqMHz == 750 || ampAdj.inputHighFreqMHz == 870 || ampAdj.inputHighFreqMHz == 1000) &&
+            (ampAdj.inputLowFreqMHz == 61 || ampAdj.inputLowFreqMHz == 379) &&
+            (ampAdj.inputPlanLowFreqMHz == 61 || ampAdj.inputPlanLowFreqMHz == 379) &&
+            (ampAdj.inputPlanHighFreqMHz == 750 || ampAdj.inputPlanHighFreqMHz == 870 || ampAdj.inputPlanHighFreqMHz == 1000) &&
             ampAdj.planLowDbmv != null &&
             ampAdj.planHighDbmv != null &&
             ampAdj.outCh50Dbmv != null &&
@@ -554,13 +557,19 @@ fun AddAssetScreen(
         if (adj == null) {
             false
         } else {
-            val ch50Med = adj.inputCh50Dbmv
-            val ch50Plan = adj.inputPlanCh50Dbmv
+            val lowPlanFreq = adj.inputPlanLowFreqMHz ?: adj.inputLowFreqMHz
+            val highPlanFreq = adj.inputPlanHighFreqMHz ?: adj.inputHighFreqMHz
+            val lowCalc = com.example.fieldmaintenance.util.CiscoHfcAmpCalculator.entradaCalcValueForFreq(adj, lowPlanFreq)
+            val highCalc = com.example.fieldmaintenance.util.CiscoHfcAmpCalculator.entradaCalcValueForFreq(adj, highPlanFreq)
+            val lowMed = adj.inputCh50Dbmv
             val highMed = adj.inputCh116Dbmv
+            val lowPlan = adj.inputPlanCh50Dbmv
             val highPlan = adj.inputPlanHighDbmv
-            val ch50Ok = ch50Med != null && ch50Plan != null && ch50Med >= 15.0 && kotlin.math.abs(ch50Med - ch50Plan) < 4.0
-            val highOk = highMed != null && highPlan != null && highMed >= 15.0 && kotlin.math.abs(highMed - highPlan) < 4.0
-            ch50Ok && highOk
+            val lowOk = lowMed != null && lowMed >= 15.0 && lowPlan != null && lowCalc != null &&
+                kotlin.math.abs(lowCalc - lowPlan) < 4.0
+            val highOk = highMed != null && highMed >= 15.0 && highPlan != null && highCalc != null &&
+                kotlin.math.abs(highCalc - highPlan) < 4.0
+            lowOk && highOk
         }
     }
 
@@ -682,7 +691,10 @@ fun AddAssetScreen(
                 ampAdj != null &&
                 ampAdj.inputCh50Dbmv != null &&
                 ampAdj.inputCh116Dbmv != null &&
-                (ampAdj.inputHighFreqMHz == 750 || ampAdj.inputHighFreqMHz == 870) &&
+                (ampAdj.inputHighFreqMHz == 750 || ampAdj.inputHighFreqMHz == 870 || ampAdj.inputHighFreqMHz == 1000) &&
+                (ampAdj.inputLowFreqMHz == 61 || ampAdj.inputLowFreqMHz == 379) &&
+                (ampAdj.inputPlanLowFreqMHz == 61 || ampAdj.inputPlanLowFreqMHz == 379) &&
+                (ampAdj.inputPlanHighFreqMHz == 750 || ampAdj.inputPlanHighFreqMHz == 870 || ampAdj.inputPlanHighFreqMHz == 1000) &&
                 ampAdj.planLowDbmv != null &&
                 ampAdj.planHighDbmv != null &&
                 ampAdj.outCh50Dbmv != null &&
@@ -1352,7 +1364,7 @@ fun AddAssetScreen(
                         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             if (assetType == AssetType.AMPLIFIER && !ampEntradaOk) {
                                 Text(
-                                    "Complete mediciones de entrada válidas para continuar. La diferencia entre el nivel de entrada y medido aceptable es menor a 4. Nivel minimo de entrada permitido es 15 dBmV si esta indicado por plano.",
+                                    "Complete mediciones de entrada válidas para continuar. La diferencia entre el nivel calculado de entrada y el plano aceptable es menor a 4. Nivel minimo de entrada permitido es 15 dBmV si esta indicado por plano.",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.error
                                 )

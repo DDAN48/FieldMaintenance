@@ -267,7 +267,10 @@ class ExportManager(private val context: Context, private val repository: Mainte
                         adj != null &&
                             adj.inputCh50Dbmv != null &&
                             adj.inputCh116Dbmv != null &&
-                            (adj.inputHighFreqMHz == null || adj.inputHighFreqMHz == 750 || adj.inputHighFreqMHz == 870) &&
+                            (adj.inputHighFreqMHz == null || adj.inputHighFreqMHz == 750 || adj.inputHighFreqMHz == 870 || adj.inputHighFreqMHz == 1000) &&
+                            (adj.inputLowFreqMHz == 61 || adj.inputLowFreqMHz == 379) &&
+                            (adj.inputPlanLowFreqMHz == 61 || adj.inputPlanLowFreqMHz == 379) &&
+                            (adj.inputPlanHighFreqMHz == 750 || adj.inputPlanHighFreqMHz == 870 || adj.inputPlanHighFreqMHz == 1000) &&
                             adj.planLowDbmv != null &&
                             adj.planHighDbmv != null &&
                             adj.outCh50Dbmv != null &&
@@ -939,14 +942,14 @@ val assets = repository.getAssetsByReportId(report.id).first()
                         headers = listOf("CANAL", "FREQ", "MEDIDO (dBmV)", "PLANO (dBmV)"),
                         rows = listOf(
                             listOf(
-                                "CH50" to null,
-                                "379 MHz" to null,
+                                CiscoHfcAmpCalculator.inputChannelLabelForFreq(adj.inputPlanLowFreqMHz ?: adj.inputLowFreqMHz ?: 379) to null,
+                                "${adj.inputPlanLowFreqMHz ?: adj.inputLowFreqMHz ?: 379} MHz" to null,
                                 (adj.inputCh50Dbmv?.let { CiscoHfcAmpCalculator.format1(it) } ?: "—") to null,
                                 (adj.inputPlanCh50Dbmv?.let { CiscoHfcAmpCalculator.format1(it) } ?: "—") to null
                             ),
                             listOf(
-                                (if ((adj.inputHighFreqMHz ?: 750) == 870) "CH136" else "CH116") to null,
-                                "${adj.inputHighFreqMHz ?: 750} MHz" to null,
+                                CiscoHfcAmpCalculator.inputChannelLabelForFreq(adj.inputPlanHighFreqMHz ?: adj.inputHighFreqMHz ?: 870) to null,
+                                "${adj.inputPlanHighFreqMHz ?: adj.inputHighFreqMHz ?: 870} MHz" to null,
                                 (adj.inputCh116Dbmv?.let { CiscoHfcAmpCalculator.format1(it) } ?: "—") to null,
                                 (adj.inputPlanHighDbmv?.let { CiscoHfcAmpCalculator.format1(it) } ?: "—") to null
                             )
@@ -3486,14 +3489,14 @@ val assets = repository.getAssetsByReportId(report.id).first()
         val agc = CiscoHfcAmpCalculator.agcPad(adj, bw, asset.amplifierMode)
         val inputMeasured = listOf(
             HtmlAmpRow(
-                Canal = "CH50",
-                Frecuencia = 379,
+                Canal = CiscoHfcAmpCalculator.inputChannelLabelForFreq(adj.inputPlanLowFreqMHz ?: adj.inputLowFreqMHz ?: 379),
+                Frecuencia = adj.inputPlanLowFreqMHz ?: adj.inputLowFreqMHz ?: 379,
                 Medido = adj.inputCh50Dbmv?.let { CiscoHfcAmpCalculator.format1(it) },
                 Plano = adj.inputPlanCh50Dbmv?.let { CiscoHfcAmpCalculator.format1(it) }
             ),
             HtmlAmpRow(
-                Canal = if ((adj.inputHighFreqMHz ?: 750) == 870) "CH136" else "CH116",
-                Frecuencia = adj.inputHighFreqMHz ?: 750,
+                Canal = CiscoHfcAmpCalculator.inputChannelLabelForFreq(adj.inputPlanHighFreqMHz ?: adj.inputHighFreqMHz ?: 870),
+                Frecuencia = adj.inputPlanHighFreqMHz ?: adj.inputHighFreqMHz ?: 870,
                 Medido = adj.inputCh116Dbmv?.let { CiscoHfcAmpCalculator.format1(it) },
                 Plano = adj.inputPlanHighDbmv?.let { CiscoHfcAmpCalculator.format1(it) }
             )

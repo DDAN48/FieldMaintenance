@@ -698,14 +698,18 @@ suspend fun verifyMeasurementFiles(
         if (adj == null) {
             null
         } else {
-            val ch50Med = adj.inputCh50Dbmv
-            val ch50Plan = adj.inputPlanCh50Dbmv
+            val lowPlanFreq = adj.inputPlanLowFreqMHz ?: adj.inputLowFreqMHz
+            val highPlanFreq = adj.inputPlanHighFreqMHz ?: adj.inputHighFreqMHz
+            val lowCalc = CiscoHfcAmpCalculator.entradaCalcValueForFreq(adj, lowPlanFreq)
+            val highCalc = CiscoHfcAmpCalculator.entradaCalcValueForFreq(adj, highPlanFreq)
+            val lowMed = adj.inputCh50Dbmv
+            val lowPlan = adj.inputPlanCh50Dbmv
             val highMed = adj.inputCh116Dbmv
             val highPlan = adj.inputPlanHighDbmv
-            val ch50Ok = ch50Med != null && ch50Plan != null &&
-                ch50Med >= 15.0 && kotlin.math.abs(ch50Med - ch50Plan) < 4.0
-            val highOk = highMed != null && highPlan != null &&
-                highMed >= 15.0 && kotlin.math.abs(highMed - highPlan) < 4.0
+            val ch50Ok = lowMed != null && lowPlan != null && lowCalc != null &&
+                lowMed >= 15.0 && kotlin.math.abs(lowCalc - lowPlan) < 4.0
+            val highOk = highMed != null && highPlan != null && highCalc != null &&
+                highMed >= 15.0 && kotlin.math.abs(highCalc - highPlan) < 4.0
             ch50Ok to highOk
         }
     } else {
