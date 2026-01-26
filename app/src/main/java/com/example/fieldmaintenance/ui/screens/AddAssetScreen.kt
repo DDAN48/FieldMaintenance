@@ -108,6 +108,7 @@ import com.example.fieldmaintenance.util.MaintenanceStorage
 import com.example.fieldmaintenance.util.PlanCache
 import com.example.fieldmaintenance.util.PlanRepository
 import com.example.fieldmaintenance.util.hasIncompleteAssets
+import com.example.fieldmaintenance.util.GeoPoint
 import com.example.fieldmaintenance.util.MeasurementEntry
 import com.example.fieldmaintenance.util.MeasurementVerificationSummary
 import com.example.fieldmaintenance.util.ValidationIssueDetail
@@ -2367,6 +2368,13 @@ private fun AssetFileSection(
         }
     }
 
+    fun channelExpertGeoPoints(summary: MeasurementVerificationSummary?): List<GeoPoint> {
+        return summary?.result?.measurementEntries
+            ?.filter { !it.isDiscarded && it.type == "channelexpert" }
+            ?.mapNotNull { it.geoLocation }
+            ?: emptyList()
+    }
+
     fun toggleDiscardRx(entry: MeasurementEntry) {
         if (!entry.fromZip) return
         val updated = rxDiscardedLabels.toMutableSet()
@@ -2410,7 +2418,8 @@ private fun AssetFileSection(
                 repository,
                 updated,
                 expectedDocsisOverride = moduleRequired.expectedDocsis,
-                expectedChannelOverride = moduleRequired.expectedChannel
+                expectedChannelOverride = moduleRequired.expectedChannel,
+                extraGeoPoints = channelExpertGeoPoints(verificationSummaryRx)
             )
         }
     }
@@ -2449,7 +2458,7 @@ private fun AssetFileSection(
         }
     }
 
-    LaunchedEffect(moduleFiles, moduleDiscardedLabels) {
+    LaunchedEffect(moduleFiles, moduleDiscardedLabels, verificationSummaryRx) {
         if (!isNodeAsset) return@LaunchedEffect
         val moduleRequired = requiredCounts(moduleAsset.type, isModule = true)
         if (moduleFiles.isNotEmpty()) {
@@ -2460,7 +2469,8 @@ private fun AssetFileSection(
                 repository,
                 moduleDiscardedLabels,
                 expectedDocsisOverride = moduleRequired.expectedDocsis,
-                expectedChannelOverride = moduleRequired.expectedChannel
+                expectedChannelOverride = moduleRequired.expectedChannel,
+                extraGeoPoints = channelExpertGeoPoints(verificationSummaryRx)
             )
             verificationSummaryModule = summary
             val duplicates = summary.result.duplicateFileNames + summary.result.duplicateEntryNames
@@ -2519,7 +2529,8 @@ private fun AssetFileSection(
                     repository,
                     if (isModule) moduleDiscardedLabels else rxDiscardedLabels,
                     expectedDocsisOverride = required.expectedDocsis,
-                    expectedChannelOverride = required.expectedChannel
+                    expectedChannelOverride = required.expectedChannel,
+                    extraGeoPoints = if (isModule) channelExpertGeoPoints(verificationSummaryRx) else emptyList()
                 )
             } else {
                 null
@@ -2798,7 +2809,8 @@ private fun AssetFileSection(
                         fun buildSwitchSelections(
                             tabs: List<MeasurementTab>,
                             options: List<String>,
-                            savedSelections: Map<String, String?>
+                            savedSelections: Map<String, String?>,
+                            allowIn: Boolean = true
                         ): Pair<Map<MeasurementEntry, String>, List<String>> {
                             val selections = mutableMapOf<MeasurementEntry, String>()
                             var mainUsed = false
@@ -2813,15 +2825,18 @@ private fun AssetFileSection(
                                     saved != null && options.contains(saved) -> saved
                                     inferred != null -> inferred
                                     index == 0 -> "MAIN"
-                                    index == 1 -> "IN"
+                                    index == 1 && allowIn -> "IN"
                                     else -> "AUX"
+                                }
+                                if (!allowIn && selection == "IN") {
+                                    selection = "AUX"
                                 }
                                 if (!isExplicit) {
                                     if (selection == "MAIN" && mainUsed) {
                                         selection = "AUX"
                                         duplicateLabels.add(tab.entry.label)
                                     }
-                                    if (selection == "IN" && inUsed) {
+                                    if (allowIn && selection == "IN" && inUsed) {
                                         selection = "AUX"
                                         duplicateLabels.add(tab.entry.label)
                                     }
@@ -2833,13 +2848,17 @@ private fun AssetFileSection(
                                         selection = "AUX"
                                     }
                                     if (selection == "MAIN") mainUsed = true
-                                    if (selection == "IN") inUsed = true
+                                    if (allowIn && selection == "IN") inUsed = true
                                     if (selection == "AUXDC") auxdcUsed = true
                                 }
                                 selections[tab.entry] = selection
                             }
                             val seed = tabs.joinToString("|") { it.entry.label }.hashCode()
-                            val reserved = listOf("MAIN", "IN", "AUXDC")
+                            val reserved = buildList {
+                                add("MAIN")
+                                if (allowIn) add("IN")
+                                add("AUXDC")
+                            }
                             reserved.forEach { reservedKey ->
                                 val matching = selections.filterValues { it == reservedKey }.keys.toMutableList()
                                 if (matching.size > 1) {
@@ -3567,9 +3586,50 @@ private fun AssetFileSection(
                                     hasError = docsisHasError(entry)
                                 )
                             }
-                            val docsisLabelForEntry = docsisTabs.associate { it.entry to it.label }
+                            val docsisTabsWithSwitches = if (assetForDisplay.type == AssetType.AMPLIFIER && !isModule) {
+                                val docsisSwitchOptions = switchOptionsFor(assetForDisplay.amplifierMode)
+                                val savedSelections = remember(
+                                    docsisTabs,
+                                    assetForDisplay.id,
+                                    verificationSummaryRx,
+                                    verificationSummaryModule
+                                ) {
+                                    docsisTabs.associate { tab ->
+                                        tab.entry.label to switchPrefs.getString(
+                                            switchKey(assetForDisplay.id, tab.entry.label),
+                                            null
+                                        )
+                                    }
+                                }
+                                val (docsisSwitchSelections, switchDuplicates) = remember(
+                                    docsisTabs,
+                                    docsisSwitchOptions,
+                                    savedSelections
+                                ) {
+                                    buildSwitchSelections(
+                                        docsisTabs,
+                                        docsisSwitchOptions,
+                                        savedSelections,
+                                        allowIn = false
+                                    )
+                                }
+                                LaunchedEffect(docsisSwitchSelections, assetForDisplay.id) {
+                                    persistSwitchSelections(docsisTabs, docsisSwitchSelections, assetForDisplay.id)
+                                }
+                                LaunchedEffect(switchDuplicates, assetForDisplay.id) {
+                                    if (switchDuplicates.isNotEmpty() && switchDuplicateNotice.isEmpty()) {
+                                        switchDuplicateNotice = switchDuplicates
+                                    }
+                                }
+                                docsisTabs.map { tab ->
+                                    tab.copy(label = docsisSwitchSelections[tab.entry] ?: tab.label)
+                                }
+                            } else {
+                                docsisTabs
+                            }
+                            val docsisLabelForEntry = docsisTabsWithSwitches.associate { it.entry to it.label }
                             MeasurementTabsWithPagerCard(
-                                tabs = docsisTabs,
+                                tabs = docsisTabsWithSwitches,
                                 footerProvider = { entry, label ->
                                     "$label = ${displayLabel(entry)}"
                                 },
@@ -3971,7 +4031,8 @@ private fun AssetFileSection(
                                         repository,
                                         if (isModule) moduleDiscardedLabels else rxDiscardedLabels,
                                         expectedDocsisOverride = required.expectedDocsis,
-                                        expectedChannelOverride = required.expectedChannel
+                                        expectedChannelOverride = required.expectedChannel,
+                                        extraGeoPoints = if (isModule) channelExpertGeoPoints(verificationSummaryRx) else emptyList()
                                     )
                                 } else {
                                     null
@@ -4166,7 +4227,8 @@ private fun AssetFileSection(
                                     repository,
                                     moduleDiscardedLabels,
                                     expectedDocsisOverride = moduleRequired.expectedDocsis,
-                                    expectedChannelOverride = moduleRequired.expectedChannel
+                                    expectedChannelOverride = moduleRequired.expectedChannel,
+                                    extraGeoPoints = channelExpertGeoPoints(verificationSummaryRx)
                                 )
                             } else {
                                 val rxRequired = requiredCounts(asset.type, isModule = false)
