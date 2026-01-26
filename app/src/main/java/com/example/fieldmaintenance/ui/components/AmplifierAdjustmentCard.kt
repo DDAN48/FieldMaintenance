@@ -195,6 +195,14 @@ fun AmplifierAdjustmentCard(
     } else {
         null
     }
+    val entradaPlanCalc = if (
+        adj.inputPlanCh50Dbmv != null &&
+        adj.inputPlanHighDbmv != null
+    ) {
+        CiscoHfcAmpCalculator.nivelesEntradaPlanCalculados(adj)
+    } else {
+        null
+    }
     val salidaCalc = CiscoHfcAmpCalculator.nivelesSalidaCalculados(adj)
     val tilt = CiscoHfcAmpCalculator.fwdInEqTilt(adj, bandwidth)
     val pad = CiscoHfcAmpCalculator.fwdInPad(adj, bandwidth, amplifierMode)
@@ -352,14 +360,14 @@ fun AmplifierAdjustmentCard(
                     // Calculated list (no extra title; CALC column already indicates)
                     SimpleCalcList(
                         rows = listOf(
-                            CalcRowData("L 54", "54", entradaCalc?.get("L 54")),
-                            CalcRowData("L102", "102", entradaCalc?.get("L102")),
-                            CalcRowData("CH3", "61", entradaCalc?.get("CH3")),
-                            CalcRowData("CH50", "379", entradaCalc?.get("CH50")),
-                            CalcRowData("CH70", "495", entradaCalc?.get("CH70")),
-                            CalcRowData("CH116", "750", entradaCalc?.get("CH116")),
-                            CalcRowData("CH136", "870", entradaCalc?.get("CH136")),
-                            CalcRowData("CH158", "1000", entradaCalc?.get("CH158")),
+                            CalcRowData("L 54", "54", entradaCalc?.get("L 54"), entradaPlanCalc?.get("L 54")),
+                            CalcRowData("L102", "102", entradaCalc?.get("L102"), entradaPlanCalc?.get("L102")),
+                            CalcRowData("CH3", "61", entradaCalc?.get("CH3"), entradaPlanCalc?.get("CH3")),
+                            CalcRowData("CH50", "379", entradaCalc?.get("CH50"), entradaPlanCalc?.get("CH50")),
+                            CalcRowData("CH70", "495", entradaCalc?.get("CH70"), entradaPlanCalc?.get("CH70")),
+                            CalcRowData("CH116", "750", entradaCalc?.get("CH116"), entradaPlanCalc?.get("CH116")),
+                            CalcRowData("CH136", "870", entradaCalc?.get("CH136"), entradaPlanCalc?.get("CH136")),
+                            CalcRowData("CH158", "1000", entradaCalc?.get("CH158"), entradaPlanCalc?.get("CH158")),
                         )
                     )
             }
@@ -624,7 +632,12 @@ private fun FreqDropdown(
     }
 }
 
-private data class CalcRowData(val canal: String, val freqText: String, val calc: Double?)
+private data class CalcRowData(
+    val canal: String,
+    val freqText: String,
+    val calc: Double?,
+    val planCalc: Double?
+)
 
 @Composable
 private fun SectionCard(
@@ -733,7 +746,8 @@ private fun SimpleCalcList(rows: List<CalcRowData>) {
     ) {
         Text("CANAL", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, color = ampTextSecondary(), fontSize = 11.sp)
         Text("FREQ (MHz)", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, color = ampTextSecondary(), fontSize = 11.sp)
-        Text("CALC (dBmV)", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, color = ampTextSecondary(), fontSize = 11.sp)
+        Text("CALC MED (dBmV)", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, color = ampTextSecondary(), fontSize = 11.sp)
+        Text("CALC PLANO (dBmV)", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, color = ampTextSecondary(), fontSize = 11.sp)
     }
     Spacer(Modifier.height(6.dp))
     rows.forEachIndexed { idx, r ->
@@ -747,7 +761,15 @@ private fun SimpleCalcList(rows: List<CalcRowData>) {
             Text(r.freqText, modifier = Modifier.weight(1f), color = ampTextSecondary(), fontSize = 12.sp)
             Text(
                 r.calc?.let { "${CiscoHfcAmpCalculator.format1(it)}" } ?: "—",
-                modifier = Modifier.width(80.dp),
+                modifier = Modifier.width(95.dp),
+                textAlign = TextAlign.End,
+                fontWeight = FontWeight.SemiBold,
+                color = ampTextPrimary(),
+                fontSize = 12.sp
+            )
+            Text(
+                r.planCalc?.let { "${CiscoHfcAmpCalculator.format1(it)}" } ?: "—",
+                modifier = Modifier.width(110.dp),
                 textAlign = TextAlign.End,
                 fontWeight = FontWeight.SemiBold,
                 color = ampTextPrimary(),

@@ -931,6 +931,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                 if (adj != null) {
                     val bw = freqEnumFromMHz(asset.frequencyMHz)
                     val entradaCalc = CiscoHfcAmpCalculator.nivelesEntradaCalculados(adj)
+                    val entradaPlanCalc = CiscoHfcAmpCalculator.nivelesEntradaPlanCalculados(adj)
                     val salidaCalc = CiscoHfcAmpCalculator.nivelesSalidaCalculados(adj)
                     val pad = CiscoHfcAmpCalculator.fwdInPad(adj, bw, asset.amplifierMode)
                     val tilt = CiscoHfcAmpCalculator.fwdInEqTilt(adj, bw)
@@ -970,15 +971,16 @@ val assets = repository.getAssetsByReportId(report.id).first()
                         listOf(
                             c to null,
                             "$f MHz" to null,
-                            (entradaCalc?.get(c)?.let { CiscoHfcAmpCalculator.format1(it) } ?: "—") to null
+                            (entradaCalc?.get(c)?.let { CiscoHfcAmpCalculator.format1(it) } ?: "—") to null,
+                            (entradaPlanCalc?.get(c)?.let { CiscoHfcAmpCalculator.format1(it) } ?: "—") to null
                         )
                     }
                     addTable(
                         document,
                         "Niveles ENTRADA calculados",
-                        headers = listOf("CANAL", "FREQ", "CALC (dBmV)"),
+                        headers = listOf("CANAL", "FREQ", "CALC MED (dBmV)", "CALC PLANO (dBmV)"),
                         rows = entradaRows,
-                        colWidths = floatArrayOf(20f, 25f, 55f)
+                        colWidths = floatArrayOf(18f, 22f, 30f, 30f)
                     )
 
                     addTable(
@@ -3483,6 +3485,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
     private fun buildHtmlAmplifierAdjustment(asset: Asset, adj: AmplifierAdjustment): HtmlAmplifierAdjustmentExport {
         val bw = freqEnumFromMHz(asset.frequencyMHz)
         val entradaCalc = CiscoHfcAmpCalculator.nivelesEntradaCalculados(adj)
+        val entradaPlanCalc = CiscoHfcAmpCalculator.nivelesEntradaPlanCalculados(adj)
         val salidaCalc = CiscoHfcAmpCalculator.nivelesSalidaCalculados(adj)
         val pad = CiscoHfcAmpCalculator.fwdInPad(adj, bw, asset.amplifierMode)
         val tilt = CiscoHfcAmpCalculator.fwdInEqTilt(adj, bw)
@@ -3514,7 +3517,8 @@ val assets = repository.getAssetsByReportId(report.id).first()
             HtmlAmpRow(
                 Canal = c,
                 Frecuencia = f,
-                Calculado = entradaCalc?.get(c)?.let { CiscoHfcAmpCalculator.format1(it) }
+                Calculado = entradaCalc?.get(c)?.let { CiscoHfcAmpCalculator.format1(it) },
+                Plano = entradaPlanCalc?.get(c)?.let { CiscoHfcAmpCalculator.format1(it) }
             )
         }
         val outputPlan = listOf(

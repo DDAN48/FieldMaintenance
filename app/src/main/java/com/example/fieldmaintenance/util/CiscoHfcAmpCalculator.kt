@@ -22,6 +22,14 @@ object CiscoHfcAmpCalculator {
         return Recta(f1, a1, f2, a2)
     }
 
+    fun buildEntradaPlanRecta(adj: AmplifierAdjustment): Recta? {
+        val a1 = adj.inputPlanCh50Dbmv ?: return null
+        val a2 = adj.inputPlanHighDbmv ?: return null
+        val f1 = (adj.inputPlanLowFreqMHz ?: 379).toDouble()
+        val f2 = (adj.inputPlanHighFreqMHz ?: 870).toDouble()
+        return Recta(f1, a1, f2, a2)
+    }
+
     fun buildSalidaRecta(adj: AmplifierAdjustment): Recta? {
         val f1 = adj.planLowFreqMHz?.toDouble() ?: return null
         val a1 = adj.planLowDbmv ?: return null
@@ -35,6 +43,20 @@ object CiscoHfcAmpCalculator {
      */
     fun nivelesEntradaCalculados(adj: AmplifierAdjustment): Map<String, Double>? {
         val r = buildEntradaRecta(adj) ?: return null
+        return linkedMapOf(
+            "L 54" to r.valueAt(54.0),
+            "L102" to r.valueAt(102.0),
+            "CH3" to r.valueAt(61.0),
+            "CH50" to r.valueAt(379.0),
+            "CH70" to r.valueAt(495.0),
+            "CH116" to r.valueAt(750.0),
+            "CH136" to r.valueAt(870.0),
+            "CH158" to r.valueAt(1000.0),
+        )
+    }
+
+    fun nivelesEntradaPlanCalculados(adj: AmplifierAdjustment): Map<String, Double>? {
+        val r = buildEntradaPlanRecta(adj) ?: return null
         return linkedMapOf(
             "L 54" to r.valueAt(54.0),
             "L102" to r.valueAt(102.0),
@@ -141,4 +163,3 @@ object CiscoHfcAmpCalculator {
 
     fun format1(v: Double): String = String.format("%.1f", v)
 }
-
