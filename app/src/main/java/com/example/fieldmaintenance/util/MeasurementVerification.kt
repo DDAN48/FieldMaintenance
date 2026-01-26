@@ -71,6 +71,15 @@ private fun inferSwitchSelection(label: String, options: List<String>): String? 
     }
 }
 
+private fun adjustAmplifierTarget(target: Double?, switchSelection: String?): Double? {
+    if (target == null) return null
+    return when (switchSelection?.uppercase(Locale.getDefault())) {
+        "AUX" -> target - 3.0
+        "AUXDC" -> target - 10.0
+        else -> target
+    }
+}
+
 fun meetsRequired(summary: MeasurementVerificationSummary?, required: RequiredCounts): Boolean {
     if (summary == null) return false
     return summary.result.docsisExpert >= required.expectedDocsis &&
@@ -363,7 +372,8 @@ private fun validateMeasurementValues(
     amplifierTargets: Map<Int, Double>?,
     nodeTxType: String?,
     skipChannelValidation: Boolean,
-    toleranceOverride: Double?
+    toleranceOverride: Double?,
+    switchSelection: String?
 ): List<String> {
     if (rules == null) return listOf("No se pudo cargar la tabla de validaci?n.")
     if (type == "channelexpert" && skipChannelValidation) return emptyList()
@@ -431,7 +441,7 @@ private fun validateMeasurementValues(
                 }
             }
             if (rule.has("source")) {
-                val target = amplifierTargets?.get(channel)
+                val target = adjustAmplifierTarget(amplifierTargets?.get(channel), switchSelection)
                 if (target == null) {
                     if (assetType != AssetType.NODE) {
                         issues.add("Falta tabla interna para canal $channel.")
@@ -639,6 +649,11 @@ suspend fun verifyMeasurementFiles(
     var docsisCount = 0
     var channelCount = 0
     var channelSequenceIndex = 0
+    var channelMainUsed = false
+    var channelInUsed = false
+    var channelAuxdcUsed = false
+    var docsisMainUsed = false
+    var docsisAuxdcUsed = false
     val docsisNames = linkedSetOf<String>()
     val channelNames = linkedSetOf<String>()
     val measurementEntries = mutableListOf<MeasurementEntry>()
@@ -818,23 +833,67 @@ suspend fun verifyMeasurementFiles(
                 if (saved == null && inferred != null) {
                     switchPrefs.edit().putString(switchKey, inferred).apply()
                 }
-                if (saved != null) {
-                    saved
-                } else if (inferred != null) {
-                    inferred
-                } else if (saved != null) {
-                    saved
-                } else if (normalizedType == "channelexpert" && !isDiscarded) {
-                    val selection = when (channelSequenceIndex) {
-                        0 -> "MAIN"
-                        1 -> "IN"
-                        else -> "AUX"
+                val initialSelection = when {
+                    saved != null -> saved
+                    inferred != null -> inferred
+                    normalizedType == "channelexpert" && !isDiscarded -> {
+                        val selection = when (channelSequenceIndex) {
+                            0 -> "MAIN"
+                            1 -> "IN"
+                            else -> "AUX"
+                        }
+                        channelSequenceIndex += 1
+                        selection
                     }
-                    channelSequenceIndex += 1
-                    selection
-                } else {
-                    null
+                    normalizedType == "docsisexpert" && !isDiscarded -> {
+                        if (!docsisMainUsed) "MAIN" else "AUX"
+                    }
+                    else -> null
                 }
+                var normalizedSelection = initialSelection?.uppercase(Locale.getDefault())
+                if (normalizedType == "docsisexpert") {
+                    if (normalizedSelection == "IN") {
+                        normalizedSelection = "AUX"
+                    }
+                    if (normalizedSelection == "MAIN") {
+                        if (docsisMainUsed) {
+                            normalizedSelection = "AUX"
+                        } else {
+                            docsisMainUsed = true
+                        }
+                    }
+                    if (normalizedSelection == "AUXDC") {
+                        if (!switchOptions.contains("AUXDC") || docsisAuxdcUsed) {
+                            normalizedSelection = "AUX"
+                        } else {
+                            docsisAuxdcUsed = true
+                        }
+                    }
+                }
+                if (normalizedType == "channelexpert") {
+                    if (normalizedSelection == "MAIN") {
+                        if (channelMainUsed) {
+                            normalizedSelection = "AUX"
+                        } else {
+                            channelMainUsed = true
+                        }
+                    }
+                    if (normalizedSelection == "IN") {
+                        if (channelInUsed) {
+                            normalizedSelection = "AUX"
+                        } else {
+                            channelInUsed = true
+                        }
+                    }
+                    if (normalizedSelection == "AUXDC") {
+                        if (!switchOptions.contains("AUXDC") || channelAuxdcUsed) {
+                            normalizedSelection = "AUX"
+                        } else {
+                            channelAuxdcUsed = true
+                        }
+                    }
+                }
+                normalizedSelection
             } else {
                 null
             }
@@ -973,7 +1032,7 @@ suspend fun verifyMeasurementFiles(
                         val ruleTolerance = rule?.optDouble("tolerance", Double.NaN)
                             ?.takeIf { !it.isNaN() }
                         val target = if (rule?.has("source") == true) {
-                            amplifierTargets?.get(channel)
+                            adjustAmplifierTarget(amplifierTargets?.get(channel), switchSelection)
                         } else {
                             rule?.optDouble("target", Double.NaN)?.takeIf { !it.isNaN() }
                         }
@@ -998,7 +1057,7 @@ suspend fun verifyMeasurementFiles(
                         val rule = channelRules?.optJSONObject(channel.toString())
                         val adjusted = level + testPointOffset
                         if (rule?.has("source") == true) {
-                            val target = amplifierTargets?.get(channel)
+                            val target = adjustAmplifierTarget(amplifierTargets?.get(channel), switchSelection)
                             val ruleTolerance = rule.optDouble("tolerance", 1.5)
                             pilotOk[channel] = applyPilotTolerance(channel, adjusted, target, ruleTolerance)
                         } else {
@@ -1062,7 +1121,8 @@ suspend fun verifyMeasurementFiles(
                     amplifierTargets = amplifierTargets,
                     nodeTxType = nodeTxType,
                     skipChannelValidation = switchSelection == "IN",
-                    toleranceOverride = toleranceOverride
+                    toleranceOverride = toleranceOverride,
+                    switchSelection = switchSelection
                 )
                 issues.forEach { issue ->
                     validationIssues.add(
