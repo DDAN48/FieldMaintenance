@@ -108,6 +108,7 @@ import com.example.fieldmaintenance.util.MaintenanceStorage
 import com.example.fieldmaintenance.util.PlanCache
 import com.example.fieldmaintenance.util.PlanRepository
 import com.example.fieldmaintenance.util.hasIncompleteAssets
+import com.example.fieldmaintenance.util.GeoPoint
 import com.example.fieldmaintenance.util.MeasurementEntry
 import com.example.fieldmaintenance.util.MeasurementVerificationSummary
 import com.example.fieldmaintenance.util.ValidationIssueDetail
@@ -538,7 +539,10 @@ fun AddAssetScreen(
             ampAdj != null &&
             ampAdj.inputCh50Dbmv != null &&
             ampAdj.inputCh116Dbmv != null &&
-            (ampAdj.inputHighFreqMHz == 750 || ampAdj.inputHighFreqMHz == 870) &&
+            (ampAdj.inputHighFreqMHz == 750 || ampAdj.inputHighFreqMHz == 870 || ampAdj.inputHighFreqMHz == 1000) &&
+            (ampAdj.inputLowFreqMHz == 61 || ampAdj.inputLowFreqMHz == 379) &&
+            (ampAdj.inputPlanLowFreqMHz == 61 || ampAdj.inputPlanLowFreqMHz == 379) &&
+            (ampAdj.inputPlanHighFreqMHz == 750 || ampAdj.inputPlanHighFreqMHz == 870 || ampAdj.inputPlanHighFreqMHz == 1000) &&
             ampAdj.planLowDbmv != null &&
             ampAdj.planHighDbmv != null &&
             ampAdj.outCh50Dbmv != null &&
@@ -553,13 +557,19 @@ fun AddAssetScreen(
         if (adj == null) {
             false
         } else {
-            val ch50Med = adj.inputCh50Dbmv
-            val ch50Plan = adj.inputPlanCh50Dbmv
+            val lowPlanFreq = adj.inputPlanLowFreqMHz ?: adj.inputLowFreqMHz
+            val highPlanFreq = adj.inputPlanHighFreqMHz ?: adj.inputHighFreqMHz
+            val lowCalc = com.example.fieldmaintenance.util.CiscoHfcAmpCalculator.entradaCalcValueForFreq(adj, lowPlanFreq)
+            val highCalc = com.example.fieldmaintenance.util.CiscoHfcAmpCalculator.entradaCalcValueForFreq(adj, highPlanFreq)
+            val lowMed = adj.inputCh50Dbmv
             val highMed = adj.inputCh116Dbmv
+            val lowPlan = adj.inputPlanCh50Dbmv
             val highPlan = adj.inputPlanHighDbmv
-            val ch50Ok = ch50Med != null && ch50Plan != null && ch50Med >= 15.0 && kotlin.math.abs(ch50Med - ch50Plan) < 4.0
-            val highOk = highMed != null && highPlan != null && highMed >= 15.0 && kotlin.math.abs(highMed - highPlan) < 4.0
-            ch50Ok && highOk
+            val lowOk = lowMed != null && lowMed >= 15.0 && lowPlan != null && lowCalc != null &&
+                kotlin.math.abs(lowCalc - lowPlan) < 4.0
+            val highOk = highMed != null && highMed >= 15.0 && highPlan != null && highCalc != null &&
+                kotlin.math.abs(highCalc - highPlan) < 4.0
+            lowOk && highOk
         }
     }
 
@@ -681,7 +691,10 @@ fun AddAssetScreen(
                 ampAdj != null &&
                 ampAdj.inputCh50Dbmv != null &&
                 ampAdj.inputCh116Dbmv != null &&
-                (ampAdj.inputHighFreqMHz == 750 || ampAdj.inputHighFreqMHz == 870) &&
+                (ampAdj.inputHighFreqMHz == 750 || ampAdj.inputHighFreqMHz == 870 || ampAdj.inputHighFreqMHz == 1000) &&
+                (ampAdj.inputLowFreqMHz == 61 || ampAdj.inputLowFreqMHz == 379) &&
+                (ampAdj.inputPlanLowFreqMHz == 61 || ampAdj.inputPlanLowFreqMHz == 379) &&
+                (ampAdj.inputPlanHighFreqMHz == 750 || ampAdj.inputPlanHighFreqMHz == 870 || ampAdj.inputPlanHighFreqMHz == 1000) &&
                 ampAdj.planLowDbmv != null &&
                 ampAdj.planHighDbmv != null &&
                 ampAdj.outCh50Dbmv != null &&
@@ -1351,7 +1364,7 @@ fun AddAssetScreen(
                         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             if (assetType == AssetType.AMPLIFIER && !ampEntradaOk) {
                                 Text(
-                                    "Complete mediciones de entrada válidas para continuar. La diferencia entre el nivel de entrada y medido aceptable es menor a 4. Nivel minimo de entrada permitido es 15 dBmV si esta indicado por plano.",
+                                    "Complete mediciones de entrada válidas para continuar. La diferencia entre el nivel calculado de entrada y el plano aceptable es menor a 4. Nivel minimo de entrada permitido es 15 dBmV si esta indicado por plano.",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.error
                                 )
@@ -2367,6 +2380,13 @@ private fun AssetFileSection(
         }
     }
 
+    fun channelExpertGeoPoints(summary: MeasurementVerificationSummary?): List<GeoPoint> {
+        return summary?.result?.measurementEntries
+            ?.filter { !it.isDiscarded && it.type == "channelexpert" }
+            ?.mapNotNull { it.geoLocation }
+            ?: emptyList()
+    }
+
     fun toggleDiscardRx(entry: MeasurementEntry) {
         if (!entry.fromZip) return
         val updated = rxDiscardedLabels.toMutableSet()
@@ -2410,7 +2430,8 @@ private fun AssetFileSection(
                 repository,
                 updated,
                 expectedDocsisOverride = moduleRequired.expectedDocsis,
-                expectedChannelOverride = moduleRequired.expectedChannel
+                expectedChannelOverride = moduleRequired.expectedChannel,
+                extraGeoPoints = channelExpertGeoPoints(verificationSummaryRx)
             )
         }
     }
@@ -2449,7 +2470,7 @@ private fun AssetFileSection(
         }
     }
 
-    LaunchedEffect(moduleFiles, moduleDiscardedLabels) {
+    LaunchedEffect(moduleFiles, moduleDiscardedLabels, verificationSummaryRx) {
         if (!isNodeAsset) return@LaunchedEffect
         val moduleRequired = requiredCounts(moduleAsset.type, isModule = true)
         if (moduleFiles.isNotEmpty()) {
@@ -2460,7 +2481,8 @@ private fun AssetFileSection(
                 repository,
                 moduleDiscardedLabels,
                 expectedDocsisOverride = moduleRequired.expectedDocsis,
-                expectedChannelOverride = moduleRequired.expectedChannel
+                expectedChannelOverride = moduleRequired.expectedChannel,
+                extraGeoPoints = channelExpertGeoPoints(verificationSummaryRx)
             )
             verificationSummaryModule = summary
             val duplicates = summary.result.duplicateFileNames + summary.result.duplicateEntryNames
@@ -2519,7 +2541,8 @@ private fun AssetFileSection(
                     repository,
                     if (isModule) moduleDiscardedLabels else rxDiscardedLabels,
                     expectedDocsisOverride = required.expectedDocsis,
-                    expectedChannelOverride = required.expectedChannel
+                    expectedChannelOverride = required.expectedChannel,
+                    extraGeoPoints = if (isModule) channelExpertGeoPoints(verificationSummaryRx) else emptyList()
                 )
             } else {
                 null
@@ -2798,7 +2821,8 @@ private fun AssetFileSection(
                         fun buildSwitchSelections(
                             tabs: List<MeasurementTab>,
                             options: List<String>,
-                            savedSelections: Map<String, String?>
+                            savedSelections: Map<String, String?>,
+                            allowIn: Boolean = true
                         ): Pair<Map<MeasurementEntry, String>, List<String>> {
                             val selections = mutableMapOf<MeasurementEntry, String>()
                             var mainUsed = false
@@ -2813,15 +2837,18 @@ private fun AssetFileSection(
                                     saved != null && options.contains(saved) -> saved
                                     inferred != null -> inferred
                                     index == 0 -> "MAIN"
-                                    index == 1 -> "IN"
+                                    index == 1 && allowIn -> "IN"
                                     else -> "AUX"
+                                }
+                                if (!allowIn && selection == "IN") {
+                                    selection = "AUX"
                                 }
                                 if (!isExplicit) {
                                     if (selection == "MAIN" && mainUsed) {
                                         selection = "AUX"
                                         duplicateLabels.add(tab.entry.label)
                                     }
-                                    if (selection == "IN" && inUsed) {
+                                    if (allowIn && selection == "IN" && inUsed) {
                                         selection = "AUX"
                                         duplicateLabels.add(tab.entry.label)
                                     }
@@ -2833,13 +2860,17 @@ private fun AssetFileSection(
                                         selection = "AUX"
                                     }
                                     if (selection == "MAIN") mainUsed = true
-                                    if (selection == "IN") inUsed = true
+                                    if (allowIn && selection == "IN") inUsed = true
                                     if (selection == "AUXDC") auxdcUsed = true
                                 }
                                 selections[tab.entry] = selection
                             }
                             val seed = tabs.joinToString("|") { it.entry.label }.hashCode()
-                            val reserved = listOf("MAIN", "IN", "AUXDC")
+                            val reserved = buildList {
+                                add("MAIN")
+                                if (allowIn) add("IN")
+                                add("AUXDC")
+                            }
                             reserved.forEach { reservedKey ->
                                 val matching = selections.filterValues { it == reservedKey }.keys.toMutableList()
                                 if (matching.size > 1) {
@@ -3567,9 +3598,50 @@ private fun AssetFileSection(
                                     hasError = docsisHasError(entry)
                                 )
                             }
-                            val docsisLabelForEntry = docsisTabs.associate { it.entry to it.label }
+                            val docsisTabsWithSwitches = if (assetForDisplay.type == AssetType.AMPLIFIER && !isModule) {
+                                val docsisSwitchOptions = switchOptionsFor(assetForDisplay.amplifierMode)
+                                val savedSelections = remember(
+                                    docsisTabs,
+                                    assetForDisplay.id,
+                                    verificationSummaryRx,
+                                    verificationSummaryModule
+                                ) {
+                                    docsisTabs.associate { tab ->
+                                        tab.entry.label to switchPrefs.getString(
+                                            switchKey(assetForDisplay.id, tab.entry.label),
+                                            null
+                                        )
+                                    }
+                                }
+                                val (docsisSwitchSelections, switchDuplicates) = remember(
+                                    docsisTabs,
+                                    docsisSwitchOptions,
+                                    savedSelections
+                                ) {
+                                    buildSwitchSelections(
+                                        docsisTabs,
+                                        docsisSwitchOptions,
+                                        savedSelections,
+                                        allowIn = false
+                                    )
+                                }
+                                LaunchedEffect(docsisSwitchSelections, assetForDisplay.id) {
+                                    persistSwitchSelections(docsisTabs, docsisSwitchSelections, assetForDisplay.id)
+                                }
+                                LaunchedEffect(switchDuplicates, assetForDisplay.id) {
+                                    if (switchDuplicates.isNotEmpty() && switchDuplicateNotice.isEmpty()) {
+                                        switchDuplicateNotice = switchDuplicates
+                                    }
+                                }
+                                docsisTabs.map { tab ->
+                                    tab.copy(label = docsisSwitchSelections[tab.entry] ?: tab.label)
+                                }
+                            } else {
+                                docsisTabs
+                            }
+                            val docsisLabelForEntry = docsisTabsWithSwitches.associate { it.entry to it.label }
                             MeasurementTabsWithPagerCard(
-                                tabs = docsisTabs,
+                                tabs = docsisTabsWithSwitches,
                                 footerProvider = { entry, label ->
                                     "$label = ${displayLabel(entry)}"
                                 },
@@ -3971,7 +4043,8 @@ private fun AssetFileSection(
                                         repository,
                                         if (isModule) moduleDiscardedLabels else rxDiscardedLabels,
                                         expectedDocsisOverride = required.expectedDocsis,
-                                        expectedChannelOverride = required.expectedChannel
+                                        expectedChannelOverride = required.expectedChannel,
+                                        extraGeoPoints = if (isModule) channelExpertGeoPoints(verificationSummaryRx) else emptyList()
                                     )
                                 } else {
                                     null
@@ -4166,7 +4239,8 @@ private fun AssetFileSection(
                                     repository,
                                     moduleDiscardedLabels,
                                     expectedDocsisOverride = moduleRequired.expectedDocsis,
-                                    expectedChannelOverride = moduleRequired.expectedChannel
+                                    expectedChannelOverride = moduleRequired.expectedChannel,
+                                    extraGeoPoints = channelExpertGeoPoints(verificationSummaryRx)
                                 )
                             } else {
                                 val rxRequired = requiredCounts(asset.type, isModule = false)
