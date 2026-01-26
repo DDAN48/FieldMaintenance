@@ -21,7 +21,7 @@ import com.example.fieldmaintenance.data.model.ReportPhoto
 
 @Database(
     entities = [MaintenanceReport::class, Asset::class, Photo::class, AmplifierAdjustment::class, PassiveItem::class, ReportPhoto::class, NodeAdjustment::class],
-    version = 13,
+    version = 14,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -97,9 +97,9 @@ abstract class AppDatabase : RoomDatabase() {
 
         val MIGRATION_6_7 = object : Migration(6, 7) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                // Add selected high input frequency for amp input measurements (750 or 870). Default to 750.
+                // Add selected high input frequency for amp input measurements (750/870/1000). Default to 870.
                 db.execSQL("ALTER TABLE amplifier_adjustments ADD COLUMN inputHighFreqMHz INTEGER")
-                db.execSQL("UPDATE amplifier_adjustments SET inputHighFreqMHz = 750 WHERE inputHighFreqMHz IS NULL")
+                db.execSQL("UPDATE amplifier_adjustments SET inputHighFreqMHz = 870 WHERE inputHighFreqMHz IS NULL")
             }
         }
 
@@ -221,6 +221,29 @@ abstract class AppDatabase : RoomDatabase() {
                 } catch (e: Exception) {
                     // La columna ya existe, continuar
                 }
+            }
+        }
+
+        val MIGRATION_13_14 = object : Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                try {
+                    db.execSQL("ALTER TABLE amplifier_adjustments ADD COLUMN inputLowFreqMHz INTEGER")
+                } catch (e: Exception) {
+                    // La columna ya existe, continuar
+                }
+                try {
+                    db.execSQL("ALTER TABLE amplifier_adjustments ADD COLUMN inputPlanLowFreqMHz INTEGER")
+                } catch (e: Exception) {
+                    // La columna ya existe, continuar
+                }
+                try {
+                    db.execSQL("ALTER TABLE amplifier_adjustments ADD COLUMN inputPlanHighFreqMHz INTEGER")
+                } catch (e: Exception) {
+                    // La columna ya existe, continuar
+                }
+                db.execSQL("UPDATE amplifier_adjustments SET inputLowFreqMHz = 379 WHERE inputLowFreqMHz IS NULL")
+                db.execSQL("UPDATE amplifier_adjustments SET inputPlanLowFreqMHz = 379 WHERE inputPlanLowFreqMHz IS NULL")
+                db.execSQL("UPDATE amplifier_adjustments SET inputPlanHighFreqMHz = 870 WHERE inputPlanHighFreqMHz IS NULL")
             }
         }
     }
