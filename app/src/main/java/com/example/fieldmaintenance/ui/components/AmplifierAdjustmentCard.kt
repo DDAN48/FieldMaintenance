@@ -769,7 +769,7 @@ private fun SimpleCalcList(rows: List<CalcRowData>) {
             Text(r.canal, modifier = Modifier.width(70.dp), fontWeight = FontWeight.SemiBold, color = ampTextPrimary(), fontSize = 12.sp)
             Text(
                 r.freqText,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.width(64.dp),
                 color = ampTextSecondary(),
                 fontSize = 12.sp,
                 softWrap = false,
