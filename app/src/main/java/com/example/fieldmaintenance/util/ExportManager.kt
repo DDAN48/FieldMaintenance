@@ -87,6 +87,11 @@ class ExportManager(private val context: Context, private val repository: Mainte
         }
     }
 
+    private data class MeasurementGroupResult(
+        val group: HtmlMeasurementGroup?,
+        val summary: MeasurementVerificationSummary?
+    )
+
     private fun collectSwitchSelections(assets: List<Asset>): Map<String, Map<String, String>> {
         val allPrefs = switchPrefs.all
         val result = mutableMapOf<String, MutableMap<String, String>>()
@@ -262,7 +267,10 @@ class ExportManager(private val context: Context, private val repository: Mainte
                         adj != null &&
                             adj.inputCh50Dbmv != null &&
                             adj.inputCh116Dbmv != null &&
-                            (adj.inputHighFreqMHz == null || adj.inputHighFreqMHz == 750 || adj.inputHighFreqMHz == 870) &&
+                            (adj.inputHighFreqMHz == null || adj.inputHighFreqMHz == 750 || adj.inputHighFreqMHz == 870 || adj.inputHighFreqMHz == 1000) &&
+                            (adj.inputLowFreqMHz == 61 || adj.inputLowFreqMHz == 379) &&
+                            (adj.inputPlanLowFreqMHz == 61 || adj.inputPlanLowFreqMHz == 379) &&
+                            (adj.inputPlanHighFreqMHz == 750 || adj.inputPlanHighFreqMHz == 870 || adj.inputPlanHighFreqMHz == 1000) &&
                             adj.planLowDbmv != null &&
                             adj.planHighDbmv != null &&
                             adj.outCh50Dbmv != null &&
@@ -934,14 +942,14 @@ val assets = repository.getAssetsByReportId(report.id).first()
                         headers = listOf("CANAL", "FREQ", "MEDIDO (dBmV)", "PLANO (dBmV)"),
                         rows = listOf(
                             listOf(
-                                "CH50" to null,
-                                "379 MHz" to null,
+                                CiscoHfcAmpCalculator.inputChannelLabelForFreq(adj.inputPlanLowFreqMHz ?: adj.inputLowFreqMHz ?: 379) to null,
+                                "${adj.inputPlanLowFreqMHz ?: adj.inputLowFreqMHz ?: 379} MHz" to null,
                                 (adj.inputCh50Dbmv?.let { CiscoHfcAmpCalculator.format1(it) } ?: "—") to null,
                                 (adj.inputPlanCh50Dbmv?.let { CiscoHfcAmpCalculator.format1(it) } ?: "—") to null
                             ),
                             listOf(
-                                (if ((adj.inputHighFreqMHz ?: 750) == 870) "CH136" else "CH116") to null,
-                                "${adj.inputHighFreqMHz ?: 750} MHz" to null,
+                                CiscoHfcAmpCalculator.inputChannelLabelForFreq(adj.inputPlanHighFreqMHz ?: adj.inputHighFreqMHz ?: 870) to null,
+                                "${adj.inputPlanHighFreqMHz ?: adj.inputHighFreqMHz ?: 870} MHz" to null,
                                 (adj.inputCh116Dbmv?.let { CiscoHfcAmpCalculator.format1(it) } ?: "—") to null,
                                 (adj.inputPlanHighDbmv?.let { CiscoHfcAmpCalculator.format1(it) } ?: "—") to null
                             )
@@ -3337,13 +3345,17 @@ val assets = repository.getAssetsByReportId(report.id).first()
         for (asset in assets) {
             val rxDir = File(measurementRoot, MaintenanceStorage.assetFolderName(asset))
             val rxLabel = if (asset.type == AssetType.AMPLIFIER) "Módulo" else "RX"
-            val rxBundle = buildMeasurementGroup(
+            val rxResult = buildMeasurementGroup(
                 rxLabel,
                 asset,
                 assetHeaderLine(report, asset),
                 rxDir,
                 switchSelections[asset.id].orEmpty()
             )
+            val rxChannelGeoPoints = rxResult.summary?.result?.measurementEntries
+                ?.filter { !it.isDiscarded && it.type == "channelexpert" }
+                ?.mapNotNull { it.geoLocation }
+                ?: emptyList()
             val moduleBundle = if (asset.type == AssetType.NODE) {
                 val moduleAsset = asset.copy(type = AssetType.AMPLIFIER)
                 val moduleDir = File(measurementRoot, MaintenanceStorage.assetFolderName(moduleAsset))
@@ -3352,12 +3364,13 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     moduleAsset,
                     assetHeaderLine(report, asset),
                     moduleDir,
-                    switchSelections[moduleAsset.id].orEmpty()
-                )
+                    switchSelections[moduleAsset.id].orEmpty(),
+                    extraGeoPoints = rxChannelGeoPoints
+                ).group
             } else {
                 null
             }
-            result[asset.id] = HtmlMeasurementBundle(rx = rxBundle, module = moduleBundle)
+            result[asset.id] = HtmlMeasurementBundle(rx = rxResult.group, module = moduleBundle)
         }
         return result
     }
@@ -3367,10 +3380,11 @@ val assets = repository.getAssetsByReportId(report.id).first()
         asset: Asset,
         assetHeader: String,
         dir: File,
-        switchSelections: Map<String, String>
-    ): HtmlMeasurementGroup? {
+        switchSelections: Map<String, String>,
+        extraGeoPoints: List<GeoPoint> = emptyList()
+    ): MeasurementGroupResult {
         val files = dir.listFiles()?.filter { it.isFile } ?: emptyList()
-        if (files.isEmpty()) return null
+        if (files.isEmpty()) return MeasurementGroupResult(group = null, summary = null)
         val discardedLabels = loadDiscardedLabels(File(dir, ".discarded_measurements.txt"))
         val required = requiredCounts(asset.type, isModule = label == "Módulo")
         val summary = verifyMeasurementFiles(
@@ -3380,38 +3394,44 @@ val assets = repository.getAssetsByReportId(report.id).first()
             repository = repository,
             discardedLabels = discardedLabels,
             expectedDocsisOverride = required.expectedDocsis,
-            expectedChannelOverride = required.expectedChannel
+            expectedChannelOverride = required.expectedChannel,
+            extraGeoPoints = extraGeoPoints
         )
         val entries = summary.result.measurementEntries
             .filter { it.type == "docsisexpert" || it.type == "channelexpert" }
             .map { entry ->
                 entry.toHtmlMeasurementEntry(switchSelections[entry.label])
             }
-        if (entries.isEmpty()) return null
-        return HtmlMeasurementGroup(
-            label = label,
-            geoLocation = summary.geoLocation,
-            observationTotal = summary.observationTotal,
-            observationDetails = (summary.geoIssueDetails.map { detail ->
-                HtmlObservationDetail(
-                    assetId = asset.id,
-                    assetHeader = assetHeader,
-                    type = detail.type,
-                    file = detail.file,
-                    detail = detail.detail,
-                    isRuleViolation = false
-                )
-            } + summary.validationIssueDetails.map { detail ->
-                HtmlObservationDetail(
-                    assetId = asset.id,
-                    assetHeader = assetHeader,
-                    type = detail.type,
-                    file = detail.file,
-                    detail = detail.detail,
-                    isRuleViolation = detail.isRuleViolation
-                )
-            }),
-            entries = entries
+        if (entries.isEmpty()) {
+            return MeasurementGroupResult(group = null, summary = summary)
+        }
+        return MeasurementGroupResult(
+            group = HtmlMeasurementGroup(
+                label = label,
+                geoLocation = summary.geoLocation,
+                observationTotal = summary.observationTotal,
+                observationDetails = (summary.geoIssueDetails.map { detail ->
+                    HtmlObservationDetail(
+                        assetId = asset.id,
+                        assetHeader = assetHeader,
+                        type = detail.type,
+                        file = detail.file,
+                        detail = detail.detail,
+                        isRuleViolation = false
+                    )
+                } + summary.validationIssueDetails.map { detail ->
+                    HtmlObservationDetail(
+                        assetId = asset.id,
+                        assetHeader = assetHeader,
+                        type = detail.type,
+                        file = detail.file,
+                        detail = detail.detail,
+                        isRuleViolation = detail.isRuleViolation
+                    )
+                }),
+                entries = entries
+            ),
+            summary = summary
         )
     }
 
@@ -3469,14 +3489,14 @@ val assets = repository.getAssetsByReportId(report.id).first()
         val agc = CiscoHfcAmpCalculator.agcPad(adj, bw, asset.amplifierMode)
         val inputMeasured = listOf(
             HtmlAmpRow(
-                Canal = "CH50",
-                Frecuencia = 379,
+                Canal = CiscoHfcAmpCalculator.inputChannelLabelForFreq(adj.inputPlanLowFreqMHz ?: adj.inputLowFreqMHz ?: 379),
+                Frecuencia = adj.inputPlanLowFreqMHz ?: adj.inputLowFreqMHz ?: 379,
                 Medido = adj.inputCh50Dbmv?.let { CiscoHfcAmpCalculator.format1(it) },
                 Plano = adj.inputPlanCh50Dbmv?.let { CiscoHfcAmpCalculator.format1(it) }
             ),
             HtmlAmpRow(
-                Canal = if ((adj.inputHighFreqMHz ?: 750) == 870) "CH136" else "CH116",
-                Frecuencia = adj.inputHighFreqMHz ?: 750,
+                Canal = CiscoHfcAmpCalculator.inputChannelLabelForFreq(adj.inputPlanHighFreqMHz ?: adj.inputHighFreqMHz ?: 870),
+                Frecuencia = adj.inputPlanHighFreqMHz ?: adj.inputHighFreqMHz ?: 870,
                 Medido = adj.inputCh116Dbmv?.let { CiscoHfcAmpCalculator.format1(it) },
                 Plano = adj.inputPlanHighDbmv?.let { CiscoHfcAmpCalculator.format1(it) }
             )
