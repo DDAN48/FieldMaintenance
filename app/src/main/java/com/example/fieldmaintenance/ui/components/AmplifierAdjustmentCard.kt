@@ -745,9 +745,18 @@ private fun SimpleCalcList(rows: List<CalcRowData>) {
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
         Text("CANAL", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, color = ampTextSecondary(), fontSize = 11.sp)
-        Text("FREQ (MHz)", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, color = ampTextSecondary(), fontSize = 11.sp)
-        Text("CALC MED (dBmV)", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, color = ampTextSecondary(), fontSize = 11.sp)
-        Text("CALC PLANO (dBmV)", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, color = ampTextSecondary(), fontSize = 11.sp)
+        Column {
+            Text("FREQ", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, color = ampTextSecondary(), fontSize = 11.sp)
+            Text("(MHz)", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, color = ampTextSecondary(), fontSize = 10.sp)
+        }
+        Column(horizontalAlignment = Alignment.End) {
+            Text("CALC MED", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, color = ampTextSecondary(), fontSize = 11.sp)
+            Text("(dBmV)", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, color = ampTextSecondary(), fontSize = 10.sp)
+        }
+        Column(horizontalAlignment = Alignment.End) {
+            Text("CALC PLANO", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, color = ampTextSecondary(), fontSize = 11.sp)
+            Text("(dBmV)", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, color = ampTextSecondary(), fontSize = 10.sp)
+        }
     }
     Spacer(Modifier.height(6.dp))
     rows.forEachIndexed { idx, r ->
@@ -758,7 +767,14 @@ private fun SimpleCalcList(rows: List<CalcRowData>) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(r.canal, modifier = Modifier.width(70.dp), fontWeight = FontWeight.SemiBold, color = ampTextPrimary(), fontSize = 12.sp)
-            Text(r.freqText, modifier = Modifier.weight(1f), color = ampTextSecondary(), fontSize = 12.sp)
+            Text(
+                r.freqText,
+                modifier = Modifier.weight(1f),
+                color = ampTextSecondary(),
+                fontSize = 12.sp,
+                softWrap = false,
+                maxLines = 1
+            )
             Text(
                 r.calc?.let { "${CiscoHfcAmpCalculator.format1(it)}" } ?: "—",
                 modifier = Modifier.width(95.dp),
