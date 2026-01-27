@@ -1363,19 +1363,13 @@ val assets = repository.getAssetsByReportId(report.id).first()
         val assets = repository.getAssetsByReportId(report.id).first()
             .sortedBy { assetSortKey(it) }
         val passives = repository.getPassivesByReportId(report.id).first()
-        val reportPhotos = repository.getReportPhotosByReportId(report.id).first()
         val exportDir = File(context.cacheDir, "export_zip/${report.id}")
         if (exportDir.exists()) exportDir.deleteRecursively()
         exportDir.mkdirs()
 
-        val imagesDir = File(exportDir, "images").apply { mkdirs() }
-        val measurementsDir = File(exportDir, "measurements").apply { mkdirs() }
-
         val photosByAsset = mutableMapOf<String, List<Photo>>()
-        val imagesByAsset = mutableMapOf<String, List<ExportImageRef>>()
         val adjustmentsByAsset = mutableMapOf<String, AmplifierAdjustment>()
         val nodeAdjustmentsByAsset = mutableMapOf<String, NodeAdjustment>()
-        val reportImageRefs = mutableListOf<ExportReportImageRef>()
         val switchSelections = collectSwitchSelections(assets)
 
         val reportFolderName = MaintenanceStorage.reportFolderName(report.eventName, report.id)
@@ -1394,71 +1388,13 @@ val assets = repository.getAssetsByReportId(report.id).first()
             val photos = repository.getPhotosByAssetId(asset.id).first()
                 .sortedBy { photoSortKey(it) }
             photosByAsset[asset.id] = photos
-
-            val refs = mutableListOf<ExportImageRef>()
-            photos.forEach { photo ->
-                val src = File(photo.filePath)
-                if (!src.exists()) return@forEach
-
-                val safeName = "${asset.id}_${photo.photoType.name.lowercase()}_${photo.id}.jpg"
-                val dest = File(imagesDir, safeName)
-                runCatching { ImageCompressor.compressForExport(src, dest) }
-                if (!dest.exists()) return@forEach
-
-                refs.add(
-                    ExportImageRef(
-                        photoId = photo.id,
-                        photoType = photo.photoType,
-                        fileName = "images/$safeName"
-                    )
-                )
-            }
-            imagesByAsset[asset.id] = refs
-
-            val measurementAssets = buildList {
-                add(asset)
-                if (asset.type == AssetType.NODE) {
-                    add(asset.copy(type = AssetType.AMPLIFIER))
-                }
-            }
-            measurementAssets.forEach { measurementAsset ->
-                val sourceMeasurementsDir = MaintenanceStorage.ensureAssetDir(context, reportFolderName, measurementAsset)
-                if (sourceMeasurementsDir.exists()) {
-                    val measurementTargetDir = File(measurementsDir, MaintenanceStorage.assetFolderName(measurementAsset))
-                        .apply { mkdirs() }
-                    sourceMeasurementsDir.listFiles()
-                        ?.filter { it.isFile }
-                        ?.forEach { file ->
-                            file.copyTo(File(measurementTargetDir, file.name), overwrite = true)
-                        }
-                }
-            }
-        }
-
-        // Report-level images (Monitoria y QR)
-        reportPhotos.forEach { rp ->
-            val src = File(rp.filePath)
-            if (!src.exists()) return@forEach
-
-            val safeName = "report_${rp.type.name.lowercase()}_${rp.id}.jpg"
-            val dest = File(imagesDir, safeName)
-            runCatching { ImageCompressor.compressForExport(src, dest) }
-            if (!dest.exists()) return@forEach
-
-            reportImageRefs.add(
-                ExportReportImageRef(
-                    photoId = rp.id,
-                    type = rp.type,
-                    fileName = "images/$safeName"
-                )
-            )
         }
 
         val exportData = ExportDataV2(
             report = report,
             assets = assets,
-            images = imagesByAsset,
-            reportImages = if (reportImageRefs.isEmpty()) null else reportImageRefs,
+            images = emptyMap(),
+            reportImages = null,
             adjustments = if (adjustmentsByAsset.isEmpty()) null else adjustmentsByAsset,
             nodeAdjustments = if (nodeAdjustmentsByAsset.isNotEmpty()) nodeAdjustmentsByAsset else null,
             passives = passives,
@@ -1472,10 +1408,10 @@ val assets = repository.getAssetsByReportId(report.id).first()
             assets = assets,
             passives = passives,
             adjustedCount = adjustedCount,
-            imagesByAsset = imagesByAsset,
             photosByAsset = photosByAsset,
             adjustmentsByAsset = adjustmentsByAsset,
-            nodeAdjustmentsByAsset = nodeAdjustmentsByAsset
+            nodeAdjustmentsByAsset = nodeAdjustmentsByAsset,
+            reportFolderName = reportFolderName
         )
 
         val zipFile = File(context.getExternalFilesDir(null), "${baseName}.zip")
@@ -1494,19 +1430,17 @@ val assets = repository.getAssetsByReportId(report.id).first()
         assets: List<Asset>,
         passives: List<PassiveItem>,
         adjustedCount: Int,
-        imagesByAsset: Map<String, List<ExportImageRef>>,
         photosByAsset: Map<String, List<Photo>>,
         adjustmentsByAsset: Map<String, AmplifierAdjustment>,
-        nodeAdjustmentsByAsset: Map<String, NodeAdjustment>
+        nodeAdjustmentsByAsset: Map<String, NodeAdjustment>,
+        reportFolderName: String
     ): File {
-        val measurementRoot = File(exportDir, "measurements")
+        val measurementRoot = MaintenanceStorage.ensureReportDir(context, reportFolderName)
         val switchSelections = collectSwitchSelections(assets)
         val measurements = buildHtmlMeasurementMap(report, assets, measurementRoot, switchSelections)
         val passiveCounts = passives.groupingBy { it.type }.eachCount()
 
         fun countOf(t: PassiveType) = passiveCounts[t] ?: 0
-        val photosById = photosByAsset.values.flatten().associateBy { it.id }
-
         val exportDate = Date()
         val exportDateLabel = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(exportDate)
         val logoDataUri = drawableToPngBytes(R.drawable.telecentro_logo, targetW = 140, targetH = 70)?.let { bytes ->
@@ -1524,7 +1458,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                 activosAjustados = adjustedCount
             ),
             assets = assets.map { asset ->
-                val assetPhotos = imagesByAsset[asset.id].orEmpty()
+                val assetPhotos = photosByAsset[asset.id].orEmpty()
                 val photoTypeCounts = assetPhotos.groupingBy { it.photoType }.eachCount()
                 val photoTypeIndex = mutableMapOf<PhotoType, Int>()
                 HtmlAssetExport(
@@ -1538,16 +1472,16 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     } else {
                         null
                     },
-                    photos = assetPhotos.map { ref ->
-                        val baseTitle = photoSectionTitle(ref.photoType)
-                        val currentIndex = photoTypeIndex.getOrPut(ref.photoType) { 0 } + 1
-                        photoTypeIndex[ref.photoType] = currentIndex
-                        val title = if ((photoTypeCounts[ref.photoType] ?: 0) > 1) {
+                    photos = assetPhotos.map { photo ->
+                        val baseTitle = photoSectionTitle(photo.photoType)
+                        val currentIndex = photoTypeIndex.getOrPut(photo.photoType) { 0 } + 1
+                        photoTypeIndex[photo.photoType] = currentIndex
+                        val title = if ((photoTypeCounts[photo.photoType] ?: 0) > 1) {
                             "$baseTitle $currentIndex"
                         } else {
                             baseTitle
                         }
-                        val imageFile = File(exportDir, ref.fileName)
+                        val imageFile = File(photo.filePath)
                         val dataUri = if (imageFile.exists()) {
                             val encoded = Base64.encodeToString(imageFile.readBytes(), Base64.NO_WRAP)
                             "data:image/jpeg;base64,$encoded"
@@ -1556,11 +1490,11 @@ val assets = repository.getAssetsByReportId(report.id).first()
                         }
                         HtmlPhotoExport(
                             title = title,
-                            fileName = ref.fileName,
+                            fileName = imageFile.name,
                             dataUri = dataUri,
-                            latitude = photosById[ref.photoId]?.latitude,
-                            longitude = photosById[ref.photoId]?.longitude,
-                            photoType = ref.photoType.name
+                            latitude = photo.latitude,
+                            longitude = photo.longitude,
+                            photoType = photo.photoType.name
                         )
                     },
                     adjustment = HtmlAdjustmentExport(
