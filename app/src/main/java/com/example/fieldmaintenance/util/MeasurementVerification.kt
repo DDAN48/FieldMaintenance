@@ -444,7 +444,7 @@ private fun validateMeasurementValues(
             if (rule.has("source")) {
                 val target = adjustAmplifierTarget(amplifierTargets?.get(channel), switchSelection)
                 if (target == null) {
-                    if (assetType != AssetType.NODE) {
+                    if (assetType == AssetType.AMPLIFIER && amplifierTargets != null) {
                         issues.add("Falta tabla interna para canal $channel.")
                     }
                     continue
