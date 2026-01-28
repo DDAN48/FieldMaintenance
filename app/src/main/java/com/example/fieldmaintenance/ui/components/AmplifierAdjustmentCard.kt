@@ -80,6 +80,17 @@ private fun ampTextSecondary(): Color = MaterialTheme.colorScheme.onSurfaceVaria
 @Composable
 private fun ampErrorColor(): Color = MaterialTheme.colorScheme.error
 
+private enum class EntradaEditTarget {
+    MEASURED_LOW,
+    MEASURED_HIGH,
+    PLAN_LOW,
+    PLAN_HIGH
+}
+
+private fun isEntradaLowAnchorFreq(freqMHz: Int): Boolean = freqMHz == 61 || freqMHz == 379
+private fun isEntradaHighAnchorFreq(freqMHz: Int): Boolean = freqMHz == 750 || freqMHz == 870 || freqMHz == 1000
+private fun isEntradaAnchorFreq(freqMHz: Int): Boolean = isEntradaLowAnchorFreq(freqMHz) || isEntradaHighAnchorFreq(freqMHz)
+
 @Composable
 fun AmplifierAdjustmentCard(
     assetId: String,
@@ -108,6 +119,8 @@ fun AmplifierAdjustmentCard(
     var inPlanHigh by rememberSaveable { mutableStateOf("") }
     var inPlanLowFreq by rememberSaveable { mutableStateOf<Int?>(379) }
     var inPlanHighFreq by rememberSaveable { mutableStateOf<Int?>(870) }
+
+    var activeEntradaEdit by rememberSaveable(assetId) { mutableStateOf(EntradaEditTarget.MEASURED_LOW) }
 
     var planLowFreq by rememberSaveable { mutableStateOf<Int?>(54) }
     var planLowDbmv by rememberSaveable { mutableStateOf("") }
@@ -322,26 +335,66 @@ fun AmplifierAdjustmentCard(
                             lowMeasuredFreq to CalcInputState(
                                 value = inCh50,
                                 onChange = { dirty = true; inCh50 = it },
-                                isError = showRequiredErrors && parseDbmv(inCh50) == null
+                                isError = showRequiredErrors && parseDbmv(inCh50) == null,
+                                enabled = activeEntradaEdit == EntradaEditTarget.MEASURED_LOW,
+                                selected = activeEntradaEdit == EntradaEditTarget.MEASURED_LOW,
+                                onSelect = { activeEntradaEdit = EntradaEditTarget.MEASURED_LOW }
                             ),
                             highMeasuredFreq to CalcInputState(
                                 value = inHigh,
                                 onChange = { dirty = true; inHigh = it },
-                                isError = showRequiredErrors && parseDbmv(inHigh) == null
+                                isError = showRequiredErrors && parseDbmv(inHigh) == null,
+                                enabled = activeEntradaEdit == EntradaEditTarget.MEASURED_HIGH,
+                                selected = activeEntradaEdit == EntradaEditTarget.MEASURED_HIGH,
+                                onSelect = { activeEntradaEdit = EntradaEditTarget.MEASURED_HIGH }
                             )
                         ),
                         planInputs = mapOf(
                             lowPlanFreq to CalcInputState(
                                 value = inPlanCh50,
                                 onChange = { dirty = true; inPlanCh50 = it },
-                                isError = showRequiredErrors && parseDbmv(inPlanCh50) == null
+                                isError = showRequiredErrors && parseDbmv(inPlanCh50) == null,
+                                enabled = activeEntradaEdit == EntradaEditTarget.PLAN_LOW,
+                                selected = activeEntradaEdit == EntradaEditTarget.PLAN_LOW,
+                                onSelect = { activeEntradaEdit = EntradaEditTarget.PLAN_LOW }
                             ),
                             highPlanFreq to CalcInputState(
                                 value = inPlanHigh,
                                 onChange = { dirty = true; inPlanHigh = it },
-                                isError = showRequiredErrors && parseDbmv(inPlanHigh) == null
+                                isError = showRequiredErrors && parseDbmv(inPlanHigh) == null,
+                                enabled = activeEntradaEdit == EntradaEditTarget.PLAN_HIGH,
+                                selected = activeEntradaEdit == EntradaEditTarget.PLAN_HIGH,
+                                onSelect = { activeEntradaEdit = EntradaEditTarget.PLAN_HIGH }
                             )
-                        )
+                        ),
+                        onSelectMeasuredFreq = { freq ->
+                            if (!isEntradaAnchorFreq(freq)) return@SimpleCalcList
+                            dirty = true
+                            when {
+                                isEntradaLowAnchorFreq(freq) -> {
+                                    inLowFreq = freq
+                                    activeEntradaEdit = EntradaEditTarget.MEASURED_LOW
+                                }
+                                isEntradaHighAnchorFreq(freq) -> {
+                                    inHighFreq = freq
+                                    activeEntradaEdit = EntradaEditTarget.MEASURED_HIGH
+                                }
+                            }
+                        },
+                        onSelectPlanFreq = { freq ->
+                            if (!isEntradaAnchorFreq(freq)) return@SimpleCalcList
+                            dirty = true
+                            when {
+                                isEntradaLowAnchorFreq(freq) -> {
+                                    inPlanLowFreq = freq
+                                    activeEntradaEdit = EntradaEditTarget.PLAN_LOW
+                                }
+                                isEntradaHighAnchorFreq(freq) -> {
+                                    inPlanHighFreq = freq
+                                    activeEntradaEdit = EntradaEditTarget.PLAN_HIGH
+                                }
+                            }
+                        }
                     )
             }
 
@@ -516,13 +569,16 @@ private fun DbmvField(
     compact: Boolean = false,
     compactHeight: Dp = 36.dp,
     textColor: Color? = null,
+    enabled: Boolean = true,
+    selected: Boolean = false,
+    onClick: (() -> Unit)? = null,
     onChange: (String) -> Unit
 ) {
     var wasFocused by remember { mutableStateOf(false) }
     if (!compact) {
         OutlinedTextField(
             value = value,
-            onValueChange = onChange,
+            onValueChange = { if (enabled) onChange(it) },
             label = { Text(label) },
             modifier = modifier,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
@@ -534,14 +590,21 @@ private fun DbmvField(
     }
 
     // Compact field: avoids text clipping and forces visible text color.
-    val borderColor = if (isError) ampErrorColor() else ampStrokeColor()
+    val selectedBorder = Color(0xFFFFC107)
+    val borderColor = when {
+        selected -> selectedBorder
+        isError -> ampErrorColor()
+        else -> ampStrokeColor()
+    }
     Column(modifier = modifier) {
         if (label.isNotBlank()) {
             Text(label, style = MaterialTheme.typography.labelSmall, color = ampTextSecondary())
             Spacer(Modifier.height(2.dp))
         }
         Surface(
-            modifier = Modifier.height(compactHeight),
+            modifier = Modifier
+                .height(compactHeight)
+                .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier),
             color = ampCardColor(),
             border = BorderStroke(1.dp, borderColor),
             shape = MaterialTheme.shapes.small
@@ -555,10 +618,12 @@ private fun DbmvField(
             ) {
                 BasicTextField(
                     value = value,
-                    onValueChange = onChange,
+                    onValueChange = { if (enabled) onChange(it) },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = textColor ?: ampTextPrimary()),
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(
+                        color = (textColor ?: ampTextPrimary()).copy(alpha = if (enabled) 1f else 0.7f)
+                    ),
                     modifier = Modifier.fillMaxWidth()
                 )
             }
@@ -615,7 +680,10 @@ private data class CalcRowData(
 private data class CalcInputState(
     val value: String,
     val onChange: (String) -> Unit,
-    val isError: Boolean
+    val isError: Boolean,
+    val enabled: Boolean = true,
+    val selected: Boolean = false,
+    val onSelect: (() -> Unit)? = null
 )
 
 @Composable
@@ -718,7 +786,9 @@ private fun EntradaRowSingleValueWithFreqSelector(
 private fun SimpleCalcList(
     rows: List<CalcRowData>,
     measuredInputs: Map<Int, CalcInputState> = emptyMap(),
-    planInputs: Map<Int, CalcInputState> = emptyMap()
+    planInputs: Map<Int, CalcInputState> = emptyMap(),
+    onSelectMeasuredFreq: ((Int) -> Unit)? = null,
+    onSelectPlanFreq: ((Int) -> Unit)? = null
 ) {
     Row(
         modifier = Modifier
@@ -767,17 +837,27 @@ private fun SimpleCalcList(
                     modifier = Modifier.width(95.dp),
                     compact = true,
                     isError = measuredState.isError,
+                    enabled = measuredState.enabled,
+                    selected = measuredState.selected,
+                    onClick = measuredState.onSelect,
                     onChange = measuredState.onChange
                 )
             } else {
-                Text(
-                    r.calc?.let { "${CiscoHfcAmpCalculator.format1(it)}" } ?: "—",
-                    modifier = Modifier.width(95.dp),
-                    textAlign = TextAlign.End,
-                    fontWeight = FontWeight.SemiBold,
-                    color = ampTextPrimary(),
-                    fontSize = 12.sp
-                )
+                val canSelect = isEntradaAnchorFreq(r.freqMHz) && onSelectMeasuredFreq != null
+                Box(
+                    modifier = Modifier
+                        .width(95.dp)
+                        .then(if (canSelect) Modifier.clickable { onSelectMeasuredFreq?.invoke(r.freqMHz) } else Modifier),
+                    contentAlignment = Alignment.CenterEnd
+                ) {
+                    Text(
+                        r.calc?.let { "${CiscoHfcAmpCalculator.format1(it)}" } ?: "—",
+                        textAlign = TextAlign.End,
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (canSelect) ampTextPrimary() else ampTextPrimary(),
+                        fontSize = 12.sp
+                    )
+                }
             }
             if (planState != null) {
                 DbmvField(
@@ -786,17 +866,27 @@ private fun SimpleCalcList(
                     modifier = Modifier.width(110.dp),
                     compact = true,
                     isError = planState.isError,
+                    enabled = planState.enabled,
+                    selected = planState.selected,
+                    onClick = planState.onSelect,
                     onChange = planState.onChange
                 )
             } else {
-                Text(
-                    r.planCalc?.let { "${CiscoHfcAmpCalculator.format1(it)}" } ?: "—",
-                    modifier = Modifier.width(110.dp),
-                    textAlign = TextAlign.End,
-                    fontWeight = FontWeight.SemiBold,
-                    color = ampTextPrimary(),
-                    fontSize = 12.sp
-                )
+                val canSelect = isEntradaAnchorFreq(r.freqMHz) && onSelectPlanFreq != null
+                Box(
+                    modifier = Modifier
+                        .width(110.dp)
+                        .then(if (canSelect) Modifier.clickable { onSelectPlanFreq?.invoke(r.freqMHz) } else Modifier),
+                    contentAlignment = Alignment.CenterEnd
+                ) {
+                    Text(
+                        r.planCalc?.let { "${CiscoHfcAmpCalculator.format1(it)}" } ?: "—",
+                        textAlign = TextAlign.End,
+                        fontWeight = FontWeight.SemiBold,
+                        color = ampTextPrimary(),
+                        fontSize = 12.sp
+                    )
+                }
             }
         }
         if (idx != rows.lastIndex) {
