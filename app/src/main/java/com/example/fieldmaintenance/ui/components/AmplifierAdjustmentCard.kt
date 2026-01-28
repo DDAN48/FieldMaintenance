@@ -885,6 +885,44 @@ private fun SelectableCalcValue(
                 color = ampTextPrimary(),
                 fontSize = 12.sp
             )
+            if (measuredState != null) {
+                DbmvField(
+                    label = "",
+                    value = measuredState.value,
+                    modifier = Modifier.width(95.dp),
+                    compact = true,
+                    isError = measuredState.isError,
+                    onChange = measuredState.onChange
+                )
+            } else {
+                Text(
+                    r.calc?.let { "${CiscoHfcAmpCalculator.format1(it)}" } ?: "—",
+                    modifier = Modifier.width(95.dp),
+                    textAlign = TextAlign.End,
+                    fontWeight = FontWeight.SemiBold,
+                    color = ampTextPrimary(),
+                    fontSize = 12.sp
+                )
+            }
+            if (planState != null) {
+                DbmvField(
+                    label = "",
+                    value = planState.value,
+                    modifier = Modifier.width(110.dp),
+                    compact = true,
+                    isError = planState.isError,
+                    onChange = planState.onChange
+                )
+            } else {
+                Text(
+                    r.planCalc?.let { "${CiscoHfcAmpCalculator.format1(it)}" } ?: "—",
+                    modifier = Modifier.width(110.dp),
+                    textAlign = TextAlign.End,
+                    fontWeight = FontWeight.SemiBold,
+                    color = ampTextPrimary(),
+                    fontSize = 12.sp
+                )
+            }
         }
     }
 }
