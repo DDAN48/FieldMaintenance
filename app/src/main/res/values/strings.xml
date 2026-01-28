@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">Field Maintenance</string>
+    <string name="splash_version">Versión %1$s</string>
 </resources>
