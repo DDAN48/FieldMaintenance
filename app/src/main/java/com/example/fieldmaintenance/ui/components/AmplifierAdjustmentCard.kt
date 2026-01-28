@@ -81,6 +81,9 @@ private fun ampTextSecondary(): Color = MaterialTheme.colorScheme.onSurfaceVaria
 private fun ampErrorColor(): Color = MaterialTheme.colorScheme.error
 
 @Composable
+private fun ampHighlightColor(): Color = Color(0xFFFFC107)
+
+@Composable
 fun AmplifierAdjustmentCard(
     assetId: String,
     bandwidth: Frequency?,
@@ -102,9 +105,12 @@ fun AmplifierAdjustmentCard(
     // Inputs (strings to preserve comma/typing)
     var inCh50 by rememberSaveable { mutableStateOf("") }
     var inHigh by rememberSaveable { mutableStateOf("") }
-    var inHighFreq by rememberSaveable { mutableStateOf<Int?>(750) } // 750 (CH116) or 870 (CH136)
+    var inLowFreq by rememberSaveable { mutableStateOf<Int?>(379) } // 379 (CH50) or 61 (CH3)
+    var inHighFreq by rememberSaveable { mutableStateOf<Int?>(870) } // 750 (CH116), 870 (CH136) or 1000 (CH158)
     var inPlanCh50 by rememberSaveable { mutableStateOf("") }
     var inPlanHigh by rememberSaveable { mutableStateOf("") }
+    var inPlanLowFreq by rememberSaveable { mutableStateOf<Int?>(379) }
+    var inPlanHighFreq by rememberSaveable { mutableStateOf<Int?>(870) }
 
     var planLowFreq by rememberSaveable { mutableStateOf<Int?>(54) }
     var planLowDbmv by rememberSaveable { mutableStateOf("") }
@@ -125,9 +131,12 @@ fun AmplifierAdjustmentCard(
 
         inCh50 = fmt(initial.inputCh50Dbmv)
         inHigh = fmt(initial.inputCh116Dbmv)
-        inHighFreq = initial.inputHighFreqMHz ?: 750
+        inLowFreq = initial.inputLowFreqMHz ?: 379
+        inHighFreq = initial.inputHighFreqMHz ?: 870
         inPlanCh50 = fmt(initial.inputPlanCh50Dbmv)
         inPlanHigh = fmt(initial.inputPlanHighDbmv)
+        inPlanLowFreq = initial.inputPlanLowFreqMHz ?: 379
+        inPlanHighFreq = initial.inputPlanHighFreqMHz ?: 870
         planLowFreq = initial.planLowFreqMHz ?: 54
         planLowDbmv = fmt(initial.planLowDbmv)
         planHighFreq = initial.planHighFreqMHz ?: 750
@@ -144,9 +153,12 @@ fun AmplifierAdjustmentCard(
             assetId = assetId,
             inputCh50Dbmv = parseDbmv(inCh50),
             inputCh116Dbmv = parseDbmv(inHigh),
+            inputLowFreqMHz = inLowFreq,
             inputHighFreqMHz = inHighFreq,
             inputPlanCh50Dbmv = parseDbmv(inPlanCh50),
             inputPlanHighDbmv = parseDbmv(inPlanHigh),
+            inputPlanLowFreqMHz = inPlanLowFreq,
+            inputPlanHighFreqMHz = inPlanHighFreq,
             planLowFreqMHz = planLowFreq,
             planLowDbmv = parseDbmv(planLowDbmv),
             planHighFreqMHz = planHighFreq,
@@ -177,14 +189,33 @@ fun AmplifierAdjustmentCard(
             }
     }
 
+    fun assignSelectedFreq(
+        currentLow: Int?,
+        currentHigh: Int?,
+        selected: Int
+    ): Pair<Int, Int> {
+        val low = currentLow ?: selected
+        val high = currentHigh ?: selected
+        if (selected == low || selected == high) return low to high
+        val proposedLow = if (selected < high) selected else low
+        val proposedHigh = if (selected < high) high else selected
+        return minOf(proposedLow, proposedHigh) to maxOf(proposedLow, proposedHigh)
+    }
+
     val adj = buildAdjustment()
     val entradaCalc = if (
         adj.inputCh50Dbmv != null &&
-        adj.inputCh116Dbmv != null &&
+        adj.inputCh116Dbmv != null
+    ) {
+        CiscoHfcAmpCalculator.nivelesEntradaCalculados(adj)
+    } else {
+        null
+    }
+    val entradaPlanCalc = if (
         adj.inputPlanCh50Dbmv != null &&
         adj.inputPlanHighDbmv != null
     ) {
-        CiscoHfcAmpCalculator.nivelesEntradaCalculados(adj)
+        CiscoHfcAmpCalculator.nivelesEntradaPlanCalculados(adj)
     } else {
         null
     }
@@ -193,13 +224,17 @@ fun AmplifierAdjustmentCard(
     val pad = CiscoHfcAmpCalculator.fwdInPad(adj, bandwidth, amplifierMode)
     val agc = CiscoHfcAmpCalculator.agcPad(adj, bandwidth, amplifierMode)
     val entradaValid = run {
-        val ch50Med = parseDbmv(inCh50)
-        val ch50Plan = parseDbmv(inPlanCh50)
+        val lowMed = parseDbmv(inCh50)
         val highMed = parseDbmv(inHigh)
+        val lowPlan = parseDbmv(inPlanCh50)
         val highPlan = parseDbmv(inPlanHigh)
-        val ch50Ok = ch50Med != null && ch50Plan != null && ch50Med >= 15.0 && kotlin.math.abs(ch50Med - ch50Plan) < 4.0
-        val highOk = highMed != null && highPlan != null && highMed >= 15.0 && kotlin.math.abs(highMed - highPlan) < 4.0
-        ch50Ok && highOk
+        val lowCalc = CiscoHfcAmpCalculator.entradaCalcValueForFreq(adj, inPlanLowFreq ?: inLowFreq)
+        val highCalc = CiscoHfcAmpCalculator.entradaCalcValueForFreq(adj, inPlanHighFreq ?: inHighFreq)
+        val lowOk = lowMed != null && lowMed >= 15.0 && lowPlan != null && lowCalc != null &&
+            kotlin.math.abs(lowCalc - lowPlan) < 4.0
+        val highOk = highMed != null && highMed >= 15.0 && highPlan != null && highCalc != null &&
+            kotlin.math.abs(highCalc - highPlan) < 4.0
+        lowOk && highOk
     }
 
     fun isWeirdDbmv(v: Double?): Boolean = v != null && (v < -20.0 || v > 80.0)
@@ -210,11 +245,10 @@ fun AmplifierAdjustmentCard(
         calc: Double? = null
     ) {
         if (med == null) return
-        val reference = plan ?: calc
-        val delta = if (reference != null) kotlin.math.abs(med - reference) else null
+        val delta = if (plan != null && calc != null) kotlin.math.abs(calc - plan) else null
         val needsAlert = med < 15.0 || (delta != null && delta >= 4.0)
         if (!needsAlert) return
-        val planLabel = reference?.let { CiscoHfcAmpCalculator.format1(it) } ?: "—"
+        val planLabel = plan?.let { CiscoHfcAmpCalculator.format1(it) } ?: "—"
         val diffLabel = delta?.let { CiscoHfcAmpCalculator.format1(it) } ?: "—"
         val message = buildString {
             append("EL nivel medido esta desviado ")
@@ -261,58 +295,90 @@ fun AmplifierAdjustmentCard(
                         color = ampTextSecondary()
                     )
                     Spacer(Modifier.height(6.dp))
-                    // Header row like the reference (CANAL / FRECUENCIA / AMPLITUD / PLANO / DIF)
-                    EntradaHeaderRow()
-                    EntradaRowPlan(
-                        canal = "CH50",
-                        freqText = "379",
-                        medidoValue = inCh50,
-                        planValue = inPlanCh50,
-                        isError = showRequiredErrors && parseDbmv(inCh50) == null,
-                        onMedidoChange = { dirty = true; inCh50 = it },
-                        onPlanChange = { dirty = true; inPlanCh50 = it }
-                    )
-                    LaunchedEffect(inCh50, entradaCalc) {
+                    val lowMeasuredFreq = inLowFreq ?: 379
+                    val highMeasuredFreq = inHighFreq ?: 870
+                    val lowPlanFreq = inPlanLowFreq ?: lowMeasuredFreq
+                    val highPlanFreq = inPlanHighFreq ?: highMeasuredFreq
+                    val lowPlanCalc = CiscoHfcAmpCalculator.entradaCalcValueForFreq(adj, lowPlanFreq)
+                    val highPlanCalc = CiscoHfcAmpCalculator.entradaCalcValueForFreq(adj, highPlanFreq)
+                    val lowPlanValue = parseDbmv(inPlanCh50)
+                    val highPlanValue = parseDbmv(inPlanHigh)
+                    LaunchedEffect(inPlanCh50, inPlanLowFreq, entradaCalc) {
+                        val lowPlanCanal = CiscoHfcAmpCalculator.inputChannelLabelForFreq(lowPlanFreq)
                         maybeTriggerEntradaAlert(
-                            canal = "CH50",
+                            canal = lowPlanCanal,
                             med = parseDbmv(inCh50),
-                            calc = entradaCalc?.get("CH50")
+                            plan = lowPlanValue,
+                            calc = lowPlanCalc
                         )
                     }
-                    val highFreq = inHighFreq ?: 750
-                    val highCanal = if (highFreq == 870) "CH136" else "CH116"
-                    EntradaRowWithFreqSelector(
-                        canal = highCanal,
-                        freqMHz = highFreq,
-                        optionsMHz = listOf(750, 870),
-                        onFreqChange = { dirty = true; inHighFreq = it },
-                        medidoValue = inHigh,
-                        planValue = inPlanHigh,
-                        isError = showRequiredErrors && parseDbmv(inHigh) == null,
-                        onMedidoChange = { dirty = true; inHigh = it },
-                        onPlanChange = { dirty = true; inPlanHigh = it }
-                    )
-                    LaunchedEffect(inHigh, inHighFreq, entradaCalc) {
-                        val canalKey = if (inHighFreq == 870) "CH136" else "CH116"
+                    LaunchedEffect(inPlanHigh, inPlanHighFreq, entradaCalc) {
+                        val highPlanCanal = CiscoHfcAmpCalculator.inputChannelLabelForFreq(highPlanFreq)
                         maybeTriggerEntradaAlert(
-                            canal = canalKey,
+                            canal = highPlanCanal,
                             med = parseDbmv(inHigh),
-                            calc = entradaCalc?.get(canalKey)
+                            plan = highPlanValue,
+                            calc = highPlanCalc
                         )
                     }
 
                     Spacer(Modifier.height(10.dp))
-                    // Calculated list (no extra title; CALC column already indicates)
                     SimpleCalcList(
                         rows = listOf(
-                            CalcRowData("L 54", "54", entradaCalc?.get("L 54")),
-                            CalcRowData("L102", "102", entradaCalc?.get("L102")),
-                            CalcRowData("CH3", "61", entradaCalc?.get("CH3")),
-                            CalcRowData("CH50", "379", entradaCalc?.get("CH50")),
-                            CalcRowData("CH70", "495", entradaCalc?.get("CH70")),
-                            CalcRowData("CH116", "750", entradaCalc?.get("CH116")),
-                            CalcRowData("CH136", "870", entradaCalc?.get("CH136")),
-                            CalcRowData("CH158", "1000", entradaCalc?.get("CH158")),
+                            CalcRowData("L 54", 54, entradaCalc?.get("L 54"), entradaPlanCalc?.get("L 54")),
+                            CalcRowData("L102", 102, entradaCalc?.get("L102"), entradaPlanCalc?.get("L102")),
+                            CalcRowData("CH3", 61, entradaCalc?.get("CH3"), entradaPlanCalc?.get("CH3")),
+                            CalcRowData("CH50", 379, entradaCalc?.get("CH50"), entradaPlanCalc?.get("CH50")),
+                            CalcRowData("CH70", 495, entradaCalc?.get("CH70"), entradaPlanCalc?.get("CH70")),
+                            CalcRowData("CH116", 750, entradaCalc?.get("CH116"), entradaPlanCalc?.get("CH116")),
+                            CalcRowData("CH136", 870, entradaCalc?.get("CH136"), entradaPlanCalc?.get("CH136")),
+                            CalcRowData("CH158", 1000, entradaCalc?.get("CH158"), entradaPlanCalc?.get("CH158")),
+                        ),
+                        selectedMeasuredFreqs = setOf(lowMeasuredFreq, highMeasuredFreq),
+                        selectedPlanFreqs = setOf(lowPlanFreq, highPlanFreq),
+                        onSelectMeasured = { selected ->
+                            val (newLow, newHigh) = assignSelectedFreq(inLowFreq, inHighFreq, selected)
+                            if (newLow != inLowFreq || newHigh != inHighFreq) {
+                                dirty = true
+                                inLowFreq = newLow
+                                inHighFreq = newHigh
+                            }
+                        },
+                        onSelectPlan = { selected ->
+                            val (newLow, newHigh) = assignSelectedFreq(
+                                inPlanLowFreq ?: lowMeasuredFreq,
+                                inPlanHighFreq ?: highMeasuredFreq,
+                                selected
+                            )
+                            if (newLow != inPlanLowFreq || newHigh != inPlanHighFreq) {
+                                dirty = true
+                                inPlanLowFreq = newLow
+                                inPlanHighFreq = newHigh
+                            }
+                        },
+                        measuredInputs = mapOf(
+                            lowMeasuredFreq to CalcInputState(
+                                value = inCh50,
+                                onChange = { dirty = true; inCh50 = it },
+                                isError = showRequiredErrors && parseDbmv(inCh50) == null
+                            ),
+                            highMeasuredFreq to CalcInputState(
+                                value = inHigh,
+                                onChange = { dirty = true; inHigh = it },
+                                isError = showRequiredErrors && parseDbmv(inHigh) == null
+                            )
+                        ),
+                        planInputs = mapOf(
+                            lowPlanFreq to CalcInputState(
+                                value = inPlanCh50,
+                                onChange = { dirty = true; inPlanCh50 = it },
+                                isError = showRequiredErrors && parseDbmv(inPlanCh50) == null
+                            ),
+                            highPlanFreq to CalcInputState(
+                                value = inPlanHigh,
+                                onChange = { dirty = true; inPlanHigh = it },
+                                isError = showRequiredErrors && parseDbmv(inPlanHigh) == null
+                            )
                         )
                     )
             }
@@ -329,7 +395,7 @@ fun AmplifierAdjustmentCard(
                     Spacer(Modifier.height(6.dp))
                     if (!entradaValid) {
                         Text(
-                            "Complete mediciones de entrada válidas para continuar. La diferencia entre el nivel de entrada y medido aceptable es menor a 4. Nivel minimo de entrada permitido es 15 dBmV si esta indicado por plano.",
+                            "Complete mediciones de entrada válidas para continuar. La diferencia entre el nivel calculado de entrada y el plano aceptable es menor a 4. Nivel minimo de entrada permitido es 15 dBmV si esta indicado por plano.",
                             style = MaterialTheme.typography.bodySmall,
                             color = ampErrorColor()
                         )
@@ -487,6 +553,7 @@ private fun DbmvField(
     isError: Boolean = false,
     compact: Boolean = false,
     compactHeight: Dp = 36.dp,
+    highlightBorder: Boolean = false,
     textColor: Color? = null,
     onChange: (String) -> Unit
 ) {
@@ -506,7 +573,11 @@ private fun DbmvField(
     }
 
     // Compact field: avoids text clipping and forces visible text color.
-    val borderColor = if (isError) ampErrorColor() else ampStrokeColor()
+    val borderColor = when {
+        isError -> ampErrorColor()
+        highlightBorder -> ampHighlightColor()
+        else -> ampStrokeColor()
+    }
     Column(modifier = modifier) {
         if (label.isNotBlank()) {
             Text(label, style = MaterialTheme.typography.labelSmall, color = ampTextSecondary())
@@ -577,7 +648,18 @@ private fun FreqDropdown(
     }
 }
 
-private data class CalcRowData(val canal: String, val freqText: String, val calc: Double?)
+private data class CalcRowData(
+    val canal: String,
+    val freqMHz: Int,
+    val calc: Double?,
+    val planCalc: Double?
+)
+
+private data class CalcInputState(
+    val value: String,
+    val onChange: (String) -> Unit,
+    val isError: Boolean
+)
 
 @Composable
 private fun SectionCard(
@@ -614,70 +696,17 @@ private fun SectionCard(
 }
 
 @Composable
-private fun EntradaRowPlan(
-    canal: String,
-    freqText: String,
-    medidoValue: String,
-    planValue: String,
-    isError: Boolean,
-    onMedidoChange: (String) -> Unit,
-    onPlanChange: (String) -> Unit
-) {
-    val med = medidoValue.trim().takeIf { it.isNotBlank() }?.replace(',', '.')?.toDoubleOrNull()
-    val plan = planValue.trim().takeIf { it.isNotBlank() }?.replace(',', '.')?.toDoubleOrNull()
-    val absDiff = if (med != null && plan != null) kotlin.math.abs(med - plan) else null
-    val needsAttention = (absDiff != null && absDiff >= 2.0) || (med != null && med < 15.0)
-    val medColor = if (needsAttention) ampErrorColor() else ampTextPrimary()
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(canal, modifier = Modifier.width(60.dp), fontWeight = FontWeight.SemiBold, color = ampTextPrimary(), fontSize = 12.sp)
-        Text(freqText, modifier = Modifier.width(90.dp), color = ampTextSecondary(), fontSize = 12.sp)
-        DbmvField(
-            label = "",
-            value = medidoValue,
-            modifier = Modifier.width(88.dp),
-            compact = true,
-            isError = isError,
-            textColor = medColor,
-            onChange = onMedidoChange
-        )
-        Spacer(Modifier.width(8.dp))
-        DbmvField(
-            label = "",
-            value = planValue,
-            modifier = Modifier.width(88.dp),
-            compact = true,
-            isError = false,
-            textColor = ampTextPrimary(),
-            onChange = onPlanChange
-        )
-    }
-    HorizontalDivider(color = ampDividerColor(), thickness = 1.dp)
-}
-
-@Composable
-private fun EntradaRowWithFreqSelector(
+private fun EntradaRowSingleValueWithFreqSelector(
     canal: String,
     freqMHz: Int,
     optionsMHz: List<Int>,
     onFreqChange: (Int) -> Unit,
-    medidoValue: String,
-    planValue: String,
+    value: String,
     isError: Boolean,
-    onMedidoChange: (String) -> Unit,
-    onPlanChange: (String) -> Unit
+    valueColor: Color,
+    onValueChange: (String) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
-    val med = medidoValue.trim().takeIf { it.isNotBlank() }?.replace(',', '.')?.toDoubleOrNull()
-    val plan = planValue.trim().takeIf { it.isNotBlank() }?.replace(',', '.')?.toDoubleOrNull()
-    val absDiff = if (med != null && plan != null) kotlin.math.abs(med - plan) else null
-    val needsAttention = (absDiff != null && absDiff >= 2.0) || (med != null && med < 15.0)
-    val medColor = if (needsAttention) ampErrorColor() else ampTextPrimary()
-
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -717,29 +746,27 @@ private fun EntradaRowWithFreqSelector(
 
         DbmvField(
             label = "",
-            value = medidoValue,
-            modifier = Modifier.width(88.dp),
+            value = value,
+            modifier = Modifier.width(120.dp),
             compact = true,
             isError = isError,
-            textColor = medColor,
-            onChange = onMedidoChange
-        )
-        Spacer(Modifier.width(8.dp))
-        DbmvField(
-            label = "",
-            value = planValue,
-            modifier = Modifier.width(88.dp),
-            compact = true,
-            isError = false,
-            textColor = ampTextPrimary(),
-            onChange = onPlanChange
+            textColor = valueColor,
+            onChange = onValueChange
         )
     }
     HorizontalDivider(color = ampDividerColor(), thickness = 1.dp)
 }
 
 @Composable
-private fun SimpleCalcList(rows: List<CalcRowData>) {
+private fun SimpleCalcList(
+    rows: List<CalcRowData>,
+    selectedMeasuredFreqs: Set<Int> = emptySet(),
+    selectedPlanFreqs: Set<Int> = emptySet(),
+    onSelectMeasured: ((Int) -> Unit)? = null,
+    onSelectPlan: ((Int) -> Unit)? = null,
+    measuredInputs: Map<Int, CalcInputState> = emptyMap(),
+    planInputs: Map<Int, CalcInputState> = emptyMap()
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -748,11 +775,25 @@ private fun SimpleCalcList(rows: List<CalcRowData>) {
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
         Text("CANAL", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, color = ampTextSecondary(), fontSize = 11.sp)
-        Text("FREQ (MHz)", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, color = ampTextSecondary(), fontSize = 11.sp)
-        Text("CALC (dBmV)", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, color = ampTextSecondary(), fontSize = 11.sp)
+        Column {
+            Text("FREQ", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, color = ampTextSecondary(), fontSize = 11.sp)
+            Text("(MHz)", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, color = ampTextSecondary(), fontSize = 10.sp)
+        }
+        Column(horizontalAlignment = Alignment.End) {
+            Text("Medido", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, color = ampTextSecondary(), fontSize = 11.sp)
+            Text("(dBmV)", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, color = ampTextSecondary(), fontSize = 10.sp)
+        }
+        Column(horizontalAlignment = Alignment.End) {
+            Text("Plano", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, color = ampTextSecondary(), fontSize = 11.sp)
+            Text("(dBmV)", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, color = ampTextSecondary(), fontSize = 10.sp)
+        }
     }
     Spacer(Modifier.height(6.dp))
     rows.forEachIndexed { idx, r ->
+        val measuredState = measuredInputs[r.freqMHz]
+        val planState = planInputs[r.freqMHz]
+        val measuredSelected = selectedMeasuredFreqs.contains(r.freqMHz)
+        val planSelected = selectedPlanFreqs.contains(r.freqMHz)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -760,18 +801,90 @@ private fun SimpleCalcList(rows: List<CalcRowData>) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(r.canal, modifier = Modifier.width(70.dp), fontWeight = FontWeight.SemiBold, color = ampTextPrimary(), fontSize = 12.sp)
-            Text(r.freqText, modifier = Modifier.weight(1f), color = ampTextSecondary(), fontSize = 12.sp)
             Text(
-                r.calc?.let { "${CiscoHfcAmpCalculator.format1(it)}" } ?: "—",
-                modifier = Modifier.width(80.dp),
+                r.freqMHz.toString(),
+                modifier = Modifier.width(64.dp),
+                color = ampTextSecondary(),
+                fontSize = 12.sp,
+                softWrap = false,
+                maxLines = 1
+            )
+            if (measuredState != null) {
+                DbmvField(
+                    label = "",
+                    value = measuredState.value,
+                    modifier = Modifier.width(95.dp),
+                    compact = true,
+                    isError = measuredState.isError,
+                    highlightBorder = measuredSelected,
+                    onChange = measuredState.onChange
+                )
+            } else {
+                SelectableCalcValue(
+                    valueText = r.calc?.let { "${CiscoHfcAmpCalculator.format1(it)}" } ?: "—",
+                    highlight = measuredSelected,
+                    width = 95.dp,
+                    onClick = onSelectMeasured?.let { handler -> { handler(r.freqMHz) } }
+                )
+            }
+            if (planState != null) {
+                DbmvField(
+                    label = "",
+                    value = planState.value,
+                    modifier = Modifier.width(110.dp),
+                    compact = true,
+                    isError = planState.isError,
+                    highlightBorder = planSelected,
+                    onChange = planState.onChange
+                )
+            } else {
+                SelectableCalcValue(
+                    valueText = r.planCalc?.let { "${CiscoHfcAmpCalculator.format1(it)}" } ?: "—",
+                    highlight = planSelected,
+                    width = 110.dp,
+                    onClick = onSelectPlan?.let { handler -> { handler(r.freqMHz) } }
+                )
+            }
+        }
+        if (idx != rows.lastIndex) {
+            HorizontalDivider(color = ampDividerColor(), thickness = 1.dp)
+        }
+    }
+}
+
+@Composable
+private fun SelectableCalcValue(
+    valueText: String,
+    highlight: Boolean,
+    width: Dp,
+    onClick: (() -> Unit)? = null
+) {
+    val borderColor = if (highlight) ampHighlightColor() else ampStrokeColor()
+    val modifier = Modifier
+        .width(width)
+        .height(36.dp)
+        .let { base ->
+            if (onClick != null) base.clickable { onClick() } else base
+        }
+    Surface(
+        modifier = modifier,
+        color = ampCardColor(),
+        border = BorderStroke(1.dp, borderColor),
+        shape = MaterialTheme.shapes.small
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp),
+            contentAlignment = Alignment.CenterEnd
+        ) {
+            Text(
+                valueText,
                 textAlign = TextAlign.End,
                 fontWeight = FontWeight.SemiBold,
                 color = ampTextPrimary(),
                 fontSize = 12.sp
             )
-        }
-        if (idx != rows.lastIndex) {
-            HorizontalDivider(color = ampDividerColor(), thickness = 1.dp)
         }
     }
 }
@@ -880,7 +993,7 @@ private fun HeaderRow(c1: String = "CANAL", c2: String = "FRECUENCIA", c3: Strin
 }
 
 @Composable
-private fun EntradaHeaderRow() {
+private fun EntradaHeaderRow(title: String) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -890,9 +1003,7 @@ private fun EntradaHeaderRow() {
     ) {
         Text("CANAL", modifier = Modifier.width(60.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, color = ampTextSecondary(), fontSize = 11.sp)
         Text("FREQ (MHz)", modifier = Modifier.width(90.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, color = ampTextSecondary(), fontSize = 11.sp)
-        Text("Medido (dBmV)", modifier = Modifier.width(88.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, color = ampTextSecondary(), fontSize = 11.sp)
-        Spacer(Modifier.width(8.dp))
-        Text("Plano (dBmV)", modifier = Modifier.width(88.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, color = ampTextSecondary(), fontSize = 11.sp)
+        Text(title, modifier = Modifier.width(120.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, color = ampTextSecondary(), fontSize = 11.sp)
     }
     Spacer(Modifier.height(6.dp))
 }

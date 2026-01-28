@@ -87,6 +87,11 @@ class ExportManager(private val context: Context, private val repository: Mainte
         }
     }
 
+    private data class MeasurementGroupResult(
+        val group: HtmlMeasurementGroup?,
+        val summary: MeasurementVerificationSummary?
+    )
+
     private fun collectSwitchSelections(assets: List<Asset>): Map<String, Map<String, String>> {
         val allPrefs = switchPrefs.all
         val result = mutableMapOf<String, MutableMap<String, String>>()
@@ -262,7 +267,10 @@ class ExportManager(private val context: Context, private val repository: Mainte
                         adj != null &&
                             adj.inputCh50Dbmv != null &&
                             adj.inputCh116Dbmv != null &&
-                            (adj.inputHighFreqMHz == null || adj.inputHighFreqMHz == 750 || adj.inputHighFreqMHz == 870) &&
+                            (adj.inputHighFreqMHz == null || adj.inputHighFreqMHz == 750 || adj.inputHighFreqMHz == 870 || adj.inputHighFreqMHz == 1000) &&
+                            (adj.inputLowFreqMHz == 61 || adj.inputLowFreqMHz == 379) &&
+                            (adj.inputPlanLowFreqMHz == 61 || adj.inputPlanLowFreqMHz == 379) &&
+                            (adj.inputPlanHighFreqMHz == 750 || adj.inputPlanHighFreqMHz == 870 || adj.inputPlanHighFreqMHz == 1000) &&
                             adj.planLowDbmv != null &&
                             adj.planHighDbmv != null &&
                             adj.outCh50Dbmv != null &&
@@ -923,6 +931,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                 if (adj != null) {
                     val bw = freqEnumFromMHz(asset.frequencyMHz)
                     val entradaCalc = CiscoHfcAmpCalculator.nivelesEntradaCalculados(adj)
+                    val entradaPlanCalc = CiscoHfcAmpCalculator.nivelesEntradaPlanCalculados(adj)
                     val salidaCalc = CiscoHfcAmpCalculator.nivelesSalidaCalculados(adj)
                     val pad = CiscoHfcAmpCalculator.fwdInPad(adj, bw, asset.amplifierMode)
                     val tilt = CiscoHfcAmpCalculator.fwdInEqTilt(adj, bw)
@@ -934,14 +943,14 @@ val assets = repository.getAssetsByReportId(report.id).first()
                         headers = listOf("CANAL", "FREQ", "MEDIDO (dBmV)", "PLANO (dBmV)"),
                         rows = listOf(
                             listOf(
-                                "CH50" to null,
-                                "379 MHz" to null,
+                                CiscoHfcAmpCalculator.inputChannelLabelForFreq(adj.inputPlanLowFreqMHz ?: adj.inputLowFreqMHz ?: 379) to null,
+                                "${adj.inputPlanLowFreqMHz ?: adj.inputLowFreqMHz ?: 379} MHz" to null,
                                 (adj.inputCh50Dbmv?.let { CiscoHfcAmpCalculator.format1(it) } ?: "—") to null,
                                 (adj.inputPlanCh50Dbmv?.let { CiscoHfcAmpCalculator.format1(it) } ?: "—") to null
                             ),
                             listOf(
-                                (if ((adj.inputHighFreqMHz ?: 750) == 870) "CH136" else "CH116") to null,
-                                "${adj.inputHighFreqMHz ?: 750} MHz" to null,
+                                CiscoHfcAmpCalculator.inputChannelLabelForFreq(adj.inputPlanHighFreqMHz ?: adj.inputHighFreqMHz ?: 870) to null,
+                                "${adj.inputPlanHighFreqMHz ?: adj.inputHighFreqMHz ?: 870} MHz" to null,
                                 (adj.inputCh116Dbmv?.let { CiscoHfcAmpCalculator.format1(it) } ?: "—") to null,
                                 (adj.inputPlanHighDbmv?.let { CiscoHfcAmpCalculator.format1(it) } ?: "—") to null
                             )
@@ -962,15 +971,16 @@ val assets = repository.getAssetsByReportId(report.id).first()
                         listOf(
                             c to null,
                             "$f MHz" to null,
-                            (entradaCalc?.get(c)?.let { CiscoHfcAmpCalculator.format1(it) } ?: "—") to null
+                            (entradaCalc?.get(c)?.let { CiscoHfcAmpCalculator.format1(it) } ?: "—") to null,
+                            (entradaPlanCalc?.get(c)?.let { CiscoHfcAmpCalculator.format1(it) } ?: "—") to null
                         )
                     }
                     addTable(
                         document,
                         "Niveles ENTRADA calculados",
-                        headers = listOf("CANAL", "FREQ", "CALC (dBmV)"),
+                        headers = listOf("CANAL", "FREQ", "CALC MED (dBmV)", "CALC PLANO (dBmV)"),
                         rows = entradaRows,
-                        colWidths = floatArrayOf(20f, 25f, 55f)
+                        colWidths = floatArrayOf(18f, 22f, 30f, 30f)
                     )
 
                     addTable(
@@ -1353,19 +1363,13 @@ val assets = repository.getAssetsByReportId(report.id).first()
         val assets = repository.getAssetsByReportId(report.id).first()
             .sortedBy { assetSortKey(it) }
         val passives = repository.getPassivesByReportId(report.id).first()
-        val reportPhotos = repository.getReportPhotosByReportId(report.id).first()
         val exportDir = File(context.cacheDir, "export_zip/${report.id}")
         if (exportDir.exists()) exportDir.deleteRecursively()
         exportDir.mkdirs()
 
-        val imagesDir = File(exportDir, "images").apply { mkdirs() }
-        val measurementsDir = File(exportDir, "measurements").apply { mkdirs() }
-
         val photosByAsset = mutableMapOf<String, List<Photo>>()
-        val imagesByAsset = mutableMapOf<String, List<ExportImageRef>>()
         val adjustmentsByAsset = mutableMapOf<String, AmplifierAdjustment>()
         val nodeAdjustmentsByAsset = mutableMapOf<String, NodeAdjustment>()
-        val reportImageRefs = mutableListOf<ExportReportImageRef>()
         val switchSelections = collectSwitchSelections(assets)
 
         val reportFolderName = MaintenanceStorage.reportFolderName(report.eventName, report.id)
@@ -1384,71 +1388,13 @@ val assets = repository.getAssetsByReportId(report.id).first()
             val photos = repository.getPhotosByAssetId(asset.id).first()
                 .sortedBy { photoSortKey(it) }
             photosByAsset[asset.id] = photos
-
-            val refs = mutableListOf<ExportImageRef>()
-            photos.forEach { photo ->
-                val src = File(photo.filePath)
-                if (!src.exists()) return@forEach
-
-                val safeName = "${asset.id}_${photo.photoType.name.lowercase()}_${photo.id}.jpg"
-                val dest = File(imagesDir, safeName)
-                runCatching { ImageCompressor.compressForExport(src, dest) }
-                if (!dest.exists()) return@forEach
-
-                refs.add(
-                    ExportImageRef(
-                        photoId = photo.id,
-                        photoType = photo.photoType,
-                        fileName = "images/$safeName"
-                    )
-                )
-            }
-            imagesByAsset[asset.id] = refs
-
-            val measurementAssets = buildList {
-                add(asset)
-                if (asset.type == AssetType.NODE) {
-                    add(asset.copy(type = AssetType.AMPLIFIER))
-                }
-            }
-            measurementAssets.forEach { measurementAsset ->
-                val sourceMeasurementsDir = MaintenanceStorage.ensureAssetDir(context, reportFolderName, measurementAsset)
-                if (sourceMeasurementsDir.exists()) {
-                    val measurementTargetDir = File(measurementsDir, MaintenanceStorage.assetFolderName(measurementAsset))
-                        .apply { mkdirs() }
-                    sourceMeasurementsDir.listFiles()
-                        ?.filter { it.isFile }
-                        ?.forEach { file ->
-                            file.copyTo(File(measurementTargetDir, file.name), overwrite = true)
-                        }
-                }
-            }
-        }
-
-        // Report-level images (Monitoria y QR)
-        reportPhotos.forEach { rp ->
-            val src = File(rp.filePath)
-            if (!src.exists()) return@forEach
-
-            val safeName = "report_${rp.type.name.lowercase()}_${rp.id}.jpg"
-            val dest = File(imagesDir, safeName)
-            runCatching { ImageCompressor.compressForExport(src, dest) }
-            if (!dest.exists()) return@forEach
-
-            reportImageRefs.add(
-                ExportReportImageRef(
-                    photoId = rp.id,
-                    type = rp.type,
-                    fileName = "images/$safeName"
-                )
-            )
         }
 
         val exportData = ExportDataV2(
             report = report,
             assets = assets,
-            images = imagesByAsset,
-            reportImages = if (reportImageRefs.isEmpty()) null else reportImageRefs,
+            images = emptyMap(),
+            reportImages = null,
             adjustments = if (adjustmentsByAsset.isEmpty()) null else adjustmentsByAsset,
             nodeAdjustments = if (nodeAdjustmentsByAsset.isNotEmpty()) nodeAdjustmentsByAsset else null,
             passives = passives,
@@ -1462,10 +1408,10 @@ val assets = repository.getAssetsByReportId(report.id).first()
             assets = assets,
             passives = passives,
             adjustedCount = adjustedCount,
-            imagesByAsset = imagesByAsset,
             photosByAsset = photosByAsset,
             adjustmentsByAsset = adjustmentsByAsset,
-            nodeAdjustmentsByAsset = nodeAdjustmentsByAsset
+            nodeAdjustmentsByAsset = nodeAdjustmentsByAsset,
+            reportFolderName = reportFolderName
         )
 
         val zipFile = File(context.getExternalFilesDir(null), "${baseName}.zip")
@@ -1484,19 +1430,17 @@ val assets = repository.getAssetsByReportId(report.id).first()
         assets: List<Asset>,
         passives: List<PassiveItem>,
         adjustedCount: Int,
-        imagesByAsset: Map<String, List<ExportImageRef>>,
         photosByAsset: Map<String, List<Photo>>,
         adjustmentsByAsset: Map<String, AmplifierAdjustment>,
-        nodeAdjustmentsByAsset: Map<String, NodeAdjustment>
+        nodeAdjustmentsByAsset: Map<String, NodeAdjustment>,
+        reportFolderName: String
     ): File {
-        val measurementRoot = File(exportDir, "measurements")
+        val measurementRoot = MaintenanceStorage.ensureReportDir(context, reportFolderName)
         val switchSelections = collectSwitchSelections(assets)
         val measurements = buildHtmlMeasurementMap(report, assets, measurementRoot, switchSelections)
         val passiveCounts = passives.groupingBy { it.type }.eachCount()
 
         fun countOf(t: PassiveType) = passiveCounts[t] ?: 0
-        val photosById = photosByAsset.values.flatten().associateBy { it.id }
-
         val exportDate = Date()
         val exportDateLabel = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(exportDate)
         val logoDataUri = drawableToPngBytes(R.drawable.telecentro_logo, targetW = 140, targetH = 70)?.let { bytes ->
@@ -1514,7 +1458,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                 activosAjustados = adjustedCount
             ),
             assets = assets.map { asset ->
-                val assetPhotos = imagesByAsset[asset.id].orEmpty()
+                val assetPhotos = photosByAsset[asset.id].orEmpty()
                 val photoTypeCounts = assetPhotos.groupingBy { it.photoType }.eachCount()
                 val photoTypeIndex = mutableMapOf<PhotoType, Int>()
                 HtmlAssetExport(
@@ -1528,16 +1472,16 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     } else {
                         null
                     },
-                    photos = assetPhotos.map { ref ->
-                        val baseTitle = photoSectionTitle(ref.photoType)
-                        val currentIndex = photoTypeIndex.getOrPut(ref.photoType) { 0 } + 1
-                        photoTypeIndex[ref.photoType] = currentIndex
-                        val title = if ((photoTypeCounts[ref.photoType] ?: 0) > 1) {
+                    photos = assetPhotos.map { photo ->
+                        val baseTitle = photoSectionTitle(photo.photoType)
+                        val currentIndex = photoTypeIndex.getOrPut(photo.photoType) { 0 } + 1
+                        photoTypeIndex[photo.photoType] = currentIndex
+                        val title = if ((photoTypeCounts[photo.photoType] ?: 0) > 1) {
                             "$baseTitle $currentIndex"
                         } else {
                             baseTitle
                         }
-                        val imageFile = File(exportDir, ref.fileName)
+                        val imageFile = File(photo.filePath)
                         val dataUri = if (imageFile.exists()) {
                             val encoded = Base64.encodeToString(imageFile.readBytes(), Base64.NO_WRAP)
                             "data:image/jpeg;base64,$encoded"
@@ -1546,11 +1490,11 @@ val assets = repository.getAssetsByReportId(report.id).first()
                         }
                         HtmlPhotoExport(
                             title = title,
-                            fileName = ref.fileName,
+                            fileName = imageFile.name,
                             dataUri = dataUri,
-                            latitude = photosById[ref.photoId]?.latitude,
-                            longitude = photosById[ref.photoId]?.longitude,
-                            photoType = ref.photoType.name
+                            latitude = photo.latitude,
+                            longitude = photo.longitude,
+                            photoType = photo.photoType.name
                         )
                     },
                     adjustment = HtmlAdjustmentExport(
@@ -3337,13 +3281,17 @@ val assets = repository.getAssetsByReportId(report.id).first()
         for (asset in assets) {
             val rxDir = File(measurementRoot, MaintenanceStorage.assetFolderName(asset))
             val rxLabel = if (asset.type == AssetType.AMPLIFIER) "Módulo" else "RX"
-            val rxBundle = buildMeasurementGroup(
+            val rxResult = buildMeasurementGroup(
                 rxLabel,
                 asset,
                 assetHeaderLine(report, asset),
                 rxDir,
                 switchSelections[asset.id].orEmpty()
             )
+            val rxChannelGeoPoints = rxResult.summary?.result?.measurementEntries
+                ?.filter { !it.isDiscarded && it.type == "channelexpert" }
+                ?.mapNotNull { it.geoLocation }
+                ?: emptyList()
             val moduleBundle = if (asset.type == AssetType.NODE) {
                 val moduleAsset = asset.copy(type = AssetType.AMPLIFIER)
                 val moduleDir = File(measurementRoot, MaintenanceStorage.assetFolderName(moduleAsset))
@@ -3352,12 +3300,13 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     moduleAsset,
                     assetHeaderLine(report, asset),
                     moduleDir,
-                    switchSelections[moduleAsset.id].orEmpty()
-                )
+                    switchSelections[moduleAsset.id].orEmpty(),
+                    extraGeoPoints = rxChannelGeoPoints
+                ).group
             } else {
                 null
             }
-            result[asset.id] = HtmlMeasurementBundle(rx = rxBundle, module = moduleBundle)
+            result[asset.id] = HtmlMeasurementBundle(rx = rxResult.group, module = moduleBundle)
         }
         return result
     }
@@ -3367,10 +3316,11 @@ val assets = repository.getAssetsByReportId(report.id).first()
         asset: Asset,
         assetHeader: String,
         dir: File,
-        switchSelections: Map<String, String>
-    ): HtmlMeasurementGroup? {
+        switchSelections: Map<String, String>,
+        extraGeoPoints: List<GeoPoint> = emptyList()
+    ): MeasurementGroupResult {
         val files = dir.listFiles()?.filter { it.isFile } ?: emptyList()
-        if (files.isEmpty()) return null
+        if (files.isEmpty()) return MeasurementGroupResult(group = null, summary = null)
         val discardedLabels = loadDiscardedLabels(File(dir, ".discarded_measurements.txt"))
         val required = requiredCounts(asset.type, isModule = label == "Módulo")
         val summary = verifyMeasurementFiles(
@@ -3380,38 +3330,44 @@ val assets = repository.getAssetsByReportId(report.id).first()
             repository = repository,
             discardedLabels = discardedLabels,
             expectedDocsisOverride = required.expectedDocsis,
-            expectedChannelOverride = required.expectedChannel
+            expectedChannelOverride = required.expectedChannel,
+            extraGeoPoints = extraGeoPoints
         )
         val entries = summary.result.measurementEntries
             .filter { it.type == "docsisexpert" || it.type == "channelexpert" }
             .map { entry ->
                 entry.toHtmlMeasurementEntry(switchSelections[entry.label])
             }
-        if (entries.isEmpty()) return null
-        return HtmlMeasurementGroup(
-            label = label,
-            geoLocation = summary.geoLocation,
-            observationTotal = summary.observationTotal,
-            observationDetails = (summary.geoIssueDetails.map { detail ->
-                HtmlObservationDetail(
-                    assetId = asset.id,
-                    assetHeader = assetHeader,
-                    type = detail.type,
-                    file = detail.file,
-                    detail = detail.detail,
-                    isRuleViolation = false
-                )
-            } + summary.validationIssueDetails.map { detail ->
-                HtmlObservationDetail(
-                    assetId = asset.id,
-                    assetHeader = assetHeader,
-                    type = detail.type,
-                    file = detail.file,
-                    detail = detail.detail,
-                    isRuleViolation = detail.isRuleViolation
-                )
-            }),
-            entries = entries
+        if (entries.isEmpty()) {
+            return MeasurementGroupResult(group = null, summary = summary)
+        }
+        return MeasurementGroupResult(
+            group = HtmlMeasurementGroup(
+                label = label,
+                geoLocation = summary.geoLocation,
+                observationTotal = summary.observationTotal,
+                observationDetails = (summary.geoIssueDetails.map { detail ->
+                    HtmlObservationDetail(
+                        assetId = asset.id,
+                        assetHeader = assetHeader,
+                        type = detail.type,
+                        file = detail.file,
+                        detail = detail.detail,
+                        isRuleViolation = false
+                    )
+                } + summary.validationIssueDetails.map { detail ->
+                    HtmlObservationDetail(
+                        assetId = asset.id,
+                        assetHeader = assetHeader,
+                        type = detail.type,
+                        file = detail.file,
+                        detail = detail.detail,
+                        isRuleViolation = detail.isRuleViolation
+                    )
+                }),
+                entries = entries
+            ),
+            summary = summary
         )
     }
 
@@ -3463,20 +3419,21 @@ val assets = repository.getAssetsByReportId(report.id).first()
     private fun buildHtmlAmplifierAdjustment(asset: Asset, adj: AmplifierAdjustment): HtmlAmplifierAdjustmentExport {
         val bw = freqEnumFromMHz(asset.frequencyMHz)
         val entradaCalc = CiscoHfcAmpCalculator.nivelesEntradaCalculados(adj)
+        val entradaPlanCalc = CiscoHfcAmpCalculator.nivelesEntradaPlanCalculados(adj)
         val salidaCalc = CiscoHfcAmpCalculator.nivelesSalidaCalculados(adj)
         val pad = CiscoHfcAmpCalculator.fwdInPad(adj, bw, asset.amplifierMode)
         val tilt = CiscoHfcAmpCalculator.fwdInEqTilt(adj, bw)
         val agc = CiscoHfcAmpCalculator.agcPad(adj, bw, asset.amplifierMode)
         val inputMeasured = listOf(
             HtmlAmpRow(
-                Canal = "CH50",
-                Frecuencia = 379,
+                Canal = CiscoHfcAmpCalculator.inputChannelLabelForFreq(adj.inputPlanLowFreqMHz ?: adj.inputLowFreqMHz ?: 379),
+                Frecuencia = adj.inputPlanLowFreqMHz ?: adj.inputLowFreqMHz ?: 379,
                 Medido = adj.inputCh50Dbmv?.let { CiscoHfcAmpCalculator.format1(it) },
                 Plano = adj.inputPlanCh50Dbmv?.let { CiscoHfcAmpCalculator.format1(it) }
             ),
             HtmlAmpRow(
-                Canal = if ((adj.inputHighFreqMHz ?: 750) == 870) "CH136" else "CH116",
-                Frecuencia = adj.inputHighFreqMHz ?: 750,
+                Canal = CiscoHfcAmpCalculator.inputChannelLabelForFreq(adj.inputPlanHighFreqMHz ?: adj.inputHighFreqMHz ?: 870),
+                Frecuencia = adj.inputPlanHighFreqMHz ?: adj.inputHighFreqMHz ?: 870,
                 Medido = adj.inputCh116Dbmv?.let { CiscoHfcAmpCalculator.format1(it) },
                 Plano = adj.inputPlanHighDbmv?.let { CiscoHfcAmpCalculator.format1(it) }
             )
@@ -3494,7 +3451,8 @@ val assets = repository.getAssetsByReportId(report.id).first()
             HtmlAmpRow(
                 Canal = c,
                 Frecuencia = f,
-                Calculado = entradaCalc?.get(c)?.let { CiscoHfcAmpCalculator.format1(it) }
+                Calculado = entradaCalc?.get(c)?.let { CiscoHfcAmpCalculator.format1(it) },
+                Plano = entradaPlanCalc?.get(c)?.let { CiscoHfcAmpCalculator.format1(it) }
             )
         }
         val outputPlan = listOf(

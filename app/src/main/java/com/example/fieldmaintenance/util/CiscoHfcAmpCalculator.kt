@@ -17,8 +17,17 @@ object CiscoHfcAmpCalculator {
     fun buildEntradaRecta(adj: AmplifierAdjustment): Recta? {
         val a1 = adj.inputCh50Dbmv ?: return null
         val a2 = adj.inputCh116Dbmv ?: return null
-        val f2 = (adj.inputHighFreqMHz ?: 750).toDouble()
-        return Recta(379.0, a1, f2, a2)
+        val f1 = (adj.inputLowFreqMHz ?: 379).toDouble()
+        val f2 = (adj.inputHighFreqMHz ?: 870).toDouble()
+        return Recta(f1, a1, f2, a2)
+    }
+
+    fun buildEntradaPlanRecta(adj: AmplifierAdjustment): Recta? {
+        val a1 = adj.inputPlanCh50Dbmv ?: return null
+        val a2 = adj.inputPlanHighDbmv ?: return null
+        val f1 = (adj.inputPlanLowFreqMHz ?: 379).toDouble()
+        val f2 = (adj.inputPlanHighFreqMHz ?: 870).toDouble()
+        return Recta(f1, a1, f2, a2)
     }
 
     fun buildSalidaRecta(adj: AmplifierAdjustment): Recta? {
@@ -44,6 +53,48 @@ object CiscoHfcAmpCalculator {
             "CH136" to r.valueAt(870.0),
             "CH158" to r.valueAt(1000.0),
         )
+    }
+
+    fun nivelesEntradaPlanCalculados(adj: AmplifierAdjustment): Map<String, Double>? {
+        val r = buildEntradaPlanRecta(adj) ?: return null
+        return linkedMapOf(
+            "L 54" to r.valueAt(54.0),
+            "L102" to r.valueAt(102.0),
+            "CH3" to r.valueAt(61.0),
+            "CH50" to r.valueAt(379.0),
+            "CH70" to r.valueAt(495.0),
+            "CH116" to r.valueAt(750.0),
+            "CH136" to r.valueAt(870.0),
+            "CH158" to r.valueAt(1000.0),
+        )
+    }
+
+    fun inputChannelKeyForFreq(freqMHz: Int?): String? {
+        return when (freqMHz) {
+            61 -> "CH3"
+            379 -> "CH50"
+            750 -> "CH116"
+            870 -> "CH136"
+            1000 -> "CH158"
+            else -> null
+        }
+    }
+
+    fun inputChannelLabelForFreq(freqMHz: Int?): String {
+        return when (freqMHz) {
+            61 -> "CH3"
+            379 -> "CH50"
+            750 -> "CH116"
+            870 -> "CH136"
+            1000 -> "CH158"
+            else -> "—"
+        }
+    }
+
+    fun entradaCalcValueForFreq(adj: AmplifierAdjustment, freqMHz: Int?): Double? {
+        val key = inputChannelKeyForFreq(freqMHz) ?: return null
+        val entrada = nivelesEntradaCalculados(adj) ?: return null
+        return entrada[key]
     }
 
     /**
@@ -112,5 +163,3 @@ object CiscoHfcAmpCalculator {
 
     fun format1(v: Double): String = String.format("%.1f", v)
 }
-
-
