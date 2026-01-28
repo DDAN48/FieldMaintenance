@@ -41,6 +41,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.font.FontWeight
@@ -575,10 +576,16 @@ private fun DbmvField(
     onChange: (String) -> Unit
 ) {
     var wasFocused by remember { mutableStateOf(false) }
+    fun ensureSelected() {
+        onClick?.invoke()
+    }
     if (!compact) {
         OutlinedTextField(
             value = value,
-            onValueChange = { if (enabled) onChange(it) },
+            onValueChange = {
+                if (!enabled) ensureSelected()
+                onChange(it)
+            },
             label = { Text(label) },
             modifier = modifier,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
@@ -618,13 +625,20 @@ private fun DbmvField(
             ) {
                 BasicTextField(
                     value = value,
-                    onValueChange = { if (enabled) onChange(it) },
+                    onValueChange = {
+                        if (!enabled) ensureSelected()
+                        onChange(it)
+                    },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     textStyle = MaterialTheme.typography.bodyMedium.copy(
                         color = (textColor ?: ampTextPrimary()).copy(alpha = if (enabled) 1f else 0.7f)
                     ),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .onFocusChanged {
+                            if (it.isFocused) ensureSelected()
+                        }
                 )
             }
         }
