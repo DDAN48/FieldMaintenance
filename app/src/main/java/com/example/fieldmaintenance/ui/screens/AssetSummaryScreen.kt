@@ -35,6 +35,7 @@ import com.example.fieldmaintenance.ui.navigation.Screen
 import com.example.fieldmaintenance.ui.viewmodel.ReportViewModel
 import com.example.fieldmaintenance.ui.viewmodel.ReportViewModelFactory
 import com.example.fieldmaintenance.util.DatabaseProvider
+import com.example.fieldmaintenance.util.CiscoHfcAmpCalculator
 import com.example.fieldmaintenance.util.EmailManager
 import com.example.fieldmaintenance.util.ExportManager
 import com.example.fieldmaintenance.util.MaintenanceStorage
@@ -200,24 +201,33 @@ fun AssetSummaryScreen(navController: NavController, reportId: String) {
                         val ampAdjOk = if (asset.type != AssetType.AMPLIFIER) true else {
                             val adj = amplifierAdjustment
                             val entradaValid = adj?.let {
-                                val ch50Med = it.inputCh50Dbmv
-                                val ch50Plan = it.inputPlanCh50Dbmv
+                                val lowPlanFreq = it.inputPlanLowFreqMHz ?: it.inputLowFreqMHz
+                                val highPlanFreq = it.inputPlanHighFreqMHz ?: it.inputHighFreqMHz
+                                val lowCalc = CiscoHfcAmpCalculator.entradaCalcValueForFreq(it, lowPlanFreq)
+                                val highCalc = CiscoHfcAmpCalculator.entradaCalcValueForFreq(it, highPlanFreq)
+                                val lowMed = it.inputCh50Dbmv
                                 val highMed = it.inputCh116Dbmv
+                                val lowPlan = it.inputPlanCh50Dbmv
                                 val highPlan = it.inputPlanHighDbmv
-                                val ch50Ok = ch50Med != null &&
-                                    ch50Plan != null &&
-                                    ch50Med >= 15.0 &&
-                                    abs(ch50Med - ch50Plan) < 4.0
+                                val ch50Ok = lowMed != null &&
+                                    lowPlan != null &&
+                                    lowCalc != null &&
+                                    lowMed >= 15.0 &&
+                                    abs(lowCalc - lowPlan) < 4.0
                                 val highOk = highMed != null &&
                                     highPlan != null &&
+                                    highCalc != null &&
                                     highMed >= 15.0 &&
-                                    abs(highMed - highPlan) < 4.0
+                                    abs(highCalc - highPlan) < 4.0
                                 ch50Ok && highOk
                             } ?: false
                             adj != null &&
                                 adj.inputCh50Dbmv != null &&
                                 adj.inputCh116Dbmv != null &&
-                                (adj.inputHighFreqMHz == 750 || adj.inputHighFreqMHz == 870) &&
+                                (adj.inputHighFreqMHz == 750 || adj.inputHighFreqMHz == 870 || adj.inputHighFreqMHz == 1000) &&
+                                (adj.inputLowFreqMHz == 61 || adj.inputLowFreqMHz == 379) &&
+                                (adj.inputPlanLowFreqMHz == 61 || adj.inputPlanLowFreqMHz == 379) &&
+                                (adj.inputPlanHighFreqMHz == 750 || adj.inputPlanHighFreqMHz == 870 || adj.inputPlanHighFreqMHz == 1000) &&
                                 adj.inputPlanCh50Dbmv != null &&
                                 adj.inputPlanHighDbmv != null &&
                                 entradaValid &&
