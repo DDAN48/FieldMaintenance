@@ -13,7 +13,7 @@ class SplashActivity : ComponentActivity() {
         setContentView(R.layout.activity_splash)
 
         findViewById<TextView>(R.id.splash_version)?.text =
-            getString(R.string.splash_version, BuildConfig.VERSION_NAME)
+            getString(R.string.splash_version, com.example.fieldmaintenance.BuildConfig.VERSION_NAME)
 
         Handler(Looper.getMainLooper()).postDelayed({
             startActivity(Intent(this, MainActivity::class.java))

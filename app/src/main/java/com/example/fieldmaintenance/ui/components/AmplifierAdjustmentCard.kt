@@ -81,6 +81,9 @@ private fun ampTextSecondary(): Color = MaterialTheme.colorScheme.onSurfaceVaria
 private fun ampErrorColor(): Color = MaterialTheme.colorScheme.error
 
 @Composable
+private fun ampHighlightColor(): Color = Color(0xFFFFC107)
+
+@Composable
 fun AmplifierAdjustmentCard(
     assetId: String,
     bandwidth: Frequency?,
@@ -184,6 +187,19 @@ fun AmplifierAdjustmentCard(
                     onPersist(stable.copy(updatedAt = System.currentTimeMillis()))
                 }
             }
+    }
+
+    fun assignSelectedFreq(
+        currentLow: Int?,
+        currentHigh: Int?,
+        selected: Int
+    ): Pair<Int, Int> {
+        val low = currentLow ?: selected
+        val high = currentHigh ?: selected
+        if (selected == low || selected == high) return low to high
+        val proposedLow = if (selected < high) selected else low
+        val proposedHigh = if (selected < high) high else selected
+        return minOf(proposedLow, proposedHigh) to maxOf(proposedLow, proposedHigh)
     }
 
     val adj = buildAdjustment()
@@ -318,6 +334,28 @@ fun AmplifierAdjustmentCard(
                             CalcRowData("CH136", 870, entradaCalc?.get("CH136"), entradaPlanCalc?.get("CH136")),
                             CalcRowData("CH158", 1000, entradaCalc?.get("CH158"), entradaPlanCalc?.get("CH158")),
                         ),
+                        selectedMeasuredFreqs = setOf(lowMeasuredFreq, highMeasuredFreq),
+                        selectedPlanFreqs = setOf(lowPlanFreq, highPlanFreq),
+                        onSelectMeasured = { selected ->
+                            val (newLow, newHigh) = assignSelectedFreq(inLowFreq, inHighFreq, selected)
+                            if (newLow != inLowFreq || newHigh != inHighFreq) {
+                                dirty = true
+                                inLowFreq = newLow
+                                inHighFreq = newHigh
+                            }
+                        },
+                        onSelectPlan = { selected ->
+                            val (newLow, newHigh) = assignSelectedFreq(
+                                inPlanLowFreq ?: lowMeasuredFreq,
+                                inPlanHighFreq ?: highMeasuredFreq,
+                                selected
+                            )
+                            if (newLow != inPlanLowFreq || newHigh != inPlanHighFreq) {
+                                dirty = true
+                                inPlanLowFreq = newLow
+                                inPlanHighFreq = newHigh
+                            }
+                        },
                         measuredInputs = mapOf(
                             lowMeasuredFreq to CalcInputState(
                                 value = inCh50,
@@ -515,6 +553,7 @@ private fun DbmvField(
     isError: Boolean = false,
     compact: Boolean = false,
     compactHeight: Dp = 36.dp,
+    highlightBorder: Boolean = false,
     textColor: Color? = null,
     onChange: (String) -> Unit
 ) {
@@ -534,7 +573,11 @@ private fun DbmvField(
     }
 
     // Compact field: avoids text clipping and forces visible text color.
-    val borderColor = if (isError) ampErrorColor() else ampStrokeColor()
+    val borderColor = when {
+        isError -> ampErrorColor()
+        highlightBorder -> ampHighlightColor()
+        else -> ampStrokeColor()
+    }
     Column(modifier = modifier) {
         if (label.isNotBlank()) {
             Text(label, style = MaterialTheme.typography.labelSmall, color = ampTextSecondary())
@@ -717,6 +760,10 @@ private fun EntradaRowSingleValueWithFreqSelector(
 @Composable
 private fun SimpleCalcList(
     rows: List<CalcRowData>,
+    selectedMeasuredFreqs: Set<Int> = emptySet(),
+    selectedPlanFreqs: Set<Int> = emptySet(),
+    onSelectMeasured: ((Int) -> Unit)? = null,
+    onSelectPlan: ((Int) -> Unit)? = null,
     measuredInputs: Map<Int, CalcInputState> = emptyMap(),
     planInputs: Map<Int, CalcInputState> = emptyMap()
 ) {
@@ -745,6 +792,8 @@ private fun SimpleCalcList(
     rows.forEachIndexed { idx, r ->
         val measuredState = measuredInputs[r.freqMHz]
         val planState = planInputs[r.freqMHz]
+        val measuredSelected = selectedMeasuredFreqs.contains(r.freqMHz)
+        val planSelected = selectedPlanFreqs.contains(r.freqMHz)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -759,6 +808,82 @@ private fun SimpleCalcList(
                 fontSize = 12.sp,
                 softWrap = false,
                 maxLines = 1
+            )
+            if (measuredState != null) {
+                DbmvField(
+                    label = "",
+                    value = measuredState.value,
+                    modifier = Modifier.width(95.dp),
+                    compact = true,
+                    isError = measuredState.isError,
+                    highlightBorder = measuredSelected,
+                    onChange = measuredState.onChange
+                )
+            } else {
+                SelectableCalcValue(
+                    valueText = r.calc?.let { "${CiscoHfcAmpCalculator.format1(it)}" } ?: "—",
+                    highlight = measuredSelected,
+                    width = 95.dp,
+                    onClick = onSelectMeasured?.let { handler -> { handler(r.freqMHz) } }
+                )
+            }
+            if (planState != null) {
+                DbmvField(
+                    label = "",
+                    value = planState.value,
+                    modifier = Modifier.width(110.dp),
+                    compact = true,
+                    isError = planState.isError,
+                    highlightBorder = planSelected,
+                    onChange = planState.onChange
+                )
+            } else {
+                SelectableCalcValue(
+                    valueText = r.planCalc?.let { "${CiscoHfcAmpCalculator.format1(it)}" } ?: "—",
+                    highlight = planSelected,
+                    width = 110.dp,
+                    onClick = onSelectPlan?.let { handler -> { handler(r.freqMHz) } }
+                )
+            }
+        }
+        if (idx != rows.lastIndex) {
+            HorizontalDivider(color = ampDividerColor(), thickness = 1.dp)
+        }
+    }
+}
+
+@Composable
+private fun SelectableCalcValue(
+    valueText: String,
+    highlight: Boolean,
+    width: Dp,
+    onClick: (() -> Unit)? = null
+) {
+    val borderColor = if (highlight) ampHighlightColor() else ampStrokeColor()
+    val modifier = Modifier
+        .width(width)
+        .height(36.dp)
+        .let { base ->
+            if (onClick != null) base.clickable { onClick() } else base
+        }
+    Surface(
+        modifier = modifier,
+        color = ampCardColor(),
+        border = BorderStroke(1.dp, borderColor),
+        shape = MaterialTheme.shapes.small
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp),
+            contentAlignment = Alignment.CenterEnd
+        ) {
+            Text(
+                valueText,
+                textAlign = TextAlign.End,
+                fontWeight = FontWeight.SemiBold,
+                color = ampTextPrimary(),
+                fontSize = 12.sp
             )
             if (measuredState != null) {
                 DbmvField(
@@ -798,9 +923,6 @@ private fun SimpleCalcList(
                     fontSize = 12.sp
                 )
             }
-        }
-        if (idx != rows.lastIndex) {
-            HorizontalDivider(color = ampDividerColor(), thickness = 1.dp)
         }
     }
 }
