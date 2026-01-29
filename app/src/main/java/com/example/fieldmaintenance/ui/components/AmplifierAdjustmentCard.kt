@@ -86,10 +86,38 @@ fun AmplifierAdjustmentCard(
 
     fun fmt(text: Double?): String = text?.let { CiscoHfcAmpCalculator.format1(it) } ?: ""
 
-    // Inputs (strings to preserve comma/typing)
-    var inCh50 by rememberSaveable { mutableStateOf("") }
-    var inHigh by rememberSaveable { mutableStateOf("") }
-    var inHighFreq by rememberSaveable { mutableStateOf<Int?>(750) } // 750 (CH116) or 870 (CH136)
+    // Niveles ENTRADA table: selectable 2 cells per column.
+    // Medido: only CH50/CH116/CH136 are eligible for selection/edit.
+    // Plano: CH3/CH50/CH116/CH136/CH158 are eligible for selection/edit.
+    val entradaRows = remember {
+        listOf(
+            EntradaRow("L 54", 54),
+            EntradaRow("L102", 102),
+            EntradaRow("CH3", 61),
+            EntradaRow("CH50", 379),
+            EntradaRow("CH70", 495),
+            EntradaRow("CH116", 750),
+            EntradaRow("CH136", 870),
+            EntradaRow("CH158", 1000),
+        )
+    }
+    val medidoEligibleFreq = remember { setOf(379, 750, 870) }
+    val planoEligibleFreq = remember { setOf(61, 379, 750, 870, 1000) }
+
+    // Keep as Strings for typing (commas etc). We store only the 2 selected points per column.
+    var medSelOrder by rememberSaveable { mutableStateOf(listOf<Int>()) } // freq MHz in selection order (max 2)
+    var planSelOrder by rememberSaveable { mutableStateOf(listOf<Int>()) } // freq MHz in selection order (max 2)
+
+    // Store values per eligible frequency to avoid shifting bugs when selection order changes.
+    var medVal379 by rememberSaveable { mutableStateOf("") }
+    var medVal750 by rememberSaveable { mutableStateOf("") }
+    var medVal870 by rememberSaveable { mutableStateOf("") }
+
+    var planVal61 by rememberSaveable { mutableStateOf("") }
+    var planVal379 by rememberSaveable { mutableStateOf("") }
+    var planVal750 by rememberSaveable { mutableStateOf("") }
+    var planVal870 by rememberSaveable { mutableStateOf("") }
+    var planVal1000 by rememberSaveable { mutableStateOf("") }
 
     var planLowFreq by rememberSaveable { mutableStateOf<Int?>(54) }
     var planLowDbmv by rememberSaveable { mutableStateOf("") }
@@ -108,9 +136,55 @@ fun AmplifierAdjustmentCard(
         if (dirty) return@LaunchedEffect
         if (initial == null) return@LaunchedEffect
 
-        inCh50 = fmt(initial.inputCh50Dbmv)
-        inHigh = fmt(initial.inputCh116Dbmv)
-        inHighFreq = initial.inputHighFreqMHz ?: 750
+        // New fields first
+        val m1f = initial.inMedidoP1FreqMHz
+        val m2f = initial.inMedidoP2FreqMHz
+        val p1f = initial.inPlanoP1FreqMHz
+        val p2f = initial.inPlanoP2FreqMHz
+
+        fun setMedValue(freq: Int, value: String) {
+            when (freq) {
+                379 -> medVal379 = value
+                750 -> medVal750 = value
+                870 -> medVal870 = value
+            }
+        }
+        fun setPlanValue(freq: Int, value: String) {
+            when (freq) {
+                61 -> planVal61 = value
+                379 -> planVal379 = value
+                750 -> planVal750 = value
+                870 -> planVal870 = value
+                1000 -> planVal1000 = value
+            }
+        }
+
+        // If new fields exist, use them; else migrate from legacy (CH50 + high)
+        if (m1f != null) setMedValue(m1f, fmt(initial.inMedidoP1Dbmv))
+        if (m2f != null) setMedValue(m2f, fmt(initial.inMedidoP2Dbmv))
+        if (m1f != null && m2f != null) {
+            medSelOrder = listOf(m1f, m2f).distinct().filter { medidoEligibleFreq.contains(it) }.take(2)
+        } else {
+            val legacyHighFreq = initial.inputHighFreqMHz ?: 750
+            medSelOrder = listOf(379, legacyHighFreq).distinct().filter { medidoEligibleFreq.contains(it) }.take(2)
+            setMedValue(379, fmt(initial.inputCh50Dbmv))
+            setMedValue(legacyHighFreq, fmt(initial.inputCh116Dbmv))
+        }
+
+        if (p1f != null) setPlanValue(p1f, fmt(initial.inPlanoP1Dbmv))
+        if (p2f != null) setPlanValue(p2f, fmt(initial.inPlanoP2Dbmv))
+        if (p1f != null && p2f != null) {
+            planSelOrder = listOf(p1f, p2f).distinct().filter { planoEligibleFreq.contains(it) }.take(2)
+        } else {
+            // Leave Plano empty for old DBs
+            planSelOrder = emptyList()
+            planVal61 = ""
+            planVal379 = ""
+            planVal750 = ""
+            planVal870 = ""
+            planVal1000 = ""
+        }
+
         planLowFreq = initial.planLowFreqMHz ?: 54
         planLowDbmv = fmt(initial.planLowDbmv)
         planHighFreq = initial.planHighFreqMHz ?: 750
@@ -122,12 +196,76 @@ fun AmplifierAdjustmentCard(
         outCh136 = fmt(initial.outCh136Dbmv)
     }
 
+    fun getMedValue(freq: Int): String = when (freq) {
+        379 -> medVal379
+        750 -> medVal750
+        870 -> medVal870
+        else -> ""
+    }
+    fun setMedValue(freq: Int, value: String) {
+        when (freq) {
+            379 -> medVal379 = value
+            750 -> medVal750 = value
+            870 -> medVal870 = value
+        }
+    }
+
+    fun getPlanValue(freq: Int): String = when (freq) {
+        61 -> planVal61
+        379 -> planVal379
+        750 -> planVal750
+        870 -> planVal870
+        1000 -> planVal1000
+        else -> ""
+    }
+    fun setPlanValue(freq: Int, value: String) {
+        when (freq) {
+            61 -> planVal61 = value
+            379 -> planVal379 = value
+            750 -> planVal750 = value
+            870 -> planVal870 = value
+            1000 -> planVal1000 = value
+        }
+    }
+
+    fun updateSelection(order: List<Int>, freq: Int): List<Int> {
+        return if (order.contains(freq)) {
+            order.filterNot { it == freq }
+        } else {
+            if (order.size < 2) order + freq else (order.drop(1) + freq)
+        }
+    }
+
     fun buildAdjustment(): AmplifierAdjustment {
+        val medF1 = medSelOrder.getOrNull(0)
+        val medF2 = medSelOrder.getOrNull(1)
+        val plF1 = planSelOrder.getOrNull(0)
+        val plF2 = planSelOrder.getOrNull(1)
+
         return AmplifierAdjustment(
             assetId = assetId,
-            inputCh50Dbmv = parseDbmv(inCh50),
-            inputCh116Dbmv = parseDbmv(inHigh),
-            inputHighFreqMHz = inHighFreq,
+            inMedidoP1FreqMHz = medF1,
+            inMedidoP1Dbmv = medF1?.let { parseDbmv(getMedValue(it)) },
+            inMedidoP2FreqMHz = medF2,
+            inMedidoP2Dbmv = medF2?.let { parseDbmv(getMedValue(it)) },
+
+            inPlanoP1FreqMHz = plF1,
+            inPlanoP1Dbmv = plF1?.let { parseDbmv(getPlanValue(it)) },
+            inPlanoP2FreqMHz = plF2,
+            inPlanoP2Dbmv = plF2?.let { parseDbmv(getPlanValue(it)) },
+
+            // Legacy fields: fill only if selection matches old schema (CH50 + high)
+            inputCh50Dbmv = if (medF1 == 379 || medF2 == 379) parseDbmv(medVal379) else null,
+            inputCh116Dbmv = when {
+                medF1 == 750 || medF2 == 750 -> parseDbmv(medVal750)
+                medF1 == 870 || medF2 == 870 -> parseDbmv(medVal870)
+                else -> null
+            },
+            inputHighFreqMHz = when {
+                medF1 == 750 || medF1 == 870 -> medF1
+                medF2 == 750 || medF2 == 870 -> medF2
+                else -> null
+            },
             planLowFreqMHz = planLowFreq,
             planLowDbmv = parseDbmv(planLowDbmv),
             planHighFreqMHz = planHighFreq,
@@ -160,6 +298,7 @@ fun AmplifierAdjustmentCard(
 
     val adj = buildAdjustment()
     val entradaCalc = CiscoHfcAmpCalculator.nivelesEntradaCalculados(adj)
+    val entradaPlanoCalc = CiscoHfcAmpCalculator.nivelesEntradaPlanoCalculados(adj)
     val salidaCalc = CiscoHfcAmpCalculator.nivelesSalidaCalculados(adj)
     val tilt = CiscoHfcAmpCalculator.fwdInEqTilt(adj, bandwidth)
     val pad = CiscoHfcAmpCalculator.fwdInPad(adj, bandwidth, amplifierMode)
@@ -216,41 +355,53 @@ fun AmplifierAdjustmentCard(
                     expanded = entradaExpanded,
                     onToggle = { entradaExpanded = !entradaExpanded }
                 ) {
-                    // Header row like the reference (CANAL / FRECUENCIA / AMPLITUD)
-                    HeaderRow(c3 = "AMPLITUD (dBmV)")
-                    MedidoRow(
-                        canal = "CH50",
-                        freqText = "379 MHz",
-                        value = inCh50,
-                        isError = showRequiredErrors && parseDbmv(inCh50) == null,
-                        onChange = { dirty = true; inCh50 = it }
-                    )
-                    val highFreq = inHighFreq ?: 750
-                    val highCanal = if (highFreq == 870) "CH136" else "CH116"
-                    MedidoRowWithFreqSelector(
-                        canal = highCanal,
-                        freqMHz = highFreq,
-                        optionsMHz = listOf(750, 870),
-                        onFreqChange = { dirty = true; inHighFreq = it },
-                        value = inHigh,
-                        isError = showRequiredErrors && parseDbmv(inHigh) == null,
-                        onChange = { dirty = true; inHigh = it }
-                    )
+                    EntradaTableHeader()
+                    entradaRows.forEach { r ->
+                        val medSelected = medSelOrder.contains(r.freqMHz) && medidoEligibleFreq.contains(r.freqMHz)
+                        val planSelected = planSelOrder.contains(r.freqMHz) && planoEligibleFreq.contains(r.freqMHz)
+                        val medEditable = medSelected
+                        val planEditable = planSelected
 
-                    Spacer(Modifier.height(10.dp))
-                    // Calculated list (no extra title; CALC column already indicates)
-                    SimpleCalcList(
-                        rows = listOf(
-                            CalcRowData("L 54", "54 MHz", entradaCalc?.get("L 54")),
-                            CalcRowData("L102", "102 MHz", entradaCalc?.get("L102")),
-                            CalcRowData("CH3", "61 MHz", entradaCalc?.get("CH3")),
-                            CalcRowData("CH50", "379 MHz", entradaCalc?.get("CH50")),
-                            CalcRowData("CH70", "495 MHz", entradaCalc?.get("CH70")),
-                            CalcRowData("CH116", "750 MHz", entradaCalc?.get("CH116")),
-                            CalcRowData("CH136", "870 MHz", entradaCalc?.get("CH136")),
-                            CalcRowData("CH158", "1000 MHz", entradaCalc?.get("CH158")),
+                        val medValueText = if (medSelected) getMedValue(r.freqMHz)
+                        else entradaCalc?.get(r.canal)?.let { CiscoHfcAmpCalculator.format1(it) } ?: ""
+
+                        val planValueText = if (planSelected) getPlanValue(r.freqMHz)
+                        else entradaPlanoCalc?.get(r.canal)?.let { CiscoHfcAmpCalculator.format1(it) } ?: ""
+
+                        EntradaTableRow(
+                            canal = r.canal,
+                            freqText = "${r.freqMHz}",
+                            medidoText = medValueText,
+                            planoText = planValueText,
+                            medidoEditable = medEditable,
+                            planoEditable = planEditable,
+                            medidoSelected = medSelected,
+                            planoSelected = planSelected,
+                            onMedidoClick = {
+                                if (!medidoEligibleFreq.contains(r.freqMHz)) return@EntradaTableRow
+                                dirty = true
+                                val next = updateSelection(medSelOrder, r.freqMHz)
+                                // Drop any non-eligible selection just in case (requirement)
+                                medSelOrder = next.filter { medidoEligibleFreq.contains(it) }.take(2)
+                            },
+                            onPlanoClick = {
+                                if (!planoEligibleFreq.contains(r.freqMHz)) return@EntradaTableRow
+                                dirty = true
+                                planSelOrder = updateSelection(planSelOrder, r.freqMHz).filter { planoEligibleFreq.contains(it) }.take(2)
+                            },
+                            onMedidoChange = { txt ->
+                                dirty = true
+                                setMedValue(r.freqMHz, txt)
+                            },
+                            onPlanoChange = { txt ->
+                                dirty = true
+                                setPlanValue(r.freqMHz, txt)
+                            },
+                            showRequiredErrors = showRequiredErrors,
+                            medidoError = medEditable && showRequiredErrors && parseDbmv(medValueText) == null,
+                            planoError = planEditable && showRequiredErrors && parseDbmv(planValueText) == null,
                         )
-                    )
+                    }
                 }
 
                 CollapsibleSection(
@@ -761,6 +912,124 @@ private fun CompareHeaderRow() {
         Text("DIF", modifier = Modifier.width(44.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.End)
     }
     Spacer(Modifier.height(6.dp))
+}
+
+private data class EntradaRow(val canal: String, val freqMHz: Int)
+
+@Composable
+private fun EntradaTableHeader() {
+    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text("CANAL", modifier = Modifier.width(72.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
+        Text("FREQ\n(MHz)", modifier = Modifier.width(64.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
+        Text("Medido\n(dBmV)", modifier = Modifier.weight(1f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
+        Spacer(Modifier.width(10.dp))
+        Text("Plano\n(dBmV)", modifier = Modifier.weight(1f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
+    }
+    Spacer(Modifier.height(8.dp))
+}
+
+@Composable
+private fun EntradaTableRow(
+    canal: String,
+    freqText: String,
+    medidoText: String,
+    planoText: String,
+    medidoEditable: Boolean,
+    planoEditable: Boolean,
+    medidoSelected: Boolean,
+    planoSelected: Boolean,
+    onMedidoClick: () -> Unit,
+    onPlanoClick: () -> Unit,
+    onMedidoChange: (String) -> Unit,
+    onPlanoChange: (String) -> Unit,
+    showRequiredErrors: Boolean,
+    medidoError: Boolean,
+    planoError: Boolean,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(canal, modifier = Modifier.width(72.dp), fontWeight = FontWeight.SemiBold)
+        Text(freqText, modifier = Modifier.width(64.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f), textAlign = TextAlign.Center)
+
+        SelectableDbmvCell(
+            text = medidoText,
+            selected = medidoSelected,
+            editable = medidoEditable,
+            isError = showRequiredErrors && medidoError,
+            onClick = onMedidoClick,
+            onChange = onMedidoChange,
+            modifier = Modifier.weight(1f)
+        )
+
+        Spacer(Modifier.width(10.dp))
+
+        SelectableDbmvCell(
+            text = planoText,
+            selected = planoSelected,
+            editable = planoEditable,
+            isError = showRequiredErrors && planoError,
+            onClick = onPlanoClick,
+            onChange = onPlanoChange,
+            modifier = Modifier.weight(1f)
+        )
+    }
+    HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+}
+
+@Composable
+private fun SelectableDbmvCell(
+    text: String,
+    selected: Boolean,
+    editable: Boolean,
+    isError: Boolean,
+    onClick: () -> Unit,
+    onChange: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val borderColor = when {
+        selected -> Color(0xFFFFC107) // yellow selection border
+        isError -> MaterialTheme.colorScheme.error
+        else -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.15f)
+    }
+    Surface(
+        modifier = modifier
+            .height(36.dp)
+            .clickable { onClick() },
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, borderColor),
+        shape = MaterialTheme.shapes.small
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(36.dp)
+                .padding(horizontal = 10.dp),
+            contentAlignment = Alignment.CenterStart
+        ) {
+            if (editable) {
+                BasicTextField(
+                    value = text,
+                    onValueChange = onChange,
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            } else {
+                Text(
+                    text = if (text.isBlank()) "—" else text,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (text.isBlank()) 0.55f else 1f),
+                    modifier = Modifier.fillMaxWidth(),
+                    textAlign = TextAlign.Center
+                )
+            }
+        }
+    }
 }
 
 
