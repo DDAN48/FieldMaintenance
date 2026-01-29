@@ -22,7 +22,7 @@
           "1310": {"pilotTarget": 27.3, "tolerance": 1},
           "1550": {"pilotTarget": 28.3, "tolerance": 1},
           "digitalOffset": -6,
-          "digitalTolerance": 1
+          "digitalTolerance": 1.5
         },
         "channels": {
           "50": {"target": 41, "tolerance": 3},
@@ -37,7 +37,7 @@
           "1310": {"pilotTarget": 27.3, "tolerance": 1},
           "1550": {"pilotTarget": 28.3, "tolerance": 1},
           "digitalOffset": -6,
-          "digitalTolerance": 1
+          "digitalTolerance": 1.5
         },
         "channels": {
           "50": {"target": 41, "tolerance": 3},
