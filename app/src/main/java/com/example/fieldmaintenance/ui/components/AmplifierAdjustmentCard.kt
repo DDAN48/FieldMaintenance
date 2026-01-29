@@ -629,7 +629,7 @@ private fun DbmvField(
                     .fillMaxWidth()
                     .height(compactHeight)
                     .padding(horizontal = 10.dp),
-                contentAlignment = Alignment.CenterStart
+                contentAlignment = Alignment.CenterEnd
             ) {
                 BasicTextField(
                     value = value,
@@ -640,7 +640,8 @@ private fun DbmvField(
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     textStyle = MaterialTheme.typography.bodyMedium.copy(
-                        color = (textColor ?: ampTextPrimary()).copy(alpha = if (enabled) 1f else 0.7f)
+                        color = (textColor ?: ampTextPrimary()).copy(alpha = if (enabled) 1f else 0.7f),
+                        textAlign = TextAlign.End
                     ),
                     modifier = Modifier
                         .fillMaxWidth()
@@ -876,6 +877,9 @@ private fun SimpleCalcList(
                 ) {
                     Text(
                         r.calc?.let { "${CiscoHfcAmpCalculator.format1(it)}" } ?: "—",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(end = 10.dp),
                         textAlign = TextAlign.End,
                         fontWeight = FontWeight.SemiBold,
                         color = if (canSelect) ampTextPrimary() else ampTextPrimary(),
@@ -905,6 +909,9 @@ private fun SimpleCalcList(
                 ) {
                     Text(
                         r.planCalc?.let { "${CiscoHfcAmpCalculator.format1(it)}" } ?: "—",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(end = 10.dp),
                         textAlign = TextAlign.End,
                         fontWeight = FontWeight.SemiBold,
                         color = ampTextPrimary(),
