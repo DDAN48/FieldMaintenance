@@ -2434,7 +2434,8 @@ private fun AssetFileSection(
                 updated,
                 expectedDocsisOverride = moduleRequired.expectedDocsis,
                 expectedChannelOverride = moduleRequired.expectedChannel,
-                extraGeoPoints = channelExpertGeoPoints(verificationSummaryRx)
+                extraGeoPoints = channelExpertGeoPoints(verificationSummaryRx),
+                isModuleMeasurement = true
             )
         }
     }
@@ -2485,7 +2486,8 @@ private fun AssetFileSection(
                 moduleDiscardedLabels,
                 expectedDocsisOverride = moduleRequired.expectedDocsis,
                 expectedChannelOverride = moduleRequired.expectedChannel,
-                extraGeoPoints = channelExpertGeoPoints(verificationSummaryRx)
+                extraGeoPoints = channelExpertGeoPoints(verificationSummaryRx),
+                isModuleMeasurement = true
             )
             verificationSummaryModule = summary
             val duplicates = summary.result.duplicateFileNames + summary.result.duplicateEntryNames
@@ -2545,7 +2547,8 @@ private fun AssetFileSection(
                     if (isModule) moduleDiscardedLabels else rxDiscardedLabels,
                     expectedDocsisOverride = required.expectedDocsis,
                     expectedChannelOverride = required.expectedChannel,
-                    extraGeoPoints = if (isModule) channelExpertGeoPoints(verificationSummaryRx) else emptyList()
+                    extraGeoPoints = if (isModule) channelExpertGeoPoints(verificationSummaryRx) else emptyList(),
+                    isModuleMeasurement = isModule
                 )
             } else {
                 null
