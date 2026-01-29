@@ -2324,6 +2324,9 @@ private fun AssetFileSection(
     val moduleAssetDir = remember(reportFolder, moduleAsset) {
         MaintenanceStorage.ensureAssetDir(context, reportFolder, moduleAsset)
     }
+    // For NODE assets, module measurements are stored under an AMPLIFIER folder,
+    // but must be validated/displayed using NODE rules (measurement_validation.json).
+    val moduleValidationAsset = if (isNodeAsset) asset else moduleAsset
     var rxFiles by remember(rxAssetDir) { mutableStateOf(rxAssetDir.listFiles()?.sortedBy { it.name } ?: emptyList()) }
     var moduleFiles by remember(moduleAssetDir) { mutableStateOf(moduleAssetDir.listFiles()?.sortedBy { it.name } ?: emptyList()) }
     val scope = rememberCoroutineScope()
@@ -2421,12 +2424,12 @@ private fun AssetFileSection(
         }
         moduleDiscardedLabels = updated
         saveDiscardedLabels(moduleDiscardedFile, updated)
-        val moduleRequired = requiredCounts(moduleAsset.type, isModule = true)
+        val moduleRequired = requiredCounts(moduleValidationAsset.type, isModule = true)
         scope.launch {
             verificationSummaryModule = verifyMeasurementFiles(
                 context,
                 moduleFiles,
-                moduleAsset,
+                moduleValidationAsset,
                 repository,
                 updated,
                 expectedDocsisOverride = moduleRequired.expectedDocsis,
@@ -2472,12 +2475,12 @@ private fun AssetFileSection(
 
     LaunchedEffect(moduleFiles, moduleDiscardedLabels, verificationSummaryRx) {
         if (!isNodeAsset) return@LaunchedEffect
-        val moduleRequired = requiredCounts(moduleAsset.type, isModule = true)
+        val moduleRequired = requiredCounts(moduleValidationAsset.type, isModule = true)
         if (moduleFiles.isNotEmpty()) {
             val summary = verifyMeasurementFiles(
                 context,
                 moduleFiles,
-                moduleAsset,
+                moduleValidationAsset,
                 repository,
                 moduleDiscardedLabels,
                 expectedDocsisOverride = moduleRequired.expectedDocsis,
@@ -2529,7 +2532,7 @@ private fun AssetFileSection(
                 rxAssetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
             }
             val required = if (isModule) {
-                requiredCounts(moduleAsset.type, isModule = true)
+                requiredCounts(moduleValidationAsset.type, isModule = true)
             } else {
                 requiredCounts(asset.type, isModule = false)
             }
@@ -2537,7 +2540,7 @@ private fun AssetFileSection(
                 verifyMeasurementFiles(
                     context,
                     updated,
-                    if (isModule) moduleAsset else asset,
+                    if (isModule) moduleValidationAsset else asset,
                     repository,
                     if (isModule) moduleDiscardedLabels else rxDiscardedLabels,
                     expectedDocsisOverride = required.expectedDocsis,
@@ -3068,7 +3071,8 @@ private fun AssetFileSection(
                             Spacer(Modifier.height(8.dp))
                             val channelTabs = channelTableEntries.mapIndexed { index, entry ->
                                 MeasurementTab(
-                                    label = "M${index + 1}",
+                                    // For NODE RX we always show "RX" (single measurement expected).
+                                    label = if (index == 0) "RX" else "RX${index + 1}",
                                     entry = entry,
                                     hasError = channelHasError(entry)
                                 )
@@ -3294,24 +3298,53 @@ private fun AssetFileSection(
                                 return match?.groupValues?.getOrNull(1)?.toIntOrNull() ?: Int.MAX_VALUE
                             }
 
-                            val docsisTabs = docsisTableEntries
-                                .sortedBy(::measurementIndex)
-                                .mapIndexed { index, entry ->
-                                    MeasurementTab(
-                                        label = "M${index + 1}",
-                                        entry = entry,
-                                        hasError = docsisHasError(entry)
-                                    )
-                                }
-                            val channelTabs = channelTableEntries
-                                .sortedBy(::measurementIndex)
-                                .mapIndexed { index, entry ->
-                                    MeasurementTab(
-                                        label = "M${index + 1}",
-                                        entry = entry,
-                                        hasError = channelHasError(entry)
-                                    )
-                                }
+                            fun portIndexFromLabel(label: String): Int? {
+                                val fileLabel = label.substringAfterLast('/').substringBeforeLast('.')
+                                val normalized = fileLabel.uppercase(Locale.getDefault())
+                                val regex = Regex("""(?:\bPUERTO\s*_?\s*([1-4])\b|\bP\s*_?\s*([1-4])\b)""")
+                                val match = regex.find(normalized) ?: return null
+                                val n = match.groupValues.getOrNull(1)?.takeIf { it.isNotBlank() }
+                                    ?: match.groupValues.getOrNull(2)?.takeIf { it.isNotBlank() }
+                                return n?.toIntOrNull()
+                            }
+
+                            fun labelForNodeModuleEntry(entry: MeasurementEntry, fallbackIndex: Int, used: MutableSet<String>): String {
+                                val port = portIndexFromLabel(entry.label)
+                                val base = if (port != null) "P$port" else "P?"
+                                var label = base
+                                if (label in used) label = "${base}_${fallbackIndex + 1}"
+                                used.add(label)
+                                return label
+                            }
+
+                            val isNodeModule = isModule
+                            val docsisSorted = if (isNodeModule) {
+                                docsisTableEntries.sortedWith(compareBy<MeasurementEntry>({ portIndexFromLabel(it.label) ?: Int.MAX_VALUE }, { it.label }))
+                            } else {
+                                docsisTableEntries.sortedBy(::measurementIndex)
+                            }
+                            val channelSorted = if (isNodeModule) {
+                                channelTableEntries.sortedWith(compareBy<MeasurementEntry>({ portIndexFromLabel(it.label) ?: Int.MAX_VALUE }, { it.label }))
+                            } else {
+                                channelTableEntries.sortedBy(::measurementIndex)
+                            }
+
+                            val docsisUsed = mutableSetOf<String>()
+                            val channelUsed = mutableSetOf<String>()
+                            val docsisTabs = docsisSorted.mapIndexed { index, entry ->
+                                MeasurementTab(
+                                    label = if (isNodeModule) labelForNodeModuleEntry(entry, index, docsisUsed) else "M${index + 1}",
+                                    entry = entry,
+                                    hasError = docsisHasError(entry)
+                                )
+                            }
+                            val channelTabs = channelSorted.mapIndexed { index, entry ->
+                                MeasurementTab(
+                                    label = if (isNodeModule) labelForNodeModuleEntry(entry, index, channelUsed) else "M${index + 1}",
+                                    entry = entry,
+                                    hasError = channelHasError(entry)
+                                )
+                            }
 
                             var showDocsis by rememberSaveable(assetForDisplay.id) { mutableStateOf(false) }
                             Row(
@@ -3981,7 +4014,7 @@ private fun AssetFileSection(
                         verificationSummaryModule?.let { summary ->
                             VerificationSummaryView(
                                 summary,
-                                moduleAsset,
+                                moduleValidationAsset,
                                 ::toggleDiscardModule,
                                 onRequestDelete = { entry ->
                                     pendingDeleteEntry = entry
