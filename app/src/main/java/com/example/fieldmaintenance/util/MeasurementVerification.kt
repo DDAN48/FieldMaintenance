@@ -364,6 +364,40 @@ private fun docsisRange(ruleTable: JSONObject?): Pair<Double?, Double?> {
     return null to null
 }
 
+private data class LegacyTxTargets(
+    val txType: String,
+    val pilotTarget: Double,
+    val pilotTolerance: Double,
+    val digitalOffset: Double,
+    val digitalTolerance: Double
+)
+
+private fun legacyNodeTxTargets(
+    rules: JSONObject?,
+    equipmentKey: String,
+    nodeTxType: String?
+): LegacyTxTargets? {
+    if (rules == null) return null
+    val txType = nodeTxType?.trim()?.takeIf { it == "1310" || it == "1550" } ?: return null
+    val ruleTable = rules.optJSONObject("channelexpert")
+        ?.optJSONObject("node")
+        ?.optJSONObject(equipmentKey)
+        ?.optJSONObject("txTargets")
+        ?: return null
+    val pilotRule = ruleTable.optJSONObject(txType) ?: return null
+    val pilotTarget = pilotRule.optDouble("pilotTarget", Double.NaN).takeIf { !it.isNaN() } ?: return null
+    val pilotTolerance = pilotRule.optDouble("tolerance", Double.NaN).takeIf { !it.isNaN() } ?: return null
+    val digitalOffset = ruleTable.optDouble("digitalOffset", Double.NaN).takeIf { !it.isNaN() } ?: return null
+    val digitalTolerance = ruleTable.optDouble("digitalTolerance", Double.NaN).takeIf { !it.isNaN() } ?: return null
+    return LegacyTxTargets(
+        txType = txType,
+        pilotTarget = pilotTarget,
+        pilotTolerance = pilotTolerance,
+        digitalOffset = digitalOffset,
+        digitalTolerance = digitalTolerance
+    )
+}
+
 private fun validateMeasurementValues(
     rules: JSONObject?,
     test: JSONObject,
@@ -372,6 +406,7 @@ private fun validateMeasurementValues(
     assetType: AssetType,
     amplifierTargets: Map<Int, Double>?,
     nodeTxType: String?,
+    isLegacyNode: Boolean,
     skipChannelValidation: Boolean,
     toleranceOverride: Double?,
     switchSelection: String?
@@ -419,6 +454,39 @@ private fun validateMeasurementValues(
         if (ruleTable == null) {
             return listOf("No hay reglas de ChannelExpert para $assetKey/$equipmentKey.")
         }
+
+        // Nodo Legacy (RX): validar niveles según TX (1310/1550) usando txTargets.
+        // - CH110 se toma como PILOT (pilotTarget ± tolerance)
+        // - CH50/70/116/136 se validan como "digital" (pilotTarget + digitalOffset ± digitalTolerance)
+        val legacyTx = if (assetType == AssetType.NODE && isLegacyNode) legacyNodeTxTargets(rules, equipmentKey, nodeTxType) else null
+        val legacyPilotChannels = setOf(50, 70, 116, 136)
+        if (legacyTx != null) {
+            val pilotRow = rows.firstOrNull { it.channel == 110 }
+            val pilotLevel = pilotRow?.levelDbmv
+            if (pilotLevel == null) {
+                issues.add("No se encontr? nivel PILOT (CH110) para validar RX Legacy.")
+            } else {
+                val adjusted = pilotLevel + testPointOffset
+                if (adjusted < legacyTx.pilotTarget - legacyTx.pilotTolerance || adjusted > legacyTx.pilotTarget + legacyTx.pilotTolerance) {
+                    issues.add("PILOT fuera de rango (CH110) para TX ${legacyTx.txType}.")
+                }
+            }
+            legacyPilotChannels.forEach { ch ->
+                val row = rows.firstOrNull { it.channel == ch }
+                val level = row?.levelDbmv
+                if (level == null) {
+                    issues.add("No se encontr? nivel para canal $ch (RX Legacy).")
+                } else {
+                    val adjusted = level + testPointOffset
+                    val target = legacyTx.pilotTarget + legacyTx.digitalOffset
+                    val tol = legacyTx.digitalTolerance
+                    if (adjusted < target - tol || adjusted > target + tol) {
+                        issues.add("Nivel fuera de rango en canal $ch (RX Legacy).")
+                    }
+                }
+            }
+        }
+
         val merRule = ruleTable.optJSONObject("mer") ?: rules.optJSONObject("channelexpert")
             ?.optJSONObject("common")
             ?.optJSONObject("mer")
@@ -435,6 +503,8 @@ private fun validateMeasurementValues(
             val channel = key.toIntOrNull() ?: continue
             // Node RX: CH110 no se valida para niveles (dBmV).
             if (assetType == AssetType.NODE && channel == 110) continue
+            // Nodo Legacy (RX): si tenemos txTargets, los niveles de estos canales se validan por txTargets.
+            if (assetType == AssetType.NODE && isLegacyNode && legacyTx != null && legacyPilotChannels.contains(channel)) continue
             val rule = channels.optJSONObject(key) ?: continue
             fun resolveTolerance(ruleTolerance: Double?, maxTolerance: Double?): Double? {
                 return when {
@@ -638,6 +708,7 @@ suspend fun verifyMeasurementFiles(
     extraGeoPoints: List<GeoPoint> = emptyList()
 ): MeasurementVerificationSummary {
     val assetType = asset.type
+    val isLegacyNode = assetType == AssetType.NODE && asset.technology?.equals("Legacy", ignoreCase = true) == true
     val expectedDocsis = expectedDocsisOverride ?: when (assetType) {
         AssetType.NODE -> 0
         AssetType.AMPLIFIER -> 4
@@ -1063,9 +1134,25 @@ suspend fun verifyMeasurementFiles(
                         ?.optJSONObject(assetKey)
                         ?.optJSONObject(equipmentKey)
                         ?.optJSONObject("channels")
+                    val legacyTx = if (assetType == AssetType.NODE && isLegacyNode) legacyNodeTxTargets(rules, equipmentKey, nodeTxType) else null
+                    val legacyPilotChannels = setOf(50, 70, 116, 136)
                     pilotLevels.forEach { (channel, level) ->
                         // Node RX: CH110 no se valida para niveles (dBmV).
-                        if (assetType == AssetType.NODE && channel == 110) return@forEach
+                        if (assetType == AssetType.NODE && channel == 110) {
+                            if (legacyTx == null) return@forEach
+                            val adjusted = level + testPointOffset
+                            val ok = adjusted >= legacyTx.pilotTarget - legacyTx.pilotTolerance &&
+                                adjusted <= legacyTx.pilotTarget + legacyTx.pilotTolerance
+                            pilotOk[channel] = ok
+                            return@forEach
+                        }
+                        if (assetType == AssetType.NODE && isLegacyNode && legacyTx != null && legacyPilotChannels.contains(channel)) {
+                            val adjusted = level + testPointOffset
+                            val target = legacyTx.pilotTarget + legacyTx.digitalOffset
+                            val tol = legacyTx.digitalTolerance
+                            pilotOk[channel] = adjusted >= target - tol && adjusted <= target + tol
+                            return@forEach
+                        }
                         val rule = channelRules?.optJSONObject(channel.toString())
                         val adjusted = level + testPointOffset
                         if (rule?.has("source") == true) {
@@ -1132,6 +1219,7 @@ suspend fun verifyMeasurementFiles(
                     assetType = assetType,
                     amplifierTargets = amplifierTargets,
                     nodeTxType = nodeTxType,
+                isLegacyNode = assetType == AssetType.NODE && asset.technology?.equals("Legacy", ignoreCase = true) == true,
                     skipChannelValidation = switchSelection == "IN",
                     toleranceOverride = toleranceOverride,
                     switchSelection = switchSelection
