@@ -2775,6 +2775,7 @@ private fun AssetFileSection(
                         fun channelHasError(entry: MeasurementEntry): Boolean {
                             val pilotError = entry.pilotLevelOk.values.any { !it }
                             val digitalError = entry.digitalRows.any { row ->
+                                (row.levelOk == false) ||
                                 (row.merOk == false) ||
                                     (row.berPreOk == false) ||
                                     (row.berPostOk == false) ||
@@ -3108,6 +3109,7 @@ private fun AssetFileSection(
                                             val level = row.levelDbmv
                                             if (frequency != null && level != null) {
                                                 val isRowValid = listOf(
+                                                    row.levelOk,
                                                     row.merOk,
                                                     row.berPreOk,
                                                     row.berPostOk,
@@ -3267,6 +3269,7 @@ private fun AssetFileSection(
                                     ) {
                                         entry.digitalRows.forEach { row ->
                                             val invalidCells = buildSet {
+                                                if (row.levelOk == false) add(2)
                                                 if (row.merOk == false) add(3)
                                                 if (row.berPreOk == false) add(4)
                                                 if (row.berPostOk == false) add(5)
@@ -3473,6 +3476,7 @@ private fun AssetFileSection(
                                                 val level = row.levelDbmv
                                                 if (frequency != null && level != null) {
                                                     val isRowValid = listOf(
+                                                        row.levelOk,
                                                         row.merOk,
                                                         row.berPreOk,
                                                         row.berPostOk,
@@ -3561,6 +3565,7 @@ private fun AssetFileSection(
                                         ) {
                                             entry.digitalRows.forEach { row ->
                                                 val invalidCells = buildSet {
+                                                    if (row.levelOk == false) add(2)
                                                     if (row.merOk == false) add(3)
                                                     if (row.berPreOk == false) add(4)
                                                     if (row.berPostOk == false) add(5)
@@ -3786,6 +3791,7 @@ private fun AssetFileSection(
                                             val level = row.levelDbmv
                                             if (frequency != null && level != null) {
                                                 val isRowValid = listOf(
+                                                    row.levelOk,
                                                     row.merOk,
                                                     row.berPreOk,
                                                     row.berPostOk,
@@ -3945,6 +3951,7 @@ private fun AssetFileSection(
                                     ) {
                                         entry.digitalRows.forEach { row ->
                                             val invalidCells = buildSet {
+                                                if (row.levelOk == false) add(2)
                                                 if (row.merOk == false) add(3)
                                                 if (row.berPreOk == false) add(4)
                                                 if (row.berPostOk == false) add(5)

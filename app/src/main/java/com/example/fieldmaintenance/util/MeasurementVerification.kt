@@ -456,30 +456,21 @@ private fun validateMeasurementValues(
         }
 
         // Nodo Legacy (RX): validar niveles según TX (1310/1550) usando txTargets.
-        // - CH110 se toma como PILOT (pilotTarget ± tolerance) para Legacy.
-        // - CH50/70/116/136 se validan como "digital" (pilotTarget + digitalOffset ± digitalTolerance)
+        // - CH110 NO se valida para niveles (según requerimiento).
+        // - CH50/70/116/136 (analógicos) se validan contra pilotTarget ± tolerance.
+        // - digitalOffset/digitalTolerance aplican a los canales digitales (no a estos analógicos).
         val legacyTx = if (assetType == AssetType.NODE && isLegacyNode) legacyNodeTxTargets(rules, equipmentKey, nodeTxType) else null
-        val legacyPilotChannels = setOf(50, 70, 116, 136)
+        val legacyAnalogChannels = setOf(50, 70, 116, 136)
         if (legacyTx != null) {
-            val pilot = rows.firstOrNull { it.channel == 110 }?.levelDbmv
-            if (pilot != null) {
-                val min = legacyTx.pilotTarget - legacyTx.pilotTolerance
-                val max = legacyTx.pilotTarget + legacyTx.pilotTolerance
-                if (!isWithinRange(pilot, min, max)) {
-                    issues.add("PILOT fuera de rango (TX ${legacyTx.txType}).")
-                }
-            }
-            legacyPilotChannels.forEach { ch ->
+            legacyAnalogChannels.forEach { ch ->
                 val row = rows.firstOrNull { it.channel == ch }
                 val level = row?.levelDbmv
                 if (level == null) {
                     issues.add("No se encontr? nivel para canal $ch (RX Legacy).")
                 } else {
-                    // Para txTargets (Legacy RX) se valida el valor tal como viene en la medición (sin offset de punto de prueba).
-                    val adjusted = level
-                    val target = legacyTx.pilotTarget + legacyTx.digitalOffset
-                    val tol = legacyTx.digitalTolerance
-                    if (adjusted < target - tol || adjusted > target + tol) {
+                    val min = legacyTx.pilotTarget - legacyTx.pilotTolerance
+                    val max = legacyTx.pilotTarget + legacyTx.pilotTolerance
+                    if (!isWithinRange(level, min, max)) {
                         issues.add("Nivel fuera de rango en canal $ch (RX Legacy).")
                     }
                 }
@@ -503,7 +494,7 @@ private fun validateMeasurementValues(
             // Node RX: CH110 no se valida por la tabla "channels" (se usa txTargets en Legacy).
             if (assetType == AssetType.NODE && channel == 110) continue
             // Nodo Legacy (RX): si tenemos txTargets, los niveles de estos canales se validan por txTargets.
-            if (assetType == AssetType.NODE && isLegacyNode && legacyTx != null && legacyPilotChannels.contains(channel)) continue
+            if (assetType == AssetType.NODE && isLegacyNode && legacyTx != null && legacyAnalogChannels.contains(channel)) continue
             val rule = channels.optJSONObject(key) ?: continue
             fun resolveTolerance(ruleTolerance: Double?, maxTolerance: Double?): Double? {
                 return when {
@@ -1138,22 +1129,18 @@ suspend fun verifyMeasurementFiles(
                         ?.optJSONObject(equipmentKey)
                         ?.optJSONObject("channels")
                     val legacyTx = if (assetType == AssetType.NODE && isLegacyNode) legacyNodeTxTargets(rules, equipmentKey, nodeTxType) else null
-                    val legacyPilotChannels = setOf(50, 70, 116, 136)
+                    val legacyAnalogChannels = setOf(50, 70, 116, 136)
                     pilotLevels.forEach { (channel, level) ->
-                        // Node RX: CH110 no se valida por la tabla "channels"; en Legacy se valida con txTargets.
+                        // Node RX: CH110 NO se valida para niveles.
                         if (assetType == AssetType.NODE && channel == 110) {
-                            if (legacyTx == null) return@forEach
+                            pilotOk[channel] = true
+                            return@forEach
+                        }
+                        // Nodo Legacy (RX): los analógicos se validan por pilotTarget ± tolerance.
+                        if (assetType == AssetType.NODE && isLegacyNode && legacyTx != null && legacyAnalogChannels.contains(channel)) {
                             val min = legacyTx.pilotTarget - legacyTx.pilotTolerance
                             val max = legacyTx.pilotTarget + legacyTx.pilotTolerance
                             pilotOk[channel] = isWithinRange(level, min, max)
-                            return@forEach
-                        }
-                        if (assetType == AssetType.NODE && isLegacyNode && legacyTx != null && legacyPilotChannels.contains(channel)) {
-                            // Para txTargets (Legacy RX) se valida el valor tal como viene en la medición (sin offset de punto de prueba).
-                            val adjusted = level
-                            val target = legacyTx.pilotTarget + legacyTx.digitalOffset
-                            val tol = legacyTx.digitalTolerance
-                            pilotOk[channel] = adjusted >= target - tol && adjusted <= target + tol
                             return@forEach
                         }
                         val rule = channelRules?.optJSONObject(channel.toString())
@@ -1175,14 +1162,26 @@ suspend fun verifyMeasurementFiles(
                 val berPreMax = common?.optJSONObject("berPre")?.optDouble("max", Double.NaN)?.takeIf { !it.isNaN() }
                 val berPostMax = common?.optJSONObject("berPost")?.optDouble("max", Double.NaN)?.takeIf { !it.isNaN() }
                 val icfrMax = common?.optJSONObject("icfr")?.optDouble("max", Double.NaN)?.takeIf { !it.isNaN() }
+                val legacyTxTargets = if (assetType == AssetType.NODE && isLegacyNode) {
+                    legacyNodeTxTargets(rules, equipmentKey, nodeTxType)
+                } else {
+                    null
+                }
                 val digitalRows = rows.filter { it.channel != null && it.channel in 14..115 }
                     .mapNotNull { row ->
                         val channel = row.channel ?: return@mapNotNull null
+                        val legacyLevelOk = if (legacyTxTargets != null && row.levelDbmv != null) {
+                            val target = legacyTxTargets.pilotTarget + legacyTxTargets.digitalOffset
+                            val tol = legacyTxTargets.digitalTolerance
+                            isWithinRange(row.levelDbmv, target - tol, target + tol)
+                        } else {
+                            null
+                        }
                         DigitalChannelRow(
                             channel = channel,
                             frequencyMHz = row.frequencyMHz,
                             levelDbmv = row.levelDbmv,
-                            levelOk = null,
+                            levelOk = legacyLevelOk,
                             mer = row.merDb,
                             berPre = row.berPre,
                             berPost = row.berPost,
