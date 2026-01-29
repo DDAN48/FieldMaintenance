@@ -1084,6 +1084,19 @@ suspend fun verifyMeasurementFiles(
                     return adjusted >= target - tolerance && adjusted <= target + tolerance
                 }
 
+                // DOCSIS: siempre validar por rango (independiente de switches/toleranceOverride).
+                if (rules != null) {
+                    val assetKey = if (assetType == AssetType.NODE) "node" else "amplifier"
+                    val docsisRules = rules.optJSONObject("docsisexpert")
+                        ?.optJSONObject(assetKey)
+                        ?.optJSONObject(equipmentKey)
+                    val (min, max) = docsisRange(docsisRules)
+                    docsisLevels.forEach { (freq, level) ->
+                        val adjusted = level + testPointOffset
+                        docsisOk[freq] = isWithinRange(adjusted, min, max)
+                    }
+                }
+
                 if (useInputValidation) {
                     val (ch50Ok, highOk) = ampInputStatus ?: (true to true)
                     pilotLevels.keys.forEach { channel ->
@@ -1111,15 +1124,6 @@ suspend fun verifyMeasurementFiles(
                     }
                 } else if (rules != null) {
                     val assetKey = if (assetType == AssetType.NODE) "node" else "amplifier"
-                    val docsisRules = rules.optJSONObject("docsisexpert")
-                        ?.optJSONObject(assetKey)
-                        ?.optJSONObject(equipmentKey)
-                    val (min, max) = docsisRange(docsisRules)
-                    docsisLevels.forEach { (freq, level) ->
-                        val adjusted = level + testPointOffset
-                        docsisOk[freq] = isWithinRange(adjusted, min, max)
-                    }
-
                     val channelRules = rules.optJSONObject("channelexpert")
                         ?.optJSONObject(assetKey)
                         ?.optJSONObject(equipmentKey)
