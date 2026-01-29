@@ -810,7 +810,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                             document.add(Paragraph(" "))
                             
                             val docsisText = when (asset.frequencyMHz) {
-                                42 -> "DOCSIS en el equipo debe estar entre (29 a 34) dBmV ± 1dB"
+                                42 -> "DOCSIS en el equipo debe estar entre (32 a 37) dBmV ± 1dB"
                                 85 -> "DOCSIS en el equipo debe estar entre (30 a 35) dBmV ± 1dB"
                                 else -> "DOCSIS (frecuencia no especificada)"
                             }
