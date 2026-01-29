@@ -3345,25 +3345,7 @@ private fun AssetFileSection(
                                     hasError = channelHasError(entry)
                                 )
                             }
-
-                            var showDocsis by rememberSaveable(assetForDisplay.id) { mutableStateOf(false) }
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.Center
-                            ) {
-                                Text("ChannelExpert", color = tableTextSecondary, fontSize = 12.sp)
-                                Spacer(Modifier.width(8.dp))
-                                Switch(
-                                    checked = showDocsis,
-                                    onCheckedChange = { showDocsis = it }
-                                )
-                                Spacer(Modifier.width(8.dp))
-                                Text("DocsisExpert", color = tableTextSecondary, fontSize = 12.sp)
-                            }
-                            Spacer(Modifier.height(8.dp))
-
-                            if (showDocsis) {
+                            if (docsisTabs.isNotEmpty()) {
                                 Text("DOCSIS Expert $docsisCountLabel", color = tableTextPrimary, fontSize = 18.sp)
                                 Spacer(Modifier.height(8.dp))
                                 val docsisLabelForEntry = docsisTabs.associate { it.entry to it.label }
@@ -3455,7 +3437,10 @@ private fun AssetFileSection(
                                         }
                                     }
                                 }
-                            } else {
+                                Spacer(Modifier.height(12.dp))
+                            }
+
+                            if (channelTabs.isNotEmpty()) {
                                 Text("Channel Expert $channelCountLabel", color = tableTextPrimary, fontSize = 18.sp)
                                 Spacer(Modifier.height(8.dp))
                                 val channelLabelForEntry = channelTabs.associate { it.entry to it.label }

@@ -456,18 +456,27 @@ private fun validateMeasurementValues(
         }
 
         // Nodo Legacy (RX): validar niveles según TX (1310/1550) usando txTargets.
-        // - CH110 NO se valida para niveles (según requerimiento).
+        // - CH110 se toma como PILOT (pilotTarget ± tolerance) para Legacy.
         // - CH50/70/116/136 se validan como "digital" (pilotTarget + digitalOffset ± digitalTolerance)
         val legacyTx = if (assetType == AssetType.NODE && isLegacyNode) legacyNodeTxTargets(rules, equipmentKey, nodeTxType) else null
         val legacyPilotChannels = setOf(50, 70, 116, 136)
         if (legacyTx != null) {
+            val pilot = rows.firstOrNull { it.channel == 110 }?.levelDbmv
+            if (pilot != null) {
+                val min = legacyTx.pilotTarget - legacyTx.pilotTolerance
+                val max = legacyTx.pilotTarget + legacyTx.pilotTolerance
+                if (!isWithinRange(pilot, min, max)) {
+                    issues.add("PILOT fuera de rango (TX ${legacyTx.txType}).")
+                }
+            }
             legacyPilotChannels.forEach { ch ->
                 val row = rows.firstOrNull { it.channel == ch }
                 val level = row?.levelDbmv
                 if (level == null) {
                     issues.add("No se encontr? nivel para canal $ch (RX Legacy).")
                 } else {
-                    val adjusted = level + testPointOffset
+                    // Para txTargets (Legacy RX) se valida el valor tal como viene en la medición (sin offset de punto de prueba).
+                    val adjusted = level
                     val target = legacyTx.pilotTarget + legacyTx.digitalOffset
                     val tol = legacyTx.digitalTolerance
                     if (adjusted < target - tol || adjusted > target + tol) {
@@ -491,7 +500,7 @@ private fun validateMeasurementValues(
         while (keys.hasNext()) {
             val key = keys.next()
             val channel = key.toIntOrNull() ?: continue
-            // Node RX: CH110 no se valida para niveles (dBmV).
+            // Node RX: CH110 no se valida por la tabla "channels" (se usa txTargets en Legacy).
             if (assetType == AssetType.NODE && channel == 110) continue
             // Nodo Legacy (RX): si tenemos txTargets, los niveles de estos canales se validan por txTargets.
             if (assetType == AssetType.NODE && isLegacyNode && legacyTx != null && legacyPilotChannels.contains(channel)) continue
@@ -1131,10 +1140,17 @@ suspend fun verifyMeasurementFiles(
                     val legacyTx = if (assetType == AssetType.NODE && isLegacyNode) legacyNodeTxTargets(rules, equipmentKey, nodeTxType) else null
                     val legacyPilotChannels = setOf(50, 70, 116, 136)
                     pilotLevels.forEach { (channel, level) ->
-                        // Node RX: CH110 no se valida para niveles (dBmV).
-                        if (assetType == AssetType.NODE && channel == 110) return@forEach
+                        // Node RX: CH110 no se valida por la tabla "channels"; en Legacy se valida con txTargets.
+                        if (assetType == AssetType.NODE && channel == 110) {
+                            if (legacyTx == null) return@forEach
+                            val min = legacyTx.pilotTarget - legacyTx.pilotTolerance
+                            val max = legacyTx.pilotTarget + legacyTx.pilotTolerance
+                            pilotOk[channel] = isWithinRange(level, min, max)
+                            return@forEach
+                        }
                         if (assetType == AssetType.NODE && isLegacyNode && legacyTx != null && legacyPilotChannels.contains(channel)) {
-                            val adjusted = level + testPointOffset
+                            // Para txTargets (Legacy RX) se valida el valor tal como viene en la medición (sin offset de punto de prueba).
+                            val adjusted = level
                             val target = legacyTx.pilotTarget + legacyTx.digitalOffset
                             val tol = legacyTx.digitalTolerance
                             pilotOk[channel] = adjusted >= target - tol && adjusted <= target + tol
