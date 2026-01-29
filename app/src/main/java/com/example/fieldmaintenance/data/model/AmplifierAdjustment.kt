@@ -13,6 +13,25 @@ data class AmplifierAdjustment(
     @PrimaryKey val assetId: String,
 
     // Input levels (measured at amp input)
+    /**
+     * New model (2026): two selectable points (among CH3/CH50/CH116/CH136/CH158) for the "Medido" recta.
+     * The UI lets the user choose which 2 channels are editable.
+     */
+    val inMedidoP1FreqMHz: Int? = null,
+    val inMedidoP1Dbmv: Double? = null,
+    val inMedidoP2FreqMHz: Int? = null,
+    val inMedidoP2Dbmv: Double? = null,
+
+    /**
+     * New model (2026): two selectable points (among CH3/CH50/CH116/CH136/CH158) for the "Plano" recta.
+     * This column is only used to calculate the recta (and derived values).
+     */
+    val inPlanoP1FreqMHz: Int? = null,
+    val inPlanoP1Dbmv: Double? = null,
+    val inPlanoP2FreqMHz: Int? = null,
+    val inPlanoP2Dbmv: Double? = null,
+
+    // Legacy (kept for backward compatibility / migration)
     val inputCh50Dbmv: Double? = null,
     val inputCh116Dbmv: Double? = null,
     /**

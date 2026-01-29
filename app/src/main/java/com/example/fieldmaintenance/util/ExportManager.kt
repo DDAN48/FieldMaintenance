@@ -847,29 +847,11 @@ val assets = repository.getAssetsByReportId(report.id).first()
                 if (adj != null) {
                     val bw = freqEnumFromMHz(asset.frequencyMHz)
                     val entradaCalc = CiscoHfcAmpCalculator.nivelesEntradaCalculados(adj)
+                    val entradaPlanoCalc = CiscoHfcAmpCalculator.nivelesEntradaPlanoCalculados(adj)
                     val salidaCalc = CiscoHfcAmpCalculator.nivelesSalidaCalculados(adj)
                     val pad = CiscoHfcAmpCalculator.fwdInPad(adj, bw, asset.amplifierMode)
                     val tilt = CiscoHfcAmpCalculator.fwdInEqTilt(adj, bw)
                     val agc = CiscoHfcAmpCalculator.agcPad(adj, bw, asset.amplifierMode)
-
-                    addTable(
-                        document,
-                        "Niveles ENTRADA medidos",
-                        headers = listOf("CANAL", "FREQ", "AMPLITUD (dBmV)"),
-                        rows = listOf(
-                            listOf(
-                                "CH50" to null,
-                                "379 MHz" to null,
-                                (adj.inputCh50Dbmv?.let { CiscoHfcAmpCalculator.format1(it) } ?: "—") to null
-                            ),
-                            listOf(
-                                (if ((adj.inputHighFreqMHz ?: 750) == 870) "CH136" else "CH116") to null,
-                                "${adj.inputHighFreqMHz ?: 750} MHz" to null,
-                                (adj.inputCh116Dbmv?.let { CiscoHfcAmpCalculator.format1(it) } ?: "—") to null
-                            )
-                        ),
-                        colWidths = floatArrayOf(20f, 25f, 55f)
-                    )
 
                     val entradaRows = listOf(
                         "L 54" to 54,
@@ -884,15 +866,16 @@ val assets = repository.getAssetsByReportId(report.id).first()
                         listOf(
                             c to null,
                             "$f MHz" to null,
-                            (entradaCalc?.get(c)?.let { CiscoHfcAmpCalculator.format1(it) } ?: "—") to null
+                            (entradaCalc?.get(c)?.let { CiscoHfcAmpCalculator.format1(it) } ?: "—") to null,
+                            (entradaPlanoCalc?.get(c)?.let { CiscoHfcAmpCalculator.format1(it) } ?: "—") to null
                         )
                     }
                     addTable(
                         document,
-                        "Niveles ENTRADA calculados",
-                        headers = listOf("CANAL", "FREQ", "CALC (dBmV)"),
+                        "Niveles ENTRADA (Medido vs Plano)",
+                        headers = listOf("CANAL", "FREQ", "Medido (dBmV)", "Plano (dBmV)"),
                         rows = entradaRows,
-                        colWidths = floatArrayOf(20f, 25f, 55f)
+                        colWidths = floatArrayOf(18f, 22f, 30f, 30f)
                     )
 
                     addTable(

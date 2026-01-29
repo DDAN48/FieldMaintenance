@@ -21,7 +21,7 @@ import com.example.fieldmaintenance.data.model.ReportPhoto
 
 @Database(
     entities = [MaintenanceReport::class, Asset::class, Photo::class, AmplifierAdjustment::class, PassiveItem::class, ReportPhoto::class, NodeAdjustment::class],
-    version = 11,
+    version = 12,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -191,6 +191,42 @@ abstract class AppDatabase : RoomDatabase() {
                         // La columna ya existe, continuar
                     }
                 }
+            }
+        }
+
+        val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // New amp input table: allow two selectable points for "Medido" and "Plano"
+                val cols = listOf(
+                    "inMedidoP1FreqMHz INTEGER",
+                    "inMedidoP1Dbmv REAL",
+                    "inMedidoP2FreqMHz INTEGER",
+                    "inMedidoP2Dbmv REAL",
+                    "inPlanoP1FreqMHz INTEGER",
+                    "inPlanoP1Dbmv REAL",
+                    "inPlanoP2FreqMHz INTEGER",
+                    "inPlanoP2Dbmv REAL"
+                )
+                cols.forEach { def ->
+                    try {
+                        db.execSQL("ALTER TABLE amplifier_adjustments ADD COLUMN $def")
+                    } catch (_: Exception) {
+                        // Column may already exist on some installations
+                    }
+                }
+
+                // Backfill "Medido" points from legacy schema (CH50 + high [750/870])
+                db.execSQL(
+                    """
+                    UPDATE amplifier_adjustments
+                    SET
+                        inMedidoP1FreqMHz = 379,
+                        inMedidoP1Dbmv = inputCh50Dbmv,
+                        inMedidoP2FreqMHz = COALESCE(inputHighFreqMHz, 750),
+                        inMedidoP2Dbmv = inputCh116Dbmv
+                    WHERE inMedidoP1FreqMHz IS NULL AND inMedidoP2FreqMHz IS NULL
+                    """.trimIndent()
+                )
             }
         }
     }

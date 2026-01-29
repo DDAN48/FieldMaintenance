@@ -15,10 +15,29 @@ object CiscoHfcAmpCalculator {
     }
 
     fun buildEntradaRecta(adj: AmplifierAdjustment): Recta? {
+        // Prefer new selectable points (Medido)
+        val f1New = adj.inMedidoP1FreqMHz?.toDouble()
+        val a1New = adj.inMedidoP1Dbmv
+        val f2New = adj.inMedidoP2FreqMHz?.toDouble()
+        val a2New = adj.inMedidoP2Dbmv
+        if (f1New != null && a1New != null && f2New != null && a2New != null && f1New != f2New) {
+            return Recta(f1New, a1New, f2New, a2New)
+        }
+
+        // Fallback to legacy fields
         val a1 = adj.inputCh50Dbmv ?: return null
         val a2 = adj.inputCh116Dbmv ?: return null
         val f2 = (adj.inputHighFreqMHz ?: 750).toDouble()
         return Recta(379.0, a1, f2, a2)
+    }
+
+    fun buildEntradaPlanoRecta(adj: AmplifierAdjustment): Recta? {
+        val f1 = adj.inPlanoP1FreqMHz?.toDouble() ?: return null
+        val a1 = adj.inPlanoP1Dbmv ?: return null
+        val f2 = adj.inPlanoP2FreqMHz?.toDouble() ?: return null
+        val a2 = adj.inPlanoP2Dbmv ?: return null
+        if (f1 == f2) return null
+        return Recta(f1, a1, f2, a2)
     }
 
     fun buildSalidaRecta(adj: AmplifierAdjustment): Recta? {
@@ -34,6 +53,20 @@ object CiscoHfcAmpCalculator {
      */
     fun nivelesEntradaCalculados(adj: AmplifierAdjustment): Map<String, Double>? {
         val r = buildEntradaRecta(adj) ?: return null
+        return linkedMapOf(
+            "L 54" to r.valueAt(54.0),
+            "L102" to r.valueAt(102.0),
+            "CH3" to r.valueAt(61.0),
+            "CH50" to r.valueAt(379.0),
+            "CH70" to r.valueAt(495.0),
+            "CH116" to r.valueAt(750.0),
+            "CH136" to r.valueAt(870.0),
+            "CH158" to r.valueAt(1000.0),
+        )
+    }
+
+    fun nivelesEntradaPlanoCalculados(adj: AmplifierAdjustment): Map<String, Double>? {
+        val r = buildEntradaPlanoRecta(adj) ?: return null
         return linkedMapOf(
             "L 54" to r.valueAt(54.0),
             "L102" to r.valueAt(102.0),

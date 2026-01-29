@@ -172,9 +172,31 @@ fun AddAssetScreen(navController: NavController, reportId: String, assetId: Stri
         val amplifierTablesOk = if (assetType != AssetType.AMPLIFIER) true else {
             val okAdj = (frequency != null && amplifierMode != null) &&
                 ampAdj != null &&
-                ampAdj.inputCh50Dbmv != null &&
-                ampAdj.inputCh116Dbmv != null &&
-                (ampAdj.inputHighFreqMHz == 750 || ampAdj.inputHighFreqMHz == 870) &&
+                // ENTRADA (Medido): 2 selected points among CH50/CH116/CH136 (379/750/870)
+                (
+                    (
+                        ampAdj.inMedidoP1FreqMHz in listOf(379, 750, 870) &&
+                            ampAdj.inMedidoP2FreqMHz in listOf(379, 750, 870) &&
+                            ampAdj.inMedidoP1FreqMHz != ampAdj.inMedidoP2FreqMHz &&
+                            ampAdj.inMedidoP1Dbmv != null &&
+                            ampAdj.inMedidoP2Dbmv != null
+                    ) || (
+                        // Legacy fallback for older saved assets
+                        ampAdj.inputCh50Dbmv != null &&
+                            ampAdj.inputCh116Dbmv != null &&
+                            (ampAdj.inputHighFreqMHz == 750 || ampAdj.inputHighFreqMHz == 870)
+                    )
+                ) &&
+                // ENTRADA (Plano): 2 selected points among CH3/CH50/CH116/CH136/CH158 (61/379/750/870/1000)
+                (
+                    isEdit || (
+                        ampAdj.inPlanoP1FreqMHz in listOf(61, 379, 750, 870, 1000) &&
+                            ampAdj.inPlanoP2FreqMHz in listOf(61, 379, 750, 870, 1000) &&
+                            ampAdj.inPlanoP1FreqMHz != ampAdj.inPlanoP2FreqMHz &&
+                            ampAdj.inPlanoP1Dbmv != null &&
+                            ampAdj.inPlanoP2Dbmv != null
+                    )
+                ) &&
                 ampAdj.planLowDbmv != null &&
                 ampAdj.planHighDbmv != null &&
                 ampAdj.outCh50Dbmv != null &&
