@@ -456,21 +456,11 @@ private fun validateMeasurementValues(
         }
 
         // Nodo Legacy (RX): validar niveles según TX (1310/1550) usando txTargets.
-        // - CH110 se toma como PILOT (pilotTarget ± tolerance)
+        // - CH110 NO se valida para niveles (según requerimiento).
         // - CH50/70/116/136 se validan como "digital" (pilotTarget + digitalOffset ± digitalTolerance)
         val legacyTx = if (assetType == AssetType.NODE && isLegacyNode) legacyNodeTxTargets(rules, equipmentKey, nodeTxType) else null
         val legacyPilotChannels = setOf(50, 70, 116, 136)
         if (legacyTx != null) {
-            val pilotRow = rows.firstOrNull { it.channel == 110 }
-            val pilotLevel = pilotRow?.levelDbmv
-            if (pilotLevel == null) {
-                issues.add("No se encontr? nivel PILOT (CH110) para validar RX Legacy.")
-            } else {
-                val adjusted = pilotLevel + testPointOffset
-                if (adjusted < legacyTx.pilotTarget - legacyTx.pilotTolerance || adjusted > legacyTx.pilotTarget + legacyTx.pilotTolerance) {
-                    issues.add("PILOT fuera de rango (CH110) para TX ${legacyTx.txType}.")
-                }
-            }
             legacyPilotChannels.forEach { ch ->
                 val row = rows.firstOrNull { it.channel == ch }
                 val level = row?.levelDbmv
@@ -1138,14 +1128,7 @@ suspend fun verifyMeasurementFiles(
                     val legacyPilotChannels = setOf(50, 70, 116, 136)
                     pilotLevels.forEach { (channel, level) ->
                         // Node RX: CH110 no se valida para niveles (dBmV).
-                        if (assetType == AssetType.NODE && channel == 110) {
-                            if (legacyTx == null) return@forEach
-                            val adjusted = level + testPointOffset
-                            val ok = adjusted >= legacyTx.pilotTarget - legacyTx.pilotTolerance &&
-                                adjusted <= legacyTx.pilotTarget + legacyTx.pilotTolerance
-                            pilotOk[channel] = ok
-                            return@forEach
-                        }
+                        if (assetType == AssetType.NODE && channel == 110) return@forEach
                         if (assetType == AssetType.NODE && isLegacyNode && legacyTx != null && legacyPilotChannels.contains(channel)) {
                             val adjusted = level + testPointOffset
                             val target = legacyTx.pilotTarget + legacyTx.digitalOffset
