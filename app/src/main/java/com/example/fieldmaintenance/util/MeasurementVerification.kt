@@ -433,6 +433,8 @@ private fun validateMeasurementValues(
         while (keys.hasNext()) {
             val key = keys.next()
             val channel = key.toIntOrNull() ?: continue
+            // Node RX: CH110 no se valida para niveles (dBmV).
+            if (assetType == AssetType.NODE && channel == 110) continue
             val rule = channels.optJSONObject(key) ?: continue
             fun resolveTolerance(ruleTolerance: Double?, maxTolerance: Double?): Double? {
                 return when {
@@ -1028,6 +1030,8 @@ suspend fun verifyMeasurementFiles(
                     }
                 } else if (toleranceOverride != null) {
                     pilotLevels.forEach { (channel, level) ->
+                        // Node RX: CH110 no se valida para niveles (dBmV).
+                        if (assetType == AssetType.NODE && channel == 110) return@forEach
                         val adjusted = level + testPointOffset
                         val rule = rules
                             ?.optJSONObject("channelexpert")
@@ -1060,6 +1064,8 @@ suspend fun verifyMeasurementFiles(
                         ?.optJSONObject(equipmentKey)
                         ?.optJSONObject("channels")
                     pilotLevels.forEach { (channel, level) ->
+                        // Node RX: CH110 no se valida para niveles (dBmV).
+                        if (assetType == AssetType.NODE && channel == 110) return@forEach
                         val rule = channelRules?.optJSONObject(channel.toString())
                         val adjusted = level + testPointOffset
                         if (rule?.has("source") == true) {
