@@ -301,6 +301,12 @@ fun AmplifierAdjustmentCard(
                     val highPlanCalc = CiscoHfcAmpCalculator.entradaCalcValueForFreq(adj, highPlanFreq)
                     val lowPlanValue = parseDbmv(inPlanCh50)
                     val highPlanValue = parseDbmv(inPlanHigh)
+                    val lowMeasuredValue = parseDbmv(inCh50)
+                    val highMeasuredValue = parseDbmv(inHigh)
+                    val lowDelta = if (lowPlanValue != null && lowPlanCalc != null) kotlin.math.abs(lowPlanCalc - lowPlanValue) else null
+                    val highDelta = if (highPlanValue != null && highPlanCalc != null) kotlin.math.abs(highPlanCalc - highPlanValue) else null
+                    val lowMeasuredBad = (lowMeasuredValue != null && lowMeasuredValue < 15.0) || (lowDelta != null && lowDelta >= 4.0)
+                    val highMeasuredBad = (highMeasuredValue != null && highMeasuredValue < 15.0) || (highDelta != null && highDelta >= 4.0)
                     LaunchedEffect(inPlanCh50, inPlanLowFreq, entradaCalc) {
                         val lowPlanCanal = CiscoHfcAmpCalculator.inputChannelLabelForFreq(lowPlanFreq)
                         maybeTriggerEntradaAlert(
@@ -337,6 +343,7 @@ fun AmplifierAdjustmentCard(
                                 value = inCh50,
                                 onChange = { dirty = true; inCh50 = it },
                                 isError = showRequiredErrors && parseDbmv(inCh50) == null,
+                                textColor = if (lowMeasuredBad) ampErrorColor() else null,
                                 enabled = activeEntradaEdit == EntradaEditTarget.MEASURED_LOW,
                                 selected = activeEntradaEdit == EntradaEditTarget.MEASURED_LOW,
                                 onSelect = { activeEntradaEdit = EntradaEditTarget.MEASURED_LOW }
@@ -345,6 +352,7 @@ fun AmplifierAdjustmentCard(
                                 value = inHigh,
                                 onChange = { dirty = true; inHigh = it },
                                 isError = showRequiredErrors && parseDbmv(inHigh) == null,
+                                textColor = if (highMeasuredBad) ampErrorColor() else null,
                                 enabled = activeEntradaEdit == EntradaEditTarget.MEASURED_HIGH,
                                 selected = activeEntradaEdit == EntradaEditTarget.MEASURED_HIGH,
                                 onSelect = { activeEntradaEdit = EntradaEditTarget.MEASURED_HIGH }
@@ -621,7 +629,7 @@ private fun DbmvField(
                     .fillMaxWidth()
                     .height(compactHeight)
                     .padding(horizontal = 10.dp),
-                contentAlignment = Alignment.CenterStart
+                contentAlignment = Alignment.CenterEnd
             ) {
                 BasicTextField(
                     value = value,
@@ -632,7 +640,8 @@ private fun DbmvField(
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     textStyle = MaterialTheme.typography.bodyMedium.copy(
-                        color = (textColor ?: ampTextPrimary()).copy(alpha = if (enabled) 1f else 0.7f)
+                        color = (textColor ?: ampTextPrimary()).copy(alpha = if (enabled) 1f else 0.7f),
+                        textAlign = TextAlign.End
                     ),
                     modifier = Modifier
                         .fillMaxWidth()
@@ -697,7 +706,8 @@ private data class CalcInputState(
     val isError: Boolean,
     val enabled: Boolean = true,
     val selected: Boolean = false,
-    val onSelect: (() -> Unit)? = null
+    val onSelect: (() -> Unit)? = null,
+    val textColor: Color? = null
 )
 
 @Composable
@@ -851,6 +861,7 @@ private fun SimpleCalcList(
                     modifier = Modifier.width(95.dp),
                     compact = true,
                     isError = measuredState.isError,
+                    textColor = measuredState.textColor,
                     enabled = measuredState.enabled,
                     selected = measuredState.selected,
                     onClick = measuredState.onSelect,
@@ -866,6 +877,9 @@ private fun SimpleCalcList(
                 ) {
                     Text(
                         r.calc?.let { "${CiscoHfcAmpCalculator.format1(it)}" } ?: "—",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(end = 10.dp),
                         textAlign = TextAlign.End,
                         fontWeight = FontWeight.SemiBold,
                         color = if (canSelect) ampTextPrimary() else ampTextPrimary(),
@@ -895,6 +909,9 @@ private fun SimpleCalcList(
                 ) {
                     Text(
                         r.planCalc?.let { "${CiscoHfcAmpCalculator.format1(it)}" } ?: "—",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(end = 10.dp),
                         textAlign = TextAlign.End,
                         fontWeight = FontWeight.SemiBold,
                         color = ampTextPrimary(),

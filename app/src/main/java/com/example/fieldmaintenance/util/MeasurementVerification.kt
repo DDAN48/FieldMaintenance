@@ -407,6 +407,7 @@ private fun validateMeasurementValues(
     amplifierTargets: Map<Int, Double>?,
     nodeTxType: String?,
     isLegacyNode: Boolean,
+    isModuleMeasurement: Boolean,
     skipChannelValidation: Boolean,
     toleranceOverride: Double?,
     switchSelection: String?
@@ -695,7 +696,8 @@ suspend fun verifyMeasurementFiles(
     discardedLabels: Set<String>,
     expectedDocsisOverride: Int? = null,
     expectedChannelOverride: Int? = null,
-    extraGeoPoints: List<GeoPoint> = emptyList()
+    extraGeoPoints: List<GeoPoint> = emptyList(),
+    isModuleMeasurement: Boolean = false
 ): MeasurementVerificationSummary {
     val assetType = asset.type
     val isLegacyNode = assetType == AssetType.NODE && asset.technology?.equals("Legacy", ignoreCase = true) == true
@@ -1170,7 +1172,8 @@ suspend fun verifyMeasurementFiles(
                 val digitalRows = rows.filter { it.channel != null && it.channel in 14..115 }
                     .mapNotNull { row ->
                         val channel = row.channel ?: return@mapNotNull null
-                        val legacyLevelOk = if (legacyTxTargets != null && row.levelDbmv != null) {
+                        // For NODE module measurements, Downstream Digital Channels do NOT validate LEVELS.
+                        val legacyLevelOk = if (!isModuleMeasurement && legacyTxTargets != null && row.levelDbmv != null) {
                             val target = legacyTxTargets.pilotTarget + legacyTxTargets.digitalOffset
                             val tol = legacyTxTargets.digitalTolerance
                             isWithinRange(row.levelDbmv, target - tol, target + tol)
@@ -1222,6 +1225,7 @@ suspend fun verifyMeasurementFiles(
                     amplifierTargets = amplifierTargets,
                     nodeTxType = nodeTxType,
                 isLegacyNode = assetType == AssetType.NODE && asset.technology?.equals("Legacy", ignoreCase = true) == true,
+                isModuleMeasurement = isModuleMeasurement,
                     skipChannelValidation = switchSelection == "IN",
                     toleranceOverride = toleranceOverride,
                     switchSelection = switchSelection
