@@ -634,16 +634,17 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     val tech = asset.technology?.trim()?.lowercase() 
                         ?: nodeAdj.planTechnology?.trim()?.lowercase() 
                         ?: "legacy"
-                    val isLegacy = tech == "legacy"
-                    val isRphy = tech == "rphy"
-                    val isVccap = tech == "vccap"
+                    val key = tech.replace("_", "").replace(" ", "")
+                    val isLegacy = key == "legacy"
+                    val isRphyLike = key == "rphy" || key == "vccapcompleto"
+                    val isVccapHibrido = key == "vccap" || key == "vccaphibrido"
                     val green = DeviceRgb(46, 125, 50)
                     val red = DeviceRgb(183, 28, 28)
                     fun okCell(ok: Boolean): Pair<String, com.itextpdf.kernel.colors.Color?> =
                         (if (ok) "Confirmado" else "Pendiente") to (if (ok) green else red)
 
                     when {
-                        isRphy -> {
+                        isRphyLike -> {
                             // RPHY: SFP + PO Directa + PO Retorno
                             val sfpText = nodeAdj.sfpDistance?.let { "$it km" } ?: "No seleccionado"
                             addTable(
@@ -720,7 +721,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                                 )
                             }
                         }
-                        isVccap -> {
+                        isVccapHibrido -> {
                             // VCCAP: SFP + PO Directa + PO Retorno + Espectro + DOCSIS
                             val sfpText = nodeAdj.sfpDistance?.let { "$it km" } ?: "No seleccionado"
                             addTable(

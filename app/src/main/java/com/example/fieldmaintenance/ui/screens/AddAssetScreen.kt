@@ -530,6 +530,11 @@ fun AddAssetScreen(
     val nodeAdjustment by repository.getNodeAdjustment(workingAssetId).collectAsState(initial = null)
 
     val techNormalized = technology?.trim()?.lowercase(Locale.getDefault()) ?: ""
+    val techKey = techNormalized.replace("_", "").replace(" ", "")
+    // Backward compatibility: old "vccap" now maps to "vccap_hibrido".
+    val isVccapHibrido = techKey == "vccap" || techKey == "vccaphibrido"
+    val isVccapCompleto = techKey == "vccapcompleto"
+    val isRphyLike = techKey == "rphy" || isVccapCompleto
     val ampAdj = currentAmplifierAdjustment ?: amplifierAdjustment
     val autoBaseOk = frequency != null
     val autoNodeOk = assetType != AssetType.NODE || technology != null
@@ -577,10 +582,10 @@ fun AddAssetScreen(
         val adj = nodeAdjustment
             ?: com.example.fieldmaintenance.data.model.NodeAdjustment(assetId = workingAssetId, reportId = reportId)
         when {
-            techNormalized == "rphy" -> {
+            isRphyLike -> {
                 adj.sfpDistance != null && adj.poDirectaConfirmed && adj.poRetornoConfirmed
             }
-            techNormalized == "vccap" -> {
+            isVccapHibrido -> {
                 adj.sfpDistance != null && adj.poDirectaConfirmed && adj.poRetornoConfirmed &&
                     adj.spectrumConfirmed && adj.docsisConfirmed && frequency != null
             }
@@ -601,8 +606,8 @@ fun AddAssetScreen(
     val nodeAllowed = !(assetType == AssetType.NODE && hasNode && !isEdit)
     val autoSaveReady = autoBaseOk && autoNodeOk && autoAmplifierOk && autoAmplifierTablesOk && autoNodeAdjOk && nodeAllowed
     val identityComplete = autoBaseOk && autoNodeOk && autoAmplifierOk
-    val modulePhotoRequired = if (assetType == AssetType.NODE && techNormalized == "rphy") 0 else 2
-    val opticsPhotoRequired = if (assetType == AssetType.NODE && (techNormalized == "rphy" || techNormalized == "vccap")) {
+    val modulePhotoRequired = if (assetType == AssetType.NODE && isRphyLike) 0 else 2
+    val opticsPhotoRequired = if (assetType == AssetType.NODE && (isRphyLike || isVccapHibrido)) {
         0
     } else if (assetType == AssetType.NODE) {
         1
@@ -669,10 +674,12 @@ fun AddAssetScreen(
             val planTech = planRowForNode.technology.trim()
             if (planTech.isNotBlank()) {
                 val normalized = planTech.lowercase(Locale.getDefault())
+                val key = normalized.replace("_", "").replace(" ", "")
                 when {
                     normalized == "legacy" -> technology = "Legacy"
                     normalized == "rphy" -> technology = "RPHY"
-                    normalized == "vccap" -> technology = "VCCAP"
+                    key.contains("vccap") && key.contains("completo") -> technology = "VCCAP_Completo"
+                    key.contains("vccap") -> technology = "VCCAP_Hibrido"
                 }
             }
         }
@@ -708,22 +715,26 @@ fun AddAssetScreen(
         // Photos required
         // We compute counts in PhotoSection via callbacks
         val techNormalized = technology?.trim()?.lowercase(Locale.getDefault()) ?: ""
-        val moduleOk = if (assetType == AssetType.NODE && techNormalized == "rphy") true else modulePhotoCount == 2
-        val opticsOk = if (assetType == AssetType.NODE && (techNormalized == "rphy" || techNormalized == "vccap")) true 
-                      else assetType != AssetType.NODE || (opticsPhotoCount in 1..2)
+        val techKey = techNormalized.replace("_", "").replace(" ", "")
+        val isVccapHibrido = techKey == "vccap" || techKey == "vccaphibrido"
+        val isRphyLike = techKey == "rphy" || techKey == "vccapcompleto"
+        val moduleOk = if (assetType == AssetType.NODE && isRphyLike) true else modulePhotoCount == 2
+        val opticsOk = if (assetType == AssetType.NODE && (isRphyLike || isVccapHibrido)) true
+        else assetType != AssetType.NODE || (opticsPhotoCount in 1..2)
 
         val nodeAllowed = !(assetType == AssetType.NODE && hasNode && !isEdit)
 
         val nodeAdjOk = if (assetType != AssetType.NODE) true else {
             val adj = nodeAdjustment
                 ?: com.example.fieldmaintenance.data.model.NodeAdjustment(assetId = workingAssetId, reportId = reportId)
-            val tech = technology?.trim()?.lowercase(Locale.getDefault()) 
+            val tech = technology?.trim()?.lowercase(Locale.getDefault())
                 ?: planRowForNode?.technology?.trim()?.lowercase(Locale.getDefault()) ?: "legacy"
+            val key = tech.replace("_", "").replace(" ", "")
             when {
-                tech == "rphy" -> {
+                key == "rphy" || key == "vccapcompleto" -> {
                     adj.sfpDistance != null && adj.poDirectaConfirmed && adj.poRetornoConfirmed
                 }
-                tech == "vccap" -> {
+                key == "vccap" || key == "vccaphibrido" -> {
                     adj.sfpDistance != null && adj.poDirectaConfirmed && adj.poRetornoConfirmed && 
                     adj.spectrumConfirmed && adj.docsisConfirmed && frequency != null
                 }
@@ -953,7 +964,7 @@ fun AddAssetScreen(
 
                         if (assetType == AssetType.NODE) {
                             var expandedTech by remember { mutableStateOf(false) }
-                            val techOptions = listOf("Legacy", "RPHY", "VCCAP")
+                            val techOptions = listOf("Legacy", "RPHY", "VCCAP_Hibrido", "VCCAP_Completo")
                             ExposedDropdownMenuBox(
                                 expanded = expandedTech,
                                 onExpandedChange = { expandedTech = !expandedTech },
@@ -1243,8 +1254,8 @@ fun AddAssetScreen(
                     }
 
                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        // Foto del Módulo (no para RPHY)
-                        if (assetType != AssetType.NODE || technology != "RPHY") {
+                        // Foto del Módulo (no para RPHY ni VCCAP_Completo)
+                        if (assetType != AssetType.NODE || !isRphyLike) {
                             PhotoSection(
                                 title = "Foto del Módulo y Tapa",
                                 reportId = reportId,
@@ -1253,8 +1264,8 @@ fun AddAssetScreen(
                                 assetLabel = assetDisplayName,
                                 eventName = eventName,
                                 repository = repository,
-                                minRequired = if (assetType == AssetType.NODE && technology != "RPHY") 2 else 0,
-                                showRequiredError = attemptedSave && (assetType != AssetType.NODE || technology != "RPHY"),
+                                minRequired = if (assetType == AssetType.NODE && !isRphyLike) 2 else 0,
+                                showRequiredError = attemptedSave && (assetType != AssetType.NODE || !isRphyLike),
                                 maxAllowed = 2,
                                 onCountChange = {
                                     modulePhotoCount = it
@@ -1264,7 +1275,7 @@ fun AddAssetScreen(
 
                         // Fotos adicionales según tipo
                         // Foto TX y RX con pads (no para RPHY ni VCCAP)
-                        if (assetType == AssetType.NODE && technology != "RPHY" && technology != "VCCAP") {
+                        if (assetType == AssetType.NODE && !isRphyLike && !isVccapHibrido) {
                             PhotoSection(
                                 title = "Foto TX  y RX con pads",
                                 reportId = reportId,
@@ -1301,9 +1312,9 @@ fun AddAssetScreen(
                         }
 
                         // Fotos de Inyección de portadoras (no para RPHY)
-                        if (assetType != AssetType.NODE || technology != "RPHY") {
-                            // Para NODO con Legacy o VCCAP: 4 fotos, para otros: 3 fotos
-                            val maxSpectrumPhotos = if (assetType == AssetType.NODE && (technology == "Legacy" || technology == "VCCAP")) 4 else 3
+                        if (assetType != AssetType.NODE || !isRphyLike) {
+                            // Para NODO con Legacy o VCCAP_Hibrido: 4 fotos, para otros: 3 fotos
+                            val maxSpectrumPhotos = if (assetType == AssetType.NODE && (technology == "Legacy" || isVccapHibrido)) 4 else 3
                             PhotoSection(
                                 title = "Fotos de Inyección de portadoras por puerto",
                                 reportId = reportId,
@@ -2327,6 +2338,9 @@ private fun AssetFileSection(
     // For NODE assets, module measurements are stored under an AMPLIFIER folder,
     // but must be validated/displayed using NODE rules (measurement_validation.json).
     val moduleValidationAsset = if (isNodeAsset) asset else moduleAsset
+    val techNormalized = asset.technology?.trim()?.lowercase(Locale.getDefault()) ?: ""
+    val techKey = techNormalized.replace("_", "").replace(" ", "")
+    val hasRxMeasurements = !(isNodeAsset && (techKey == "vccap" || techKey == "vccaphibrido"))
     var rxFiles by remember(rxAssetDir) { mutableStateOf(rxAssetDir.listFiles()?.sortedBy { it.name } ?: emptyList()) }
     var moduleFiles by remember(moduleAssetDir) { mutableStateOf(moduleAssetDir.listFiles()?.sortedBy { it.name } ?: emptyList()) }
     val scope = rememberCoroutineScope()
@@ -2391,6 +2405,7 @@ private fun AssetFileSection(
     }
 
     fun toggleDiscardRx(entry: MeasurementEntry) {
+        if (!hasRxMeasurements) return
         if (!entry.fromZip) return
         val updated = rxDiscardedLabels.toMutableSet()
         if (entry.isDiscarded) {
@@ -2441,6 +2456,10 @@ private fun AssetFileSection(
     }
 
     LaunchedEffect(rxFiles, rxDiscardedLabels) {
+        if (!hasRxMeasurements) {
+            verificationSummaryRx = null
+            return@LaunchedEffect
+        }
         val rxRequired = requiredCounts(asset.type, isModule = false)
         if (rxFiles.isNotEmpty()) {
             val summary = verifyMeasurementFiles(
@@ -2605,8 +2624,12 @@ private fun AssetFileSection(
             val rxRequired = requiredCounts(asset.type, isModule = false)
             val moduleRequired = requiredCounts(moduleAsset.type, isModule = true)
             val canRefresh = if (isNodeAsset) {
-                meetsRequired(verificationSummaryRx, rxRequired) &&
+                if (hasRxMeasurements) {
+                    meetsRequired(verificationSummaryRx, rxRequired) &&
+                        meetsRequired(verificationSummaryModule, moduleRequired)
+                } else {
                     meetsRequired(verificationSummaryModule, moduleRequired)
+                }
             } else {
                 meetsRequired(verificationSummaryRx, rxRequired)
             }
@@ -2622,9 +2645,16 @@ private fun AssetFileSection(
                         modifier = Modifier.weight(1f),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("Mediciones RX", fontWeight = FontWeight.SemiBold)
-                        IconButton(onClick = { startViaviImport(AssetType.NODE) }) {
-                            Icon(Icons.Default.FileUpload, contentDescription = "Agregar mediciones RX")
+                        if (hasRxMeasurements) {
+                            Text("Mediciones RX", fontWeight = FontWeight.SemiBold)
+                            IconButton(onClick = { startViaviImport(AssetType.NODE) }) {
+                                Icon(Icons.Default.FileUpload, contentDescription = "Agregar mediciones RX")
+                            }
+                        } else {
+                            Text("Mediciones Modulo", fontWeight = FontWeight.SemiBold)
+                            IconButton(onClick = { startViaviImport(AssetType.AMPLIFIER) }) {
+                                Icon(Icons.Default.FileUpload, contentDescription = "Agregar mediciones Modulo")
+                            }
                         }
                     }
                 } else {
@@ -3985,17 +4015,19 @@ private fun AssetFileSection(
 
                 if (asset.type == AssetType.NODE) {
                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        verificationSummaryRx?.let { summary ->
-                            VerificationSummaryView(
-                                summary,
-                                asset,
-                                ::toggleDiscardRx,
-                                onRequestDelete = { entry ->
-                                    pendingDeleteEntry = entry
-                                    pendingDeleteIsModule = false
-                                },
-                                isModule = false
-                            )
+                        if (hasRxMeasurements) {
+                            verificationSummaryRx?.let { summary ->
+                                VerificationSummaryView(
+                                    summary,
+                                    asset,
+                                    ::toggleDiscardRx,
+                                    onRequestDelete = { entry ->
+                                        pendingDeleteEntry = entry
+                                        pendingDeleteIsModule = false
+                                    },
+                                    isModule = false
+                                )
+                            }
                         }
                         Row(
                             modifier = Modifier.fillMaxWidth(),

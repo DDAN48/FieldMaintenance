@@ -169,20 +169,23 @@ fun AssetSummaryScreen(navController: NavController, reportId: String) {
                         measurementsOk
                     ) {
                         val techNormalized = asset.technology?.trim()?.lowercase() ?: ""
+                        val techKey = techNormalized.replace("_", "").replace(" ", "")
+                        val isRphyLike = techKey == "rphy" || techKey == "vccapcompleto"
+                        val isVccapHibrido = techKey == "vccap" || techKey == "vccaphibrido"
                         val moduleCount = photos.count { it.photoType == PhotoType.MODULE }
                         val opticsCount = photos.count { it.photoType == PhotoType.OPTICS }
-                        val moduleOk = if (asset.type == AssetType.NODE && techNormalized == "rphy") true else moduleCount == 2
-                        val opticsOk = if (asset.type == AssetType.NODE && (techNormalized == "rphy" || techNormalized == "vccap")) true
+                        val moduleOk = if (asset.type == AssetType.NODE && isRphyLike) true else moduleCount == 2
+                        val opticsOk = if (asset.type == AssetType.NODE && (isRphyLike || isVccapHibrido)) true
                         else asset.type != AssetType.NODE || (opticsCount in 1..2)
 
                         val nodeAdjOk = if (asset.type != AssetType.NODE) true else {
                             val adj = nodeAdjustment
                                 ?: com.example.fieldmaintenance.data.model.NodeAdjustment(assetId = asset.id, reportId = reportId)
                             when {
-                                techNormalized == "rphy" -> {
+                                isRphyLike -> {
                                     adj.sfpDistance != null && adj.poDirectaConfirmed && adj.poRetornoConfirmed
                                 }
-                                techNormalized == "vccap" -> {
+                                isVccapHibrido -> {
                                     adj.sfpDistance != null && adj.poDirectaConfirmed && adj.poRetornoConfirmed &&
                                         adj.spectrumConfirmed && adj.docsisConfirmed
                                 }
