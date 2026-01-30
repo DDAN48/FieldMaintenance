@@ -18,7 +18,12 @@ data class Asset(
      */
     val portIndex: Int? = null,
     /**
-     * Technology type for NODE assets: "Legacy", "RPHY", or "VCCAP".
+     * Technology type for NODE assets:
+     * - "Legacy"
+     * - "RPHY"
+     * - "VCCAP_Hibrido" (no RX measurements, only module)
+     * - "VCCAP_Completo" (same behavior as RPHY)
+     *
      * Can come from plan or be manually selected.
      */
     val technology: String? = null

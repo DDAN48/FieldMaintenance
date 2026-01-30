@@ -47,9 +47,10 @@ fun NodeAdjustmentCard(
     // Use technology from asset, fallback to plan, default to Legacy
     val tech = technology?.trim() ?: planRow?.technology?.trim() ?: "Legacy"
     val normalizedTech = tech.lowercase(Locale.getDefault())
+    val techKey = normalizedTech.replace("_", "").replace(" ", "")
     val isLegacy = normalizedTech == "legacy"
-    val isRphy = normalizedTech == "rphy"
-    val isVccap = normalizedTech == "vccap"
+    val isRphyLike = techKey == "rphy" || techKey == "vccapcompleto"
+    val isVccapHibrido = techKey == "vccap" || techKey == "vccaphibrido"
 
     fun normalize(v: String): String = v.trim().lowercase(Locale.getDefault())
     fun parsePo(v: String): Double? =
@@ -77,10 +78,10 @@ fun NodeAdjustmentCard(
 
     fun isComplete(adj: NodeAdjustment): Boolean {
         return when {
-            isRphy -> {
+            isRphyLike -> {
                 adj.sfpDistance != null && adj.poDirectaConfirmed && adj.poRetornoConfirmed
             }
-            isVccap -> {
+            isVccapHibrido -> {
                 adj.sfpDistance != null && adj.poDirectaConfirmed && adj.poRetornoConfirmed && 
                 adj.spectrumConfirmed && adj.docsisConfirmed && frequency != null
             }

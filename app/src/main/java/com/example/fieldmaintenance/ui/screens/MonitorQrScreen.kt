@@ -358,9 +358,12 @@ private fun PhotoUploadsCard(
             assets.map { asset ->
                 val photos = repository.listPhotosByAssetId(asset.id)
                 val techNormalized = asset.technology?.trim()?.lowercase() ?: ""
-                val moduleRequired = !(asset.type == AssetType.NODE && techNormalized == "rphy")
+                val techKey = techNormalized.replace("_", "").replace(" ", "")
+                val isRphyLike = techKey == "rphy" || techKey == "vccapcompleto"
+                val isVccapHibrido = techKey == "vccap" || techKey == "vccaphibrido"
+                val moduleRequired = !(asset.type == AssetType.NODE && isRphyLike)
                 val opticsRequired = asset.type == AssetType.NODE &&
-                    !(techNormalized == "rphy" || techNormalized == "vccap")
+                    !(isRphyLike || isVccapHibrido)
                 val moduleCount = photos.count { it.photoType == PhotoType.MODULE }
                 val opticsCount = photos.count { it.photoType == PhotoType.OPTICS }
                 val missing = buildList {
