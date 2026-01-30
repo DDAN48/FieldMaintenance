@@ -183,7 +183,7 @@ fun NodeAdjustmentCard(
 
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     when {
-                        isRphy -> {
+                        isRphyLike -> {
                             // RPHY: SFP + PO Directa + PO Retorno
                             var expandedSfp by remember { mutableStateOf(false) }
                             val sfpOptions = listOf(20, 40, 80)
@@ -280,7 +280,7 @@ fun NodeAdjustmentCard(
                                 onToggle = { persist(local.copy(poRetornoConfirmed = !local.poRetornoConfirmed)) }
                             )
                         }
-                        isVccap -> {
+                        isVccapHibrido -> {
                             // VCCAP: SFP + PO Directa + PO Retorno + Espectro + DOCSIS
                             var expandedSfp by remember { mutableStateOf(false) }
                             val sfpOptions = listOf(20, 40, 80)
