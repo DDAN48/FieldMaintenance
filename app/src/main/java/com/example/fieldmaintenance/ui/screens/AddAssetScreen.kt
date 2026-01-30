@@ -2341,6 +2341,7 @@ private fun AssetFileSection(
     val techNormalized = asset.technology?.trim()?.lowercase(Locale.getDefault()) ?: ""
     val techKey = techNormalized.replace("_", "").replace(" ", "")
     val hasRxMeasurements = !(isNodeAsset && (techKey == "vccap" || techKey == "vccaphibrido"))
+    val hasModuleMeasurements = !(isNodeAsset && techKey == "vccapcompleto")
     var rxFiles by remember(rxAssetDir) { mutableStateOf(rxAssetDir.listFiles()?.sortedBy { it.name } ?: emptyList()) }
     var moduleFiles by remember(moduleAssetDir) { mutableStateOf(moduleAssetDir.listFiles()?.sortedBy { it.name } ?: emptyList()) }
     val scope = rememberCoroutineScope()
@@ -2430,6 +2431,7 @@ private fun AssetFileSection(
     }
 
     fun toggleDiscardModule(entry: MeasurementEntry) {
+        if (!hasModuleMeasurements) return
         if (!entry.fromZip) return
         val updated = moduleDiscardedLabels.toMutableSet()
         if (entry.isDiscarded) {
@@ -2495,6 +2497,10 @@ private fun AssetFileSection(
 
     LaunchedEffect(moduleFiles, moduleDiscardedLabels, verificationSummaryRx) {
         if (!isNodeAsset) return@LaunchedEffect
+        if (!hasModuleMeasurements) {
+            verificationSummaryModule = null
+            return@LaunchedEffect
+        }
         val moduleRequired = requiredCounts(moduleValidationAsset.type, isModule = true)
         if (moduleFiles.isNotEmpty()) {
             val summary = verifyMeasurementFiles(
@@ -2575,7 +2581,7 @@ private fun AssetFileSection(
             withContext(Dispatchers.Main) {
                 if (isModule) {
                     moduleFiles = updated
-                    verificationSummaryModule = summary
+                    verificationSummaryModule = if (hasModuleMeasurements) summary else null
                 } else {
                     rxFiles = updated
                     verificationSummaryRx = summary
@@ -2624,9 +2630,11 @@ private fun AssetFileSection(
             val rxRequired = requiredCounts(asset.type, isModule = false)
             val moduleRequired = requiredCounts(moduleAsset.type, isModule = true)
             val canRefresh = if (isNodeAsset) {
-                if (hasRxMeasurements) {
+                if (hasRxMeasurements && hasModuleMeasurements) {
                     meetsRequired(verificationSummaryRx, rxRequired) &&
                         meetsRequired(verificationSummaryModule, moduleRequired)
+                } else if (hasRxMeasurements && !hasModuleMeasurements) {
+                    meetsRequired(verificationSummaryRx, rxRequired)
                 } else {
                     meetsRequired(verificationSummaryModule, moduleRequired)
                 }
@@ -4029,26 +4037,28 @@ private fun AssetFileSection(
                                 )
                             }
                         }
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("Mediciones Modulo", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                            IconButton(onClick = { startViaviImport(AssetType.AMPLIFIER) }) {
-                                Icon(Icons.Default.FileUpload, contentDescription = "Agregar mediciones Modulo")
+                        if (hasModuleMeasurements) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Mediciones Modulo", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                                IconButton(onClick = { startViaviImport(AssetType.AMPLIFIER) }) {
+                                    Icon(Icons.Default.FileUpload, contentDescription = "Agregar mediciones Modulo")
+                                }
                             }
-                        }
-                        verificationSummaryModule?.let { summary ->
-                            VerificationSummaryView(
-                                summary,
-                                moduleValidationAsset,
-                                ::toggleDiscardModule,
-                                onRequestDelete = { entry ->
-                                    pendingDeleteEntry = entry
-                                    pendingDeleteIsModule = true
-                                },
-                                isModule = true
-                            )
+                            verificationSummaryModule?.let { summary ->
+                                VerificationSummaryView(
+                                    summary,
+                                    moduleValidationAsset,
+                                    ::toggleDiscardModule,
+                                    onRequestDelete = { entry ->
+                                        pendingDeleteEntry = entry
+                                        pendingDeleteIsModule = true
+                                    },
+                                    isModule = true
+                                )
+                            }
                         }
                     }
                 } else {
