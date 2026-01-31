@@ -1814,13 +1814,20 @@ fun PhotoSection(
     val allowsGallery = photoType != PhotoType.MODULE &&
         photoType != PhotoType.OPTICS &&
         photoType != PhotoType.MEASUREMENT_RX &&
-        photoType != PhotoType.MEASUREMENT_MODULE
+        photoType != PhotoType.MEASUREMENT_MODULE &&
+        photoType != PhotoType.MEASUREMENT_RX_CHANNEL_CHECK &&
+        photoType != PhotoType.MEASUREMENT_MODULE_CHANNEL_CHECK &&
+        photoType != PhotoType.MEASUREMENT_MODULE_DOCSIS_CHECK
     fun maxPhotoBytes(type: PhotoType): Int {
         return when (type) {
             // Keep these very small for fast sharing/viewing.
             PhotoType.SPECTRUM, PhotoType.MONITORING -> 200 * 1024
             // DSAM measurement photos: must not exceed 400KB.
-            PhotoType.MEASUREMENT_RX, PhotoType.MEASUREMENT_MODULE -> 400 * 1024
+            PhotoType.MEASUREMENT_RX,
+            PhotoType.MEASUREMENT_MODULE,
+            PhotoType.MEASUREMENT_RX_CHANNEL_CHECK,
+            PhotoType.MEASUREMENT_MODULE_CHANNEL_CHECK,
+            PhotoType.MEASUREMENT_MODULE_DOCSIS_CHECK -> 400 * 1024
             else -> 600 * 1024
         }
     }
@@ -2469,9 +2476,10 @@ private fun AssetFileSection(
     var pendingDeleteEntry by remember { mutableStateOf<MeasurementEntry?>(null) }
     var pendingDeleteIsModule by remember { mutableStateOf(false) }
 
-    // DSAM measurement photos
-    var dsamRxCount by remember(asset.id) { mutableStateOf(0) }
-    var dsamModuleCount by remember(asset.id) { mutableStateOf(0) }
+    // DSAM measurement photos (new check workflow)
+    var dsamRxChannelCount by remember(asset.id) { mutableStateOf(0) }
+    var dsamModuleChannelCount by remember(asset.id) { mutableStateOf(0) }
+    var dsamModuleDocsisCount by remember(asset.id) { mutableStateOf(0) }
 
     fun displayLabel(entry: MeasurementEntry): String {
         return if (entry.isDiscarded && !entry.label.contains("DESCARTADA", ignoreCase = true)) {
@@ -2714,12 +2722,13 @@ private fun AssetFileSection(
             val moduleRequired = requiredCounts(moduleAsset.type, isModule = true)
             val canRefresh = when {
                 isDsam && isNodeAsset -> {
-                    val rxOk = !hasRxMeasurements || dsamRxCount >= 1
-                    val moduleOk = !hasModuleMeasurements || dsamModuleCount >= 7
-                    rxOk && moduleOk
+                    val rxOk = !hasRxMeasurements || dsamRxChannelCount >= 1
+                    val moduleChannelOk = !hasModuleMeasurements || dsamModuleChannelCount >= 4
+                    val moduleDocsisOk = !hasModuleMeasurements || dsamModuleDocsisCount >= 4
+                    rxOk && moduleChannelOk && moduleDocsisOk
                 }
                 isDsam && !isNodeAsset -> {
-                    dsamModuleCount >= 7
+                    dsamModuleChannelCount >= 4 && dsamModuleDocsisCount >= 4
                 }
                 isNodeAsset -> {
                     if (hasRxMeasurements && hasModuleMeasurements) {
@@ -4128,32 +4137,45 @@ private fun AssetFileSection(
                             val assetLabel = asset.id.take(6)
                             if (hasRxMeasurements) {
                                 PhotoSection(
-                                    title = "Mediciones RX (DSAM)",
+                                    title = "RX Channel Check (DSAM)",
                                     reportId = asset.reportId,
                                     assetId = asset.id,
-                                    photoType = PhotoType.MEASUREMENT_RX,
+                                    photoType = PhotoType.MEASUREMENT_RX_CHANNEL_CHECK,
                                     assetLabel = assetLabel,
                                     eventName = eventName,
                                     repository = repository,
                                     minRequired = 1,
                                     showRequiredError = false,
-                                    maxAllowed = 8,
-                                    onCountChange = { dsamRxCount = it }
+                                    maxAllowed = 1,
+                                    onCountChange = { dsamRxChannelCount = it }
                                 )
                             }
                             if (hasModuleMeasurements) {
                                 PhotoSection(
-                                    title = "Mediciones Modulo (DSAM)",
+                                    title = "Módulo Medición Channel Check (DSAM)",
                                     reportId = asset.reportId,
                                     assetId = asset.id,
-                                    photoType = PhotoType.MEASUREMENT_MODULE,
+                                    photoType = PhotoType.MEASUREMENT_MODULE_CHANNEL_CHECK,
                                     assetLabel = assetLabel,
                                     eventName = eventName,
                                     repository = repository,
-                                    minRequired = 7,
+                                    minRequired = 4,
                                     showRequiredError = false,
-                                    maxAllowed = 8,
-                                    onCountChange = { dsamModuleCount = it }
+                                    maxAllowed = 4,
+                                    onCountChange = { dsamModuleChannelCount = it }
+                                )
+                                PhotoSection(
+                                    title = "Módulo Medición DOCSIS Check (DSAM)",
+                                    reportId = asset.reportId,
+                                    assetId = asset.id,
+                                    photoType = PhotoType.MEASUREMENT_MODULE_DOCSIS_CHECK,
+                                    assetLabel = assetLabel,
+                                    eventName = eventName,
+                                    repository = repository,
+                                    minRequired = 4,
+                                    showRequiredError = false,
+                                    maxAllowed = 4,
+                                    onCountChange = { dsamModuleDocsisCount = it }
                                 )
                             }
                         } else {
@@ -4201,17 +4223,30 @@ private fun AssetFileSection(
                         val eventName = reportFolder
                         val assetLabel = asset.id.take(6)
                         PhotoSection(
-                            title = "Mediciones Modulo (DSAM)",
+                            title = "Módulo Medición Channel Check (DSAM)",
                             reportId = asset.reportId,
                             assetId = asset.id,
-                            photoType = PhotoType.MEASUREMENT_MODULE,
+                            photoType = PhotoType.MEASUREMENT_MODULE_CHANNEL_CHECK,
                             assetLabel = assetLabel,
                             eventName = eventName,
                             repository = repository,
-                            minRequired = 7,
+                            minRequired = 4,
                             showRequiredError = false,
-                            maxAllowed = 8,
-                            onCountChange = { dsamModuleCount = it }
+                            maxAllowed = 4,
+                            onCountChange = { dsamModuleChannelCount = it }
+                        )
+                        PhotoSection(
+                            title = "Módulo Medición DOCSIS Check (DSAM)",
+                            reportId = asset.reportId,
+                            assetId = asset.id,
+                            photoType = PhotoType.MEASUREMENT_MODULE_DOCSIS_CHECK,
+                            assetLabel = assetLabel,
+                            eventName = eventName,
+                            repository = repository,
+                            minRequired = 4,
+                            showRequiredError = false,
+                            maxAllowed = 4,
+                            onCountChange = { dsamModuleDocsisCount = it }
                         )
                     } else {
                         verificationSummaryRx?.let { summary ->
