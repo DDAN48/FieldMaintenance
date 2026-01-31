@@ -2428,6 +2428,26 @@ private fun AssetFileSection(
     val techKey = techNormalized.replace("_", "").replace(" ", "")
     val hasRxMeasurements = !(isNodeAsset && (techKey == "vccap" || techKey == "vccaphibrido"))
     val hasModuleMeasurements = !(isNodeAsset && techKey == "vccapcompleto")
+    val allPhotos by repository.getPhotosByAssetId(asset.id).collectAsState(initial = emptyList())
+    val dsamGeo = remember(isDsam, allPhotos) {
+        if (!isDsam) return@remember null
+        val points = allPhotos.asSequence()
+            .filter {
+                it.photoType == PhotoType.MEASUREMENT_RX_CHANNEL_CHECK ||
+                    it.photoType == PhotoType.MEASUREMENT_MODULE_CHANNEL_CHECK ||
+                    it.photoType == PhotoType.MEASUREMENT_MODULE_DOCSIS_CHECK
+            }
+            .mapNotNull { p ->
+                val lat = p.latitude
+                val lon = p.longitude
+                if (lat != null && lon != null) GeoPoint(lat, lon) else null
+            }.toList()
+        if (points.isEmpty()) return@remember null
+        val scale = 10_000.0
+        val buckets = points.groupBy { ((it.latitude * scale).toInt() to (it.longitude * scale).toInt()) }
+        val best = buckets.maxByOrNull { it.value.size }?.value ?: points
+        GeoPoint(best.map { it.latitude }.average(), best.map { it.longitude }.average())
+    }
     var rxFiles by remember(rxAssetDir) { mutableStateOf(rxAssetDir.listFiles()?.sortedBy { it.name } ?: emptyList()) }
     var moduleFiles by remember(moduleAssetDir) { mutableStateOf(moduleAssetDir.listFiles()?.sortedBy { it.name } ?: emptyList()) }
     val scope = rememberCoroutineScope()
@@ -2464,17 +2484,17 @@ private fun AssetFileSection(
         }
     }
 
-    var isExpanded by remember { mutableStateOf(true) }
-    var verificationSummaryRx by remember { mutableStateOf<MeasurementVerificationSummary?>(null) }
-    var verificationSummaryModule by remember { mutableStateOf<MeasurementVerificationSummary?>(null) }
-    var duplicateNotice by remember { mutableStateOf<List<String>>(emptyList()) }
-    var switchDuplicateNotice by remember { mutableStateOf<List<String>>(emptyList()) }
-    var surplusNotice by remember { mutableStateOf<List<String>>(emptyList()) }
-    var surplusSelection by remember { mutableStateOf<Set<String>>(emptySet()) }
-    var surplusTargetCount by remember { mutableStateOf(0) }
-    var surplusIsModule by remember { mutableStateOf(false) }
-    var pendingDeleteEntry by remember { mutableStateOf<MeasurementEntry?>(null) }
-    var pendingDeleteIsModule by remember { mutableStateOf(false) }
+    var isExpanded by remember(asset.id) { mutableStateOf(true) }
+    var verificationSummaryRx by remember(asset.id) { mutableStateOf<MeasurementVerificationSummary?>(null) }
+    var verificationSummaryModule by remember(asset.id) { mutableStateOf<MeasurementVerificationSummary?>(null) }
+    var duplicateNotice by remember(asset.id) { mutableStateOf<List<String>>(emptyList()) }
+    var switchDuplicateNotice by remember(asset.id) { mutableStateOf<List<String>>(emptyList()) }
+    var surplusNotice by remember(asset.id) { mutableStateOf<List<String>>(emptyList()) }
+    var surplusSelection by remember(asset.id) { mutableStateOf<Set<String>>(emptySet()) }
+    var surplusTargetCount by remember(asset.id) { mutableStateOf(0) }
+    var surplusIsModule by remember(asset.id) { mutableStateOf(false) }
+    var pendingDeleteEntry by remember(asset.id) { mutableStateOf<MeasurementEntry?>(null) }
+    var pendingDeleteIsModule by remember(asset.id) { mutableStateOf(false) }
 
     // DSAM measurement photos (new check workflow)
     var dsamRxChannelCount by remember(asset.id) { mutableStateOf(0) }
@@ -2497,6 +2517,7 @@ private fun AssetFileSection(
     }
 
     fun toggleDiscardRx(entry: MeasurementEntry) {
+        if (isDsam) return
         if (!hasRxMeasurements) return
         if (!entry.fromZip) return
         val updated = rxDiscardedLabels.toMutableSet()
@@ -2522,6 +2543,7 @@ private fun AssetFileSection(
     }
 
     fun toggleDiscardModule(entry: MeasurementEntry) {
+        if (isDsam) return
         if (!hasModuleMeasurements) return
         if (!entry.fromZip) return
         val updated = moduleDiscardedLabels.toMutableSet()
@@ -2549,6 +2571,10 @@ private fun AssetFileSection(
     }
 
     LaunchedEffect(rxFiles, rxDiscardedLabels) {
+        if (isDsam) {
+            verificationSummaryRx = null
+            return@LaunchedEffect
+        }
         if (!hasRxMeasurements) {
             verificationSummaryRx = null
             return@LaunchedEffect
@@ -2587,6 +2613,10 @@ private fun AssetFileSection(
     }
 
     LaunchedEffect(moduleFiles, moduleDiscardedLabels, verificationSummaryRx) {
+        if (isDsam) {
+            verificationSummaryModule = null
+            return@LaunchedEffect
+        }
         if (!isNodeAsset) return@LaunchedEffect
         if (!hasModuleMeasurements) {
             verificationSummaryModule = null
@@ -2798,6 +2828,13 @@ private fun AssetFileSection(
                         )
                     }
                 }
+            }
+            if (isDsam && dsamGeo != null) {
+                Text(
+                    text = "Geo: ${String.format(Locale.getDefault(), "%.5f", dsamGeo.latitude)}, ${String.format(Locale.getDefault(), "%.5f", dsamGeo.longitude)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f)
+                )
             }
             LaunchedEffect(canRefresh, asset.id) {
                 if (!isDsam && canRefresh && observationSummary.third > 0) {
