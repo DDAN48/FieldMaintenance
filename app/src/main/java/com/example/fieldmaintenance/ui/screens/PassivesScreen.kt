@@ -211,6 +211,19 @@ fun PassivesScreen(navController: NavController, reportId: String) {
                     }
                 }
             },
+            onExportHtmlWithImages = {
+                scope.launch {
+                    if (isExporting) return@launch
+                    isExporting = true
+                    try {
+                        exportManager.exportHtmlWithImagesZipToDownloads(report!!)
+                        snackbarHostState.showSnackbar("ZIP (HTML + imágenes) guardado en Descargas/FieldMaintenance")
+                    } finally {
+                        isExporting = false
+                        showFinalizeDialog = false
+                    }
+                }
+            },
             onExportForAppJson = {
                 scope.launch {
                     if (isExporting) return@launch

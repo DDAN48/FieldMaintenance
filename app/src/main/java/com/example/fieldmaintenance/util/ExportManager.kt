@@ -50,6 +50,8 @@ import java.util.*
 import kotlin.math.abs
 
 class ExportManager(private val context: Context, private val repository: MaintenanceRepository) {
+    private enum class HtmlPhotoMode { EMBED_BASE64, RELATIVE_FILES }
+
     private val gson: Gson = GsonBuilder().setPrettyPrinting().create()
     private val switchPrefs by lazy {
         context.getSharedPreferences("measurement_switch_positions", Context.MODE_PRIVATE)
@@ -1594,11 +1596,12 @@ val assets = repository.getAssetsByReportId(report.id).first()
         photosByAsset: Map<String, List<Photo>>,
         adjustmentsByAsset: Map<String, AmplifierAdjustment>,
         nodeAdjustmentsByAsset: Map<String, NodeAdjustment>,
-        reportFolderName: String
+        reportFolderName: String,
+        photoMode: HtmlPhotoMode = HtmlPhotoMode.EMBED_BASE64
     ): File {
         val measurementRoot = MaintenanceStorage.ensureReportDir(context, reportFolderName)
         val switchSelections = collectSwitchSelections(assets)
-        val measurements = buildHtmlMeasurementMap(report, assets, measurementRoot, switchSelections)
+        val measurements = buildHtmlMeasurementMap(report, assets, measurementRoot, switchSelections, exportDir, photoMode)
         val passiveCounts = passives.groupingBy { it.type }.eachCount()
 
         fun countOf(t: PassiveType) = passiveCounts[t] ?: 0
@@ -1643,15 +1646,24 @@ val assets = repository.getAssetsByReportId(report.id).first()
                             baseTitle
                         }
                         val imageFile = File(photo.filePath)
-                        val dataUri = if (imageFile.exists()) {
-                            val encoded = Base64.encodeToString(imageFile.readBytes(), Base64.NO_WRAP)
-                            "data:image/jpeg;base64,$encoded"
+                        val relPath = if (photoMode == HtmlPhotoMode.RELATIVE_FILES && imageFile.exists()) {
+                            val destDir = File(exportDir, "images/${asset.id}/${photo.photoType.name.lowercase()}")
+                            destDir.mkdirs()
+                            val dest = File(destDir, imageFile.name)
+                            if (!dest.exists()) {
+                                imageFile.copyTo(dest, overwrite = true)
+                            }
+                            "images/${asset.id}/${photo.photoType.name.lowercase()}/${dest.name}"
                         } else {
                             null
                         }
+                        val dataUri = if (photoMode == HtmlPhotoMode.EMBED_BASE64 && imageFile.exists()) {
+                            val encoded = Base64.encodeToString(imageFile.readBytes(), Base64.NO_WRAP)
+                            "data:image/jpeg;base64,$encoded"
+                        } else null
                         HtmlPhotoExport(
                             title = title,
-                            fileName = imageFile.name,
+                            fileName = relPath ?: imageFile.name,
                             dataUri = dataUri,
                             latitude = photo.latitude,
                             longitude = photo.longitude,
@@ -3451,7 +3463,9 @@ val assets = repository.getAssetsByReportId(report.id).first()
         report: MaintenanceReport,
         assets: List<Asset>,
         measurementRoot: File,
-        switchSelections: Map<String, Map<String, String>>
+        switchSelections: Map<String, Map<String, String>>,
+        exportDir: File,
+        photoMode: HtmlPhotoMode
     ): Map<String, HtmlMeasurementBundle> {
         val result = mutableMapOf<String, HtmlMeasurementBundle>()
         for (asset in assets) {
@@ -3465,15 +3479,25 @@ val assets = repository.getAssetsByReportId(report.id).first()
                 val entries = photos.mapNotNull { photo ->
                     val imageFile = File(photo.filePath)
                     if (!imageFile.exists()) return@mapNotNull null
-                    val encoded = Base64.encodeToString(imageFile.readBytes(), Base64.NO_WRAP)
-                    val dataUri = "data:image/jpeg;base64,$encoded"
+                    val src = if (photoMode == HtmlPhotoMode.RELATIVE_FILES) {
+                        val destDir = File(exportDir, "images/${asset.id}/${photo.photoType.name.lowercase()}")
+                        destDir.mkdirs()
+                        val dest = File(destDir, imageFile.name)
+                        if (!dest.exists()) {
+                            imageFile.copyTo(dest, overwrite = true)
+                        }
+                        "images/${asset.id}/${photo.photoType.name.lowercase()}/${dest.name}"
+                    } else {
+                        val encoded = Base64.encodeToString(imageFile.readBytes(), Base64.NO_WRAP)
+                        "data:image/jpeg;base64,$encoded"
+                    }
                     HtmlMeasurementEntry(
                         label = photo.fileName,
                         type = "dsam_photo",
                         isDiscarded = false,
                         geoLocation = null,
                         switchSelection = null,
-                        imageDataUri = dataUri,
+                        imageDataUri = src,
                         docsisRows = emptyList(),
                         pilotRows = emptyList(),
                         digitalRows = emptyList(),
@@ -3510,15 +3534,25 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     val entries = photos.mapNotNull { photo ->
                         val imageFile = File(photo.filePath)
                         if (!imageFile.exists()) return@mapNotNull null
-                        val encoded = Base64.encodeToString(imageFile.readBytes(), Base64.NO_WRAP)
-                        val dataUri = "data:image/jpeg;base64,$encoded"
+                        val src = if (photoMode == HtmlPhotoMode.RELATIVE_FILES) {
+                            val destDir = File(exportDir, "images/${asset.id}/${photo.photoType.name.lowercase()}")
+                            destDir.mkdirs()
+                            val dest = File(destDir, imageFile.name)
+                            if (!dest.exists()) {
+                                imageFile.copyTo(dest, overwrite = true)
+                            }
+                            "images/${asset.id}/${photo.photoType.name.lowercase()}/${dest.name}"
+                        } else {
+                            val encoded = Base64.encodeToString(imageFile.readBytes(), Base64.NO_WRAP)
+                            "data:image/jpeg;base64,$encoded"
+                        }
                         HtmlMeasurementEntry(
                             label = photo.fileName,
                             type = "dsam_photo",
                             isDiscarded = false,
                             geoLocation = null,
                             switchSelection = null,
-                            imageDataUri = dataUri,
+                            imageDataUri = src,
                             docsisRows = emptyList(),
                             pilotRows = emptyList(),
                             digitalRows = emptyList(),
@@ -3818,6 +3852,64 @@ val assets = repository.getAssetsByReportId(report.id).first()
     }
 
     /**
+     * Export a ZIP containing:
+     * - report.html (NOT base64-heavy; references relative files)
+     * - images/ folder with the referenced photos
+     */
+    suspend fun exportToHtmlWithImagesZip(
+        report: MaintenanceReport,
+        baseName: String = "${exportBaseName(report)}_html_imagenes"
+    ): File = withContext(Dispatchers.IO) {
+        val assets = repository.getAssetsByReportId(report.id).first()
+            .sortedBy { assetSortKey(it) }
+        val passives = repository.getPassivesByReportId(report.id).first()
+        val exportDir = File(context.cacheDir, "export_html_images/${report.id}")
+        if (exportDir.exists()) exportDir.deleteRecursively()
+        exportDir.mkdirs()
+
+        val photosByAsset = mutableMapOf<String, List<Photo>>()
+        val adjustmentsByAsset = mutableMapOf<String, AmplifierAdjustment>()
+        val nodeAdjustmentsByAsset = mutableMapOf<String, NodeAdjustment>()
+
+        val reportFolderName = MaintenanceStorage.reportFolderName(report.eventName, report.id)
+        assets.forEach { asset ->
+            repository.getAmplifierAdjustment(asset.id).first()?.let { adj ->
+                adjustmentsByAsset[asset.id] = adj
+            }
+            if (asset.type == AssetType.NODE) {
+                repository.getNodeAdjustment(asset.id).first()?.let { adj ->
+                    nodeAdjustmentsByAsset[asset.id] = adj
+                }
+            }
+            val photos = repository.getPhotosByAssetId(asset.id).first()
+                .sortedBy { photoSortKey(it) }
+            photosByAsset[asset.id] = photos
+        }
+
+        val adjustedCount = countAdjustedAssets(report, assets)
+        exportToHtml(
+            exportDir = exportDir,
+            report = report,
+            assets = assets,
+            passives = passives,
+            adjustedCount = adjustedCount,
+            photosByAsset = photosByAsset,
+            adjustmentsByAsset = adjustmentsByAsset,
+            nodeAdjustmentsByAsset = nodeAdjustmentsByAsset,
+            reportFolderName = reportFolderName,
+            photoMode = HtmlPhotoMode.RELATIVE_FILES
+        )
+
+        val zipFile = File(context.getExternalFilesDir(null), "${baseName}.zip")
+        if (zipFile.exists()) zipFile.delete()
+
+        ZipFile(zipFile).apply {
+            addFolder(exportDir)
+        }
+        zipFile
+    }
+
+    /**
      * Export importable ZIP for the app: report.json + images/ + measurements/.
      * (No HTML viewer included.)
      */
@@ -3971,6 +4063,13 @@ val assets = repository.getAssetsByReportId(report.id).first()
         val baseName = exportBaseName(report)
         val tmp = exportToHtmlOnly(report, baseName)
         DownloadStore.saveToDownloads(context, tmp, tmp.name, "text/html")
+    }
+
+    suspend fun exportHtmlWithImagesZipToDownloads(report: MaintenanceReport): Uri = withContext(Dispatchers.IO) {
+        val baseName = "${exportBaseName(report)}_html_imagenes"
+        val tmp = exportToHtmlWithImagesZip(report, baseName)
+        val displayName = "${baseName}.zip"
+        DownloadStore.saveToDownloads(context, tmp, displayName, "application/zip")
     }
 
     suspend fun exportAppZipToDownloads(report: MaintenanceReport): Uri = withContext(Dispatchers.IO) {

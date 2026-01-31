@@ -1538,6 +1538,19 @@ fun AddAssetScreen(
                     }
                 }
             },
+            onExportHtmlWithImages = {
+                scope.launch {
+                    if (isExporting) return@launch
+                    isExporting = true
+                    try {
+                        exportManager.exportHtmlWithImagesZipToDownloads(r)
+                        snackbarHostState.showSnackbar("ZIP (HTML + imágenes) guardado en Descargas/FieldMaintenance")
+                    } finally {
+                        isExporting = false
+                        showFinalizeDialog = false
+                    }
+                }
+            },
             onExportForAppJson = {
                 scope.launch {
                     if (isExporting) return@launch
