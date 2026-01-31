@@ -501,6 +501,7 @@ fun AddAssetScreen(
     var amplifierMode by rememberSaveable(stateSaver = amplifierModeSaver) { mutableStateOf<AmplifierMode?>(null) }
     var port by rememberSaveable(stateSaver = portSaver) { mutableStateOf<Port?>(null) }
     var portIndex by rememberSaveable { mutableStateOf<Int?>(null) }
+    var meterType by rememberSaveable { mutableStateOf("ONX") }
     var hasNode by remember { mutableStateOf(false) }
     var attemptedSave by remember { mutableStateOf(false) }
     var modulePhotoCount by remember { mutableStateOf(0) }
@@ -657,6 +658,7 @@ fun AddAssetScreen(
                     else -> null
                 }
                 technology = asset.technology
+                meterType = asset.meterType?.takeIf { it.isNotBlank() } ?: "ONX"
                 amplifierMode = asset.amplifierMode
                 port = asset.port
                 portIndex = asset.portIndex
@@ -770,6 +772,7 @@ fun AddAssetScreen(
         assetType,
         frequency,
         technology,
+        meterType,
         amplifierMode,
         port,
         portIndex,
@@ -786,7 +789,8 @@ fun AddAssetScreen(
             amplifierMode = amplifierMode,
             port = port,
             portIndex = portIndex,
-            technology = if (assetType == AssetType.NODE) technology else null
+            technology = if (assetType == AssetType.NODE) technology else null,
+            meterType = meterType
         )
         if (isEdit || autoSaved) {
             viewModel.updateAsset(asset)
@@ -872,7 +876,9 @@ fun AddAssetScreen(
                                     frequencyMHz = frequency!!.mhz,
                                     amplifierMode = amplifierMode,
                                     port = port,
-                                    portIndex = portIndex
+                                    portIndex = portIndex,
+                                    meterType = meterType,
+                                    technology = if (assetType == AssetType.NODE) technology else null
                                 )
                                 if (isEdit) viewModel.updateAsset(asset) else viewModel.addAsset(asset)
                                 withContext(Dispatchers.IO) {
@@ -997,6 +1003,45 @@ fun AddAssetScreen(
                                             onClick = {
                                                 technology = tech
                                                 expandedTech = false
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        // Meter type (ONX/DSAM)
+                        run {
+                            var expandedMeter by remember { mutableStateOf(false) }
+                            val meterOptions = listOf("ONX", "DSAM")
+                            ExposedDropdownMenuBox(
+                                expanded = expandedMeter,
+                                onExpandedChange = { expandedMeter = !expandedMeter },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                OutlinedTextField(
+                                    value = meterType.ifBlank { "ONX" },
+                                    onValueChange = {},
+                                    readOnly = true,
+                                    enabled = true,
+                                    label = { Text("Medidor") },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .menuAnchor(),
+                                    trailingIcon = {
+                                        ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedMeter)
+                                    }
+                                )
+                                ExposedDropdownMenu(
+                                    expanded = expandedMeter,
+                                    onDismissRequest = { expandedMeter = false }
+                                ) {
+                                    meterOptions.forEach { opt ->
+                                        DropdownMenuItem(
+                                            text = { Text(opt) },
+                                            onClick = {
+                                                meterType = opt
+                                                expandedMeter = false
                                             }
                                         )
                                     }
@@ -1396,7 +1441,8 @@ fun AddAssetScreen(
                                     amplifierMode = amplifierMode,
                                     port = port,
                                     portIndex = portIndex,
-                                    technology = if (assetType == AssetType.NODE) technology else null
+                                    technology = if (assetType == AssetType.NODE) technology else null,
+                                    meterType = meterType
                                 )
                             )
                         }
@@ -1415,6 +1461,7 @@ fun AddAssetScreen(
                             type = assetType,
                             frequencyMHz = (frequency?.mhz ?: 0),
                             technology = if (assetType == AssetType.NODE) technology else null,
+                            meterType = meterType,
                             amplifierMode = amplifierMode,
                             port = port,
                             portIndex = portIndex
@@ -2325,6 +2372,8 @@ private fun AssetFileSection(
     asset: Asset
 ) {
     val isNodeAsset = asset.type == AssetType.NODE
+    val meterKey = asset.meterType?.trim()?.lowercase(Locale.getDefault()).orEmpty()
+    val isDsam = meterKey == "dsam"
     val rxAssetDir = remember(reportFolder, asset) {
         MaintenanceStorage.ensureAssetDir(context, reportFolder, asset)
     }
@@ -2390,6 +2439,10 @@ private fun AssetFileSection(
     var surplusIsModule by remember { mutableStateOf(false) }
     var pendingDeleteEntry by remember { mutableStateOf<MeasurementEntry?>(null) }
     var pendingDeleteIsModule by remember { mutableStateOf(false) }
+
+    // DSAM measurement photos
+    var dsamRxCount by remember(asset.id) { mutableStateOf(0) }
+    var dsamModuleCount by remember(asset.id) { mutableStateOf(0) }
 
     fun displayLabel(entry: MeasurementEntry): String {
         return if (entry.isDiscarded && !entry.label.contains("DESCARTADA", ignoreCase = true)) {
@@ -2630,17 +2683,26 @@ private fun AssetFileSection(
         ) {
             val rxRequired = requiredCounts(asset.type, isModule = false)
             val moduleRequired = requiredCounts(moduleAsset.type, isModule = true)
-            val canRefresh = if (isNodeAsset) {
-                if (hasRxMeasurements && hasModuleMeasurements) {
-                    meetsRequired(verificationSummaryRx, rxRequired) &&
-                        meetsRequired(verificationSummaryModule, moduleRequired)
-                } else if (hasRxMeasurements && !hasModuleMeasurements) {
-                    meetsRequired(verificationSummaryRx, rxRequired)
-                } else {
-                    meetsRequired(verificationSummaryModule, moduleRequired)
+            val canRefresh = when {
+                isDsam && isNodeAsset -> {
+                    val rxOk = !hasRxMeasurements || dsamRxCount > 0
+                    val moduleOk = !hasModuleMeasurements || dsamModuleCount > 0
+                    rxOk && moduleOk
                 }
-            } else {
-                meetsRequired(verificationSummaryRx, rxRequired)
+                isDsam && !isNodeAsset -> {
+                    dsamModuleCount > 0
+                }
+                isNodeAsset -> {
+                    if (hasRxMeasurements && hasModuleMeasurements) {
+                        meetsRequired(verificationSummaryRx, rxRequired) &&
+                            meetsRequired(verificationSummaryModule, moduleRequired)
+                    } else if (hasRxMeasurements && !hasModuleMeasurements) {
+                        meetsRequired(verificationSummaryRx, rxRequired)
+                    } else {
+                        meetsRequired(verificationSummaryModule, moduleRequired)
+                    }
+                }
+                else -> meetsRequired(verificationSummaryRx, rxRequired)
             }
             LaunchedEffect(canRefresh, asset.id) {
                 onCompletionChange(canRefresh)
@@ -2656,13 +2718,17 @@ private fun AssetFileSection(
                     ) {
                         if (hasRxMeasurements) {
                             Text("Mediciones RX", fontWeight = FontWeight.SemiBold)
-                            IconButton(onClick = { startViaviImport(AssetType.NODE) }) {
-                                Icon(Icons.Default.FileUpload, contentDescription = "Agregar mediciones RX")
+                            if (!isDsam) {
+                                IconButton(onClick = { startViaviImport(AssetType.NODE) }) {
+                                    Icon(Icons.Default.FileUpload, contentDescription = "Agregar mediciones RX")
+                                }
                             }
                         } else {
                             Text("Mediciones Modulo", fontWeight = FontWeight.SemiBold)
-                            IconButton(onClick = { startViaviImport(AssetType.AMPLIFIER) }) {
-                                Icon(Icons.Default.FileUpload, contentDescription = "Agregar mediciones Modulo")
+                            if (!isDsam) {
+                                IconButton(onClick = { startViaviImport(AssetType.AMPLIFIER) }) {
+                                    Icon(Icons.Default.FileUpload, contentDescription = "Agregar mediciones Modulo")
+                                }
                             }
                         }
                     }
@@ -2672,8 +2738,10 @@ private fun AssetFileSection(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text("Mediciones Modulo", fontWeight = FontWeight.SemiBold)
-                        IconButton(onClick = { startViaviImport(asset.type) }) {
-                            Icon(Icons.Default.FileUpload, contentDescription = "Agregar mediciones Modulo")
+                        if (!isDsam) {
+                            IconButton(onClick = { startViaviImport(asset.type) }) {
+                                Icon(Icons.Default.FileUpload, contentDescription = "Agregar mediciones Modulo")
+                            }
                         }
                     }
                 }
@@ -4024,56 +4092,109 @@ private fun AssetFileSection(
 
                 if (asset.type == AssetType.NODE) {
                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        if (hasRxMeasurements) {
-                            verificationSummaryRx?.let { summary ->
-                                VerificationSummaryView(
-                                    summary,
-                                    asset,
-                                    ::toggleDiscardRx,
-                                    onRequestDelete = { entry ->
-                                        pendingDeleteEntry = entry
-                                        pendingDeleteIsModule = false
-                                    },
-                                    isModule = false
+                        if (isDsam) {
+                            val eventName = reportFolder
+                            val assetLabel = asset.id.take(6)
+                            if (hasRxMeasurements) {
+                                PhotoSection(
+                                    title = "Mediciones RX (DSAM)",
+                                    reportId = asset.reportId,
+                                    assetId = asset.id,
+                                    photoType = PhotoType.MEASUREMENT_RX,
+                                    assetLabel = assetLabel,
+                                    eventName = eventName,
+                                    repository = repository,
+                                    minRequired = 1,
+                                    showRequiredError = false,
+                                    maxAllowed = 1,
+                                    onCountChange = { dsamRxCount = it }
                                 )
                             }
-                        }
-                        if (hasModuleMeasurements) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text("Mediciones Modulo", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                                IconButton(onClick = { startViaviImport(AssetType.AMPLIFIER) }) {
-                                    Icon(Icons.Default.FileUpload, contentDescription = "Agregar mediciones Modulo")
+                            if (hasModuleMeasurements) {
+                                PhotoSection(
+                                    title = "Mediciones Modulo (DSAM)",
+                                    reportId = asset.reportId,
+                                    assetId = asset.id,
+                                    photoType = PhotoType.MEASUREMENT_MODULE,
+                                    assetLabel = assetLabel,
+                                    eventName = eventName,
+                                    repository = repository,
+                                    minRequired = 1,
+                                    showRequiredError = false,
+                                    maxAllowed = 1,
+                                    onCountChange = { dsamModuleCount = it }
+                                )
+                            }
+                        } else {
+                            if (hasRxMeasurements) {
+                                verificationSummaryRx?.let { summary ->
+                                    VerificationSummaryView(
+                                        summary,
+                                        asset,
+                                        ::toggleDiscardRx,
+                                        onRequestDelete = { entry ->
+                                            pendingDeleteEntry = entry
+                                            pendingDeleteIsModule = false
+                                        },
+                                        isModule = false
+                                    )
                                 }
                             }
-                            verificationSummaryModule?.let { summary ->
-                                VerificationSummaryView(
-                                    summary,
-                                    moduleValidationAsset,
-                                    ::toggleDiscardModule,
-                                    onRequestDelete = { entry ->
-                                        pendingDeleteEntry = entry
-                                        pendingDeleteIsModule = true
-                                    },
-                                    isModule = true
-                                )
+                            if (hasModuleMeasurements) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("Mediciones Modulo", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                                    IconButton(onClick = { startViaviImport(AssetType.AMPLIFIER) }) {
+                                        Icon(Icons.Default.FileUpload, contentDescription = "Agregar mediciones Modulo")
+                                    }
+                                }
+                                verificationSummaryModule?.let { summary ->
+                                    VerificationSummaryView(
+                                        summary,
+                                        moduleValidationAsset,
+                                        ::toggleDiscardModule,
+                                        onRequestDelete = { entry ->
+                                            pendingDeleteEntry = entry
+                                            pendingDeleteIsModule = true
+                                        },
+                                        isModule = true
+                                    )
+                                }
                             }
                         }
                     }
                 } else {
-                    verificationSummaryRx?.let { summary ->
-                        VerificationSummaryView(
-                            summary,
-                            asset,
-                            ::toggleDiscardRx,
-                            onRequestDelete = { entry ->
-                                pendingDeleteEntry = entry
-                                pendingDeleteIsModule = false
-                            },
-                            isModule = false
+                    if (isDsam) {
+                        val eventName = reportFolder
+                        val assetLabel = asset.id.take(6)
+                        PhotoSection(
+                            title = "Mediciones Modulo (DSAM)",
+                            reportId = asset.reportId,
+                            assetId = asset.id,
+                            photoType = PhotoType.MEASUREMENT_MODULE,
+                            assetLabel = assetLabel,
+                            eventName = eventName,
+                            repository = repository,
+                            minRequired = 1,
+                            showRequiredError = false,
+                            maxAllowed = 1,
+                            onCountChange = { dsamModuleCount = it }
                         )
+                    } else {
+                        verificationSummaryRx?.let { summary ->
+                            VerificationSummaryView(
+                                summary,
+                                asset,
+                                ::toggleDiscardRx,
+                                onRequestDelete = { entry ->
+                                    pendingDeleteEntry = entry
+                                    pendingDeleteIsModule = false
+                                },
+                                isModule = false
+                            )
+                        }
                     }
                 }
             }
