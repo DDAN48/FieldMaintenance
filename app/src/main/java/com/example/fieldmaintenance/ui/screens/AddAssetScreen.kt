@@ -1512,60 +1512,44 @@ fun AddAssetScreen(
                     showFinalizeDialog = false
                 }
             },
-            onSendEmailPackage = {
+            onSendEmailHtml = {
                 scope.launch {
                     if (isExporting) return@launch
                     isExporting = true
                     try {
-                        val bundleFile = exportManager.exportToBundleZip(r)
-                        com.example.fieldmaintenance.util.EmailManager.sendEmail(context, r.eventName, listOf(bundleFile))
+                        val htmlFile = exportManager.exportToHtmlOnly(r)
+                        com.example.fieldmaintenance.util.EmailManager.sendEmail(context, r.eventName, listOf(htmlFile))
                     } finally {
                         isExporting = false
                         showFinalizeDialog = false
                     }
                 }
             },
-            onExportPackage = {
+            onExportHtml = {
                 scope.launch {
                     if (isExporting) return@launch
                     isExporting = true
                     try {
-                        exportManager.exportBundleToDownloads(r)
-                        snackbarHostState.showSnackbar("Exportación (HTML) guardada en Descargas/FieldMaintenance")
+                        exportManager.exportHtmlOnlyToDownloads(r)
+                        snackbarHostState.showSnackbar("HTML guardado en Descargas/FieldMaintenance")
                     } finally {
                         isExporting = false
                         showFinalizeDialog = false
                     }
                 }
             },
-            onExportContinuePackage = {
+            onExportForAppJson = {
                 scope.launch {
                     if (isExporting) return@launch
                     isExporting = true
                     try {
-                        exportManager.exportContinuationZipToDownloads(r)
-                        snackbarHostState.showSnackbar("Exportación (APP) guardada en Descargas/FieldMaintenance")
+                        exportManager.exportAppZipToDownloads(r)
+                        snackbarHostState.showSnackbar("Exportación APP (JSON + carpetas) guardada en Descargas/FieldMaintenance")
                     } finally {
                         isExporting = false
                         showFinalizeDialog = false
                     }
                 }
-            },
-            onExportJson = {
-                scope.launch {
-                    if (isExporting) return@launch
-                    isExporting = true
-                    try {
-                        exportManager.exportReportJsonToDownloads(r)
-                        snackbarHostState.showSnackbar("JSON guardado en Descargas/FieldMaintenance")
-                    } finally {
-                        isExporting = false
-                        showFinalizeDialog = false
-                    }
-                }
-            },
-            onGoHome = {
-                navController.navigate(Screen.Home.route) { popUpTo(0) }
             },
             showMissingWarning = hasMissingAssets,
             isProcessing = isExporting

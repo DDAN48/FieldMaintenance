@@ -305,60 +305,44 @@ fun AssetSummaryScreen(navController: NavController, reportId: String) {
                     showFinalizeDialog = false
                 }
             },
-            onSendEmailPackage = {
+            onSendEmailHtml = {
                 scope.launch {
                     if (isExporting) return@launch
                     isExporting = true
                     try {
-                        val bundleFile = exportManager.exportToBundleZip(report!!)
-                        EmailManager.sendEmail(context, report!!.eventName, listOf(bundleFile))
+                        val htmlFile = exportManager.exportToHtmlOnly(report!!)
+                        EmailManager.sendEmail(context, report!!.eventName, listOf(htmlFile))
                     } finally {
                         isExporting = false
                         showFinalizeDialog = false
                     }
                 }
             },
-            onExportPackage = {
+            onExportHtml = {
                 scope.launch {
                     if (isExporting) return@launch
                     isExporting = true
                     try {
-                        exportManager.exportBundleToDownloads(report!!)
-                        snackbarHostState.showSnackbar("Exportación (HTML) guardada en Descargas/FieldMaintenance")
+                        exportManager.exportHtmlOnlyToDownloads(report!!)
+                        snackbarHostState.showSnackbar("HTML guardado en Descargas/FieldMaintenance")
                     } finally {
                         isExporting = false
                         showFinalizeDialog = false
                     }
                 }
             },
-            onExportContinuePackage = {
+            onExportForAppJson = {
                 scope.launch {
                     if (isExporting) return@launch
                     isExporting = true
                     try {
-                        exportManager.exportContinuationZipToDownloads(report!!)
-                        snackbarHostState.showSnackbar("Exportación (APP) guardada en Descargas/FieldMaintenance")
+                        exportManager.exportAppZipToDownloads(report!!)
+                        snackbarHostState.showSnackbar("Exportación APP (JSON + carpetas) guardada en Descargas/FieldMaintenance")
                     } finally {
                         isExporting = false
                         showFinalizeDialog = false
                     }
                 }
-            },
-            onExportJson = {
-                scope.launch {
-                    if (isExporting) return@launch
-                    isExporting = true
-                    try {
-                        exportManager.exportReportJsonToDownloads(report!!)
-                        snackbarHostState.showSnackbar("JSON guardado en Descargas/FieldMaintenance")
-                    } finally {
-                        isExporting = false
-                        showFinalizeDialog = false
-                    }
-                }
-            },
-            onGoHome = {
-                navController.navigate(Screen.Home.route) { popUpTo(0) }
             },
             showMissingWarning = hasMissingAssets,
             isProcessing = isExporting
@@ -465,11 +449,9 @@ fun AssetSummaryCard(
 @Composable
 fun FinalizeReportDialog(
     onDismiss: () -> Unit,
-    onSendEmailPackage: () -> Unit,
-    onExportPackage: () -> Unit,
-    onExportContinuePackage: () -> Unit,
-    onExportJson: () -> Unit,
-    onGoHome: () -> Unit,
+    onSendEmailHtml: () -> Unit,
+    onExportHtml: () -> Unit,
+    onExportForAppJson: () -> Unit,
     showMissingWarning: Boolean,
     isProcessing: Boolean
 ) {
@@ -484,7 +466,7 @@ fun FinalizeReportDialog(
                 TextButton(
                     onClick = {
                         if (!showMissingWarning && !isProcessing) {
-                            onExportPackage()
+                            onExportHtml()
                         }
                     },
                     enabled = !showMissingWarning && !isProcessing
@@ -494,17 +476,7 @@ fun FinalizeReportDialog(
                 TextButton(
                     onClick = {
                         if (!showMissingWarning && !isProcessing) {
-                            onExportContinuePackage()
-                        }
-                    },
-                    enabled = !showMissingWarning && !isProcessing
-                ) {
-                    Text("📦 Exportar para continuar mantenimiento (APP)")
-                }
-                TextButton(
-                    onClick = {
-                        if (!showMissingWarning && !isProcessing) {
-                            onSendEmailPackage()
+                            onSendEmailHtml()
                         }
                     },
                     enabled = !showMissingWarning && !isProcessing
@@ -514,20 +486,12 @@ fun FinalizeReportDialog(
                 TextButton(
                     onClick = {
                         if (!showMissingWarning && !isProcessing) {
-                            onExportJson()
+                            onExportForAppJson()
                         }
                     },
                     enabled = !showMissingWarning && !isProcessing
                 ) {
-                    Text("🧾 Exportar JSON")
-                }
-                TextButton(onClick = {
-                    if (!isProcessing) {
-                        onGoHome()
-                        onDismiss()
-                    }
-                }, enabled = !isProcessing) {
-                    Text("🏠 Volver al inicio")
+                    Text("📦 Exportar para APP (JSON)")
                 }
 
                 Spacer(modifier = Modifier.height(6.dp))

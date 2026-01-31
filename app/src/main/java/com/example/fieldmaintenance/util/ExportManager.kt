@@ -3763,6 +3763,189 @@ val assets = repository.getAssetsByReportId(report.id).first()
         exportToZIP(report, baseName)
     }
 
+    /**
+     * Export a single HTML file only (self-contained viewer).
+     * Does NOT include report.json nor any folders.
+     */
+    suspend fun exportToHtmlOnly(
+        report: MaintenanceReport,
+        baseName: String = exportBaseName(report)
+    ): File = withContext(Dispatchers.IO) {
+        val assets = repository.getAssetsByReportId(report.id).first()
+            .sortedBy { assetSortKey(it) }
+        val passives = repository.getPassivesByReportId(report.id).first()
+        val exportDir = File(context.cacheDir, "export_html_only/${report.id}")
+        if (exportDir.exists()) exportDir.deleteRecursively()
+        exportDir.mkdirs()
+
+        val photosByAsset = mutableMapOf<String, List<Photo>>()
+        val adjustmentsByAsset = mutableMapOf<String, AmplifierAdjustment>()
+        val nodeAdjustmentsByAsset = mutableMapOf<String, NodeAdjustment>()
+
+        val reportFolderName = MaintenanceStorage.reportFolderName(report.eventName, report.id)
+        assets.forEach { asset ->
+            repository.getAmplifierAdjustment(asset.id).first()?.let { adj ->
+                adjustmentsByAsset[asset.id] = adj
+            }
+            if (asset.type == AssetType.NODE) {
+                repository.getNodeAdjustment(asset.id).first()?.let { adj ->
+                    nodeAdjustmentsByAsset[asset.id] = adj
+                }
+            }
+            val photos = repository.getPhotosByAssetId(asset.id).first()
+                .sortedBy { photoSortKey(it) }
+            photosByAsset[asset.id] = photos
+        }
+
+        val adjustedCount = countAdjustedAssets(report, assets)
+        exportToHtml(
+            exportDir = exportDir,
+            report = report,
+            assets = assets,
+            passives = passives,
+            adjustedCount = adjustedCount,
+            photosByAsset = photosByAsset,
+            adjustmentsByAsset = adjustmentsByAsset,
+            nodeAdjustmentsByAsset = nodeAdjustmentsByAsset,
+            reportFolderName = reportFolderName
+        )
+
+        val src = File(exportDir, "report.html")
+        val dest = File(context.getExternalFilesDir(null), "${baseName}.html")
+        if (dest.exists()) dest.delete()
+        src.copyTo(dest, overwrite = true)
+        dest
+    }
+
+    /**
+     * Export importable ZIP for the app: report.json + images/ + measurements/.
+     * (No HTML viewer included.)
+     */
+    suspend fun exportToZIPForApp(
+        report: MaintenanceReport,
+        baseName: String = "${exportBaseName(report)}_app"
+    ): File = withContext(Dispatchers.IO) {
+        val assets = repository.getAssetsByReportId(report.id).first()
+            .sortedBy { assetSortKey(it) }
+        val passives = repository.getPassivesByReportId(report.id).first()
+        val exportDir = File(context.cacheDir, "export_zip_app/${report.id}")
+        if (exportDir.exists()) exportDir.deleteRecursively()
+        exportDir.mkdirs()
+
+        val photosByAsset = mutableMapOf<String, List<Photo>>()
+        val adjustmentsByAsset = mutableMapOf<String, AmplifierAdjustment>()
+        val nodeAdjustmentsByAsset = mutableMapOf<String, NodeAdjustment>()
+        val switchSelections = collectSwitchSelections(assets)
+
+        val reportFolderName = MaintenanceStorage.reportFolderName(report.eventName, report.id)
+
+        assets.forEach { asset ->
+            repository.getAmplifierAdjustment(asset.id).first()?.let { adj ->
+                adjustmentsByAsset[asset.id] = adj
+            }
+            if (asset.type == AssetType.NODE) {
+                repository.getNodeAdjustment(asset.id).first()?.let { adj ->
+                    nodeAdjustmentsByAsset[asset.id] = adj
+                }
+            }
+            val photos = repository.getPhotosByAssetId(asset.id).first()
+                .sortedBy { photoSortKey(it) }
+            photosByAsset[asset.id] = photos
+        }
+
+        fun safeCopyToExport(src: File, relativeDir: String, preferredName: String): String {
+            val cleanDir = relativeDir.trim('/').replace("\\", "/")
+            val destDir = File(exportDir, cleanDir)
+            destDir.mkdirs()
+
+            var name = preferredName
+            var dest = File(destDir, name)
+            if (dest.exists()) {
+                name = "${System.currentTimeMillis()}_$preferredName"
+                dest = File(destDir, name)
+            }
+            src.copyTo(dest, overwrite = true)
+            return "${cleanDir}/${dest.name}"
+        }
+
+        val imagesMap: Map<String, List<ExportImageRef>> = photosByAsset.mapValues { (assetId, photos) ->
+            photos.mapNotNull { photo ->
+                val src = File(photo.filePath)
+                if (!src.exists()) return@mapNotNull null
+                val rel = safeCopyToExport(
+                    src = src,
+                    relativeDir = "images/$assetId/${photo.photoType.name.lowercase()}",
+                    preferredName = src.name
+                )
+                ExportImageRef(
+                    photoId = photo.id,
+                    photoType = photo.photoType,
+                    fileName = rel
+                )
+            }
+        }
+
+        val reportImageRefs: List<ExportReportImageRef> = repository.getReportPhotosByReportId(report.id).first()
+            .sortedBy { it.createdAt }
+            .mapNotNull { rp ->
+                val src = File(rp.filePath)
+                if (!src.exists()) return@mapNotNull null
+                val rel = safeCopyToExport(
+                    src = src,
+                    relativeDir = "images/report/${rp.type.name.lowercase()}",
+                    preferredName = src.name
+                )
+                ExportReportImageRef(
+                    photoId = rp.id,
+                    type = rp.type,
+                    fileName = rel
+                )
+            }
+
+        val measurementsRoot = MaintenanceStorage.ensureReportDir(context, reportFolderName)
+        val measurementsExportRoot = File(exportDir, "measurements").apply { mkdirs() }
+        assets.forEach { asset ->
+            val measurementAssets = buildList {
+                add(asset)
+                if (asset.type == AssetType.NODE) {
+                    add(asset.copy(type = AssetType.AMPLIFIER))
+                }
+            }
+            measurementAssets.forEach { measurementAsset ->
+                val folderName = MaintenanceStorage.assetFolderName(measurementAsset)
+                val srcDir = File(measurementsRoot, folderName)
+                if (!srcDir.exists()) return@forEach
+                val destDir = File(measurementsExportRoot, folderName)
+                destDir.mkdirs()
+                srcDir.listFiles()
+                    ?.filter { it.isFile }
+                    ?.forEach { file ->
+                        file.copyTo(File(destDir, file.name), overwrite = true)
+                    }
+            }
+        }
+
+        val exportData = ExportDataV2(
+            report = report,
+            assets = assets,
+            images = imagesMap,
+            reportImages = reportImageRefs.ifEmpty { null },
+            adjustments = if (adjustmentsByAsset.isEmpty()) null else adjustmentsByAsset,
+            nodeAdjustments = if (nodeAdjustmentsByAsset.isNotEmpty()) nodeAdjustmentsByAsset else null,
+            passives = passives,
+            switchSelections = if (switchSelections.isNotEmpty()) switchSelections else null
+        )
+        File(exportDir, "report.json").writeText(gson.toJson(exportData))
+
+        val zipFile = File(context.getExternalFilesDir(null), "${baseName}.zip")
+        if (zipFile.exists()) zipFile.delete()
+
+        ZipFile(zipFile).apply {
+            addFolder(exportDir)
+        }
+        zipFile
+    }
+
     suspend fun exportZipToDownloads(report: MaintenanceReport): Uri = withContext(Dispatchers.IO) {
         val baseName = exportBaseName(report)
         val tmp = exportToZIP(report, baseName)
@@ -3780,6 +3963,19 @@ val assets = repository.getAssetsByReportId(report.id).first()
     suspend fun exportContinuationZipToDownloads(report: MaintenanceReport): Uri = withContext(Dispatchers.IO) {
         val baseName = "${exportBaseName(report)}_continuar"
         val tmp = exportToZIPForContinuation(report, baseName)
+        val displayName = "${baseName}.zip"
+        DownloadStore.saveToDownloads(context, tmp, displayName, "application/zip")
+    }
+
+    suspend fun exportHtmlOnlyToDownloads(report: MaintenanceReport): Uri = withContext(Dispatchers.IO) {
+        val baseName = exportBaseName(report)
+        val tmp = exportToHtmlOnly(report, baseName)
+        DownloadStore.saveToDownloads(context, tmp, tmp.name, "text/html")
+    }
+
+    suspend fun exportAppZipToDownloads(report: MaintenanceReport): Uri = withContext(Dispatchers.IO) {
+        val baseName = "${exportBaseName(report)}_app"
+        val tmp = exportToZIPForApp(report, baseName)
         val displayName = "${baseName}.zip"
         DownloadStore.saveToDownloads(context, tmp, displayName, "application/zip")
     }
