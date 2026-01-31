@@ -1249,6 +1249,9 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     PhotoType.SPECTRUM -> 3
                     PhotoType.MEASUREMENT_RX -> 0
                     PhotoType.MEASUREMENT_MODULE -> 0
+                    PhotoType.MEASUREMENT_RX_CHANNEL_CHECK -> 0
+                    PhotoType.MEASUREMENT_MODULE_CHANNEL_CHECK -> 0
+                    PhotoType.MEASUREMENT_MODULE_DOCSIS_CHECK -> 0
                 }
             }
             fun photoBoxHeight(t: PhotoType): Float = if (t == PhotoType.SPECTRUM) 260f else 360f
