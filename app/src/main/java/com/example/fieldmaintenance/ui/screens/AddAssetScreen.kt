@@ -2831,7 +2831,7 @@ private fun AssetFileSection(
             }
             if (isDsam && dsamGeo != null) {
                 Text(
-                    text = "Geo: ${String.format(Locale.getDefault(), "%.5f", dsamGeo.latitude)}, ${String.format(Locale.getDefault(), "%.5f", dsamGeo.longitude)}",
+                    text = "Georreferencia: ${String.format(Locale.getDefault(), "%.5f", dsamGeo.latitude)}, ${String.format(Locale.getDefault(), "%.5f", dsamGeo.longitude)}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f)
                 )
@@ -2903,16 +2903,18 @@ private fun AssetFileSection(
                     }
                 )
             }
-            val geoLocation = if (isNodeAsset) {
-                verificationSummaryModule?.geoLocation ?: verificationSummaryRx?.geoLocation
-            } else {
-                verificationSummaryRx?.geoLocation
+            if (!isDsam) {
+                val geoLocation = if (isNodeAsset) {
+                    verificationSummaryModule?.geoLocation ?: verificationSummaryRx?.geoLocation
+                } else {
+                    verificationSummaryRx?.geoLocation
+                }
+                Text(
+                    "Georreferencia: ${geoLocation?.let { "${it.latitude}, ${it.longitude}" } ?: "—"}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
-            Text(
-                "Georreferencia: ${geoLocation?.let { "${it.latitude}, ${it.longitude}" } ?: "—"}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
             if (isExpanded) {
                 @Composable
                 fun VerificationSummaryView(
