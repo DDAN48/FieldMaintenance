@@ -29,6 +29,8 @@ private suspend fun isAssetIncomplete(
     repository: MaintenanceRepository
 ): Boolean {
     val photos = repository.listPhotosByAssetId(asset.id)
+    val meterKey = asset.meterType?.trim()?.lowercase() ?: ""
+    val isDsam = meterKey == "dsam"
     val moduleCount = photos.count { it.photoType == PhotoType.MODULE }
     val opticsCount = photos.count { it.photoType == PhotoType.OPTICS }
     val techNormalized = asset.technology?.trim()?.lowercase() ?: ""
@@ -80,10 +82,24 @@ private suspend fun isAssetIncomplete(
             adj.outCh136Dbmv != null
     }
 
-    val measurementCount = MaintenanceStorage.ensureAssetDir(context, reportFolder, asset)
-        .listFiles()
-        ?.count { it.isFile } ?: 0
-    val measurementsOk = measurementCount > 0
+    val measurementsOk = if (isDsam) {
+        val isNode = asset.type == AssetType.NODE
+        val hasRxMeasurements = !(isNode && (techKey == "vccap" || techKey == "vccaphibrido"))
+        val hasModuleMeasurements = !(isNode && techKey == "vccapcompleto")
+
+        val rxChannel = photos.count { it.photoType == PhotoType.MEASUREMENT_RX_CHANNEL_CHECK }
+        val moduleChannel = photos.count { it.photoType == PhotoType.MEASUREMENT_MODULE_CHANNEL_CHECK }
+        val moduleDocsis = photos.count { it.photoType == PhotoType.MEASUREMENT_MODULE_DOCSIS_CHECK }
+
+        val rxOk = !hasRxMeasurements || rxChannel >= 1
+        val moduleOkDsam = !hasModuleMeasurements || (moduleChannel >= 4 && moduleDocsis >= 4)
+        rxOk && moduleOkDsam
+    } else {
+        val measurementCount = MaintenanceStorage.ensureAssetDir(context, reportFolder, asset)
+            .listFiles()
+            ?.count { it.isFile } ?: 0
+        measurementCount > 0
+    }
 
     return !(moduleOk && opticsOk && nodeAdjOk && ampAdjOk && measurementsOk)
 }
