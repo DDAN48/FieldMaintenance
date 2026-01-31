@@ -21,7 +21,7 @@ import com.example.fieldmaintenance.data.model.ReportPhoto
 
 @Database(
     entities = [MaintenanceReport::class, Asset::class, Photo::class, AmplifierAdjustment::class, PassiveItem::class, ReportPhoto::class, NodeAdjustment::class],
-    version = 14,
+    version = 15,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -244,6 +244,17 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("UPDATE amplifier_adjustments SET inputLowFreqMHz = 379 WHERE inputLowFreqMHz IS NULL")
                 db.execSQL("UPDATE amplifier_adjustments SET inputPlanLowFreqMHz = 379 WHERE inputPlanLowFreqMHz IS NULL")
                 db.execSQL("UPDATE amplifier_adjustments SET inputPlanHighFreqMHz = 870 WHERE inputPlanHighFreqMHz IS NULL")
+            }
+        }
+
+        val MIGRATION_14_15 = object : Migration(14, 15) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                try {
+                    db.execSQL("ALTER TABLE assets ADD COLUMN meterType TEXT")
+                } catch (e: Exception) {
+                    // La columna ya existe, continuar
+                }
+                db.execSQL("UPDATE assets SET meterType = 'ONX' WHERE meterType IS NULL OR meterType = ''")
             }
         }
     }

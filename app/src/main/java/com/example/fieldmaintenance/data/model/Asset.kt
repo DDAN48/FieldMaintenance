@@ -26,6 +26,12 @@ data class Asset(
      *
      * Can come from plan or be manually selected.
      */
-    val technology: String? = null
+    val technology: String? = null,
+    /**
+     * Meter model:
+     * - "ONX" (default / existing behavior)
+     * - "DSAM" (measurements are captured as photos)
+     */
+    val meterType: String? = null
 )
 
