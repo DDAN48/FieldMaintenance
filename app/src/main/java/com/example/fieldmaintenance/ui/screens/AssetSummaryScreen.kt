@@ -331,6 +331,19 @@ fun AssetSummaryScreen(navController: NavController, reportId: String) {
                     }
                 }
             },
+            onExportHtmlWithImages = {
+                scope.launch {
+                    if (isExporting) return@launch
+                    isExporting = true
+                    try {
+                        exportManager.exportHtmlWithImagesZipToDownloads(report!!)
+                        snackbarHostState.showSnackbar("ZIP (HTML + imágenes) guardado en Descargas/FieldMaintenance")
+                    } finally {
+                        isExporting = false
+                        showFinalizeDialog = false
+                    }
+                }
+            },
             onExportForAppJson = {
                 scope.launch {
                     if (isExporting) return@launch
@@ -451,6 +464,7 @@ fun FinalizeReportDialog(
     onDismiss: () -> Unit,
     onSendEmailHtml: () -> Unit,
     onExportHtml: () -> Unit,
+    onExportHtmlWithImages: () -> Unit,
     onExportForAppJson: () -> Unit,
     showMissingWarning: Boolean,
     isProcessing: Boolean
@@ -472,6 +486,16 @@ fun FinalizeReportDialog(
                     enabled = !showMissingWarning && !isProcessing
                 ) {
                     Text("📦 Exportar reporte (HTML)")
+                }
+                TextButton(
+                    onClick = {
+                        if (!showMissingWarning && !isProcessing) {
+                            onExportHtmlWithImages()
+                        }
+                    },
+                    enabled = !showMissingWarning && !isProcessing
+                ) {
+                    Text("📦 Exportar reporte (HTML + imágenes)")
                 }
                 TextButton(
                     onClick = {

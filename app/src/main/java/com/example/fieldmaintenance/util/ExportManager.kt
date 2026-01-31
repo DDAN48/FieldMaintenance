@@ -48,8 +48,12 @@ import java.io.FileOutputStream as JFileOutputStream
 import java.text.SimpleDateFormat
 import java.util.*
 import kotlin.math.abs
+import kotlin.math.pow
+import kotlin.math.roundToInt
 
 class ExportManager(private val context: Context, private val repository: MaintenanceRepository) {
+    private enum class HtmlPhotoMode { EMBED_BASE64, RELATIVE_FILES }
+
     private val gson: Gson = GsonBuilder().setPrettyPrinting().create()
     private val switchPrefs by lazy {
         context.getSharedPreferences("measurement_switch_positions", Context.MODE_PRIVATE)
@@ -70,6 +74,21 @@ class ExportManager(private val context: Context, private val repository: Mainte
         val event = safeFilePart(report.eventName.ifBlank { "evento" })
         val dt = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(now)
         return "${node}_${event}_$dt"
+    }
+
+    private fun groupedGeoLocation(points: List<GeoPoint>, precisionDecimals: Int = 4): GeoPoint? {
+        if (points.isEmpty()) return null
+        val scale = 10.0.pow(precisionDecimals.toDouble())
+        fun key(p: GeoPoint): Pair<Int, Int> {
+            val latKey = (p.latitude * scale).roundToInt()
+            val lonKey = (p.longitude * scale).roundToInt()
+            return latKey to lonKey
+        }
+        val buckets = points.groupBy(::key)
+        val best = buckets.maxByOrNull { (_, pts) -> pts.size }?.value ?: points
+        val avgLat = best.map { it.latitude }.average()
+        val avgLon = best.map { it.longitude }.average()
+        return GeoPoint(latitude = avgLat, longitude = avgLon)
     }
 
     fun exportDisplayName(report: MaintenanceReport, extensionWithDot: String, now: Date = Date()): String {
@@ -155,6 +174,9 @@ class ExportManager(private val context: Context, private val repository: Mainte
             PhotoType.SPECTRUM -> "3_SPECTRUM"
             PhotoType.MEASUREMENT_RX -> "4_MEASUREMENT_RX"
             PhotoType.MEASUREMENT_MODULE -> "5_MEASUREMENT_MODULE"
+            PhotoType.MEASUREMENT_RX_CHANNEL_CHECK -> "6_MEASUREMENT_RX_CHANNEL_CHECK"
+            PhotoType.MEASUREMENT_MODULE_CHANNEL_CHECK -> "7_MEASUREMENT_MODULE_CHANNEL_CHECK"
+            PhotoType.MEASUREMENT_MODULE_DOCSIS_CHECK -> "8_MEASUREMENT_MODULE_DOCSIS_CHECK"
         }
         return "${typeOrder}_${p.fileName}"
     }
@@ -167,6 +189,9 @@ class ExportManager(private val context: Context, private val repository: Mainte
             PhotoType.SPECTRUM -> "Fotos de Inyección de portadoras por puerto"
             PhotoType.MEASUREMENT_RX -> "Mediciones RX (DSAM)"
             PhotoType.MEASUREMENT_MODULE -> "Mediciones Modulo (DSAM)"
+            PhotoType.MEASUREMENT_RX_CHANNEL_CHECK -> "RX Channel Check (DSAM)"
+            PhotoType.MEASUREMENT_MODULE_CHANNEL_CHECK -> "Módulo Medición Channel Check (DSAM)"
+            PhotoType.MEASUREMENT_MODULE_DOCSIS_CHECK -> "Módulo Medición DOCSIS Check (DSAM)"
         }
     }
 
@@ -1594,11 +1619,12 @@ val assets = repository.getAssetsByReportId(report.id).first()
         photosByAsset: Map<String, List<Photo>>,
         adjustmentsByAsset: Map<String, AmplifierAdjustment>,
         nodeAdjustmentsByAsset: Map<String, NodeAdjustment>,
-        reportFolderName: String
+        reportFolderName: String,
+        photoMode: HtmlPhotoMode = HtmlPhotoMode.EMBED_BASE64
     ): File {
         val measurementRoot = MaintenanceStorage.ensureReportDir(context, reportFolderName)
         val switchSelections = collectSwitchSelections(assets)
-        val measurements = buildHtmlMeasurementMap(report, assets, measurementRoot, switchSelections)
+        val measurements = buildHtmlMeasurementMap(report, assets, measurementRoot, switchSelections, exportDir, photoMode)
         val passiveCounts = passives.groupingBy { it.type }.eachCount()
 
         fun countOf(t: PassiveType) = passiveCounts[t] ?: 0
@@ -1643,15 +1669,24 @@ val assets = repository.getAssetsByReportId(report.id).first()
                             baseTitle
                         }
                         val imageFile = File(photo.filePath)
-                        val dataUri = if (imageFile.exists()) {
-                            val encoded = Base64.encodeToString(imageFile.readBytes(), Base64.NO_WRAP)
-                            "data:image/jpeg;base64,$encoded"
+                        val relPath = if (photoMode == HtmlPhotoMode.RELATIVE_FILES && imageFile.exists()) {
+                            val destDir = File(exportDir, "images/${asset.id}/${photo.photoType.name.lowercase()}")
+                            destDir.mkdirs()
+                            val dest = File(destDir, imageFile.name)
+                            if (!dest.exists()) {
+                                imageFile.copyTo(dest, overwrite = true)
+                            }
+                            "images/${asset.id}/${photo.photoType.name.lowercase()}/${dest.name}"
                         } else {
                             null
                         }
+                        val dataUri = if (photoMode == HtmlPhotoMode.EMBED_BASE64 && imageFile.exists()) {
+                            val encoded = Base64.encodeToString(imageFile.readBytes(), Base64.NO_WRAP)
+                            "data:image/jpeg;base64,$encoded"
+                        } else null
                         HtmlPhotoExport(
                             title = title,
-                            fileName = imageFile.name,
+                            fileName = relPath ?: imageFile.name,
                             dataUri = dataUri,
                             latitude = photo.latitude,
                             longitude = photo.longitude,
@@ -3300,7 +3335,9 @@ val assets = repository.getAssetsByReportId(report.id).first()
                       const isModuleGroup = group.label === 'Módulo';
                       const groupedEntries = {
                         channelexpert: entries.filter((entry) => entry.type === 'channelexpert'),
-                        docsisexpert: entries.filter((entry) => entry.type === 'docsisexpert')
+                        docsisexpert: entries.filter((entry) => entry.type === 'docsisexpert'),
+                        dsamChannelCheck: entries.filter((entry) => entry.type === 'dsam_module_channel_check'),
+                        dsamDocsisCheck: entries.filter((entry) => entry.type === 'dsam_module_docsis_check')
                       };
 
                       function renderTabsForEntries(filteredEntries) {
@@ -3339,7 +3376,33 @@ val assets = repository.getAssetsByReportId(report.id).first()
                         }
                       }
 
-                      if (isModuleGroup && groupedEntries.channelexpert.length && groupedEntries.docsisexpert.length) {
+                      if (isModuleGroup && groupedEntries.dsamChannelCheck.length && groupedEntries.dsamDocsisCheck.length) {
+                        const toggle = document.createElement('div');
+                        toggle.className = 'measurement-type-toggle';
+                        toggle.innerHTML = `
+                          <span>Channel Check</span>
+                          <label class="toggle-switch">
+                            <input type="checkbox" />
+                            <span class="toggle-slider"></span>
+                          </label>
+                          <span>DOCSIS Check</span>
+                        `;
+                        headerTop.appendChild(toggle);
+                        const toggleInput = toggle.querySelector('input');
+                        const renderForType = () => {
+                          if (toggleInput.checked) {
+                            renderTabsForEntries(groupedEntries.dsamDocsisCheck);
+                          } else {
+                            renderTabsForEntries(groupedEntries.dsamChannelCheck);
+                          }
+                        };
+                        toggleInput.addEventListener('change', renderForType);
+                        renderForType();
+                      } else if (isModuleGroup && groupedEntries.dsamDocsisCheck.length) {
+                        renderTabsForEntries(groupedEntries.dsamDocsisCheck);
+                      } else if (isModuleGroup && groupedEntries.dsamChannelCheck.length) {
+                        renderTabsForEntries(groupedEntries.dsamChannelCheck);
+                      } else if (isModuleGroup && groupedEntries.channelexpert.length && groupedEntries.docsisexpert.length) {
                         const toggle = document.createElement('div');
                         toggle.className = 'measurement-type-toggle';
                         toggle.innerHTML = `
@@ -3451,87 +3514,99 @@ val assets = repository.getAssetsByReportId(report.id).first()
         report: MaintenanceReport,
         assets: List<Asset>,
         measurementRoot: File,
-        switchSelections: Map<String, Map<String, String>>
+        switchSelections: Map<String, Map<String, String>>,
+        exportDir: File,
+        photoMode: HtmlPhotoMode
     ): Map<String, HtmlMeasurementBundle> {
         val result = mutableMapOf<String, HtmlMeasurementBundle>()
         for (asset in assets) {
             val meterKey = asset.meterType?.trim()?.lowercase(Locale.getDefault()).orEmpty()
             val isDsam = meterKey == "dsam"
             val rxDir = File(measurementRoot, MaintenanceStorage.assetFolderName(asset))
-            val rxLabel = if (asset.type == AssetType.AMPLIFIER) "Módulo" else "RX"
-            val rxResult = if (isDsam) {
-                val photoType = if (rxLabel == "RX") PhotoType.MEASUREMENT_RX else PhotoType.MEASUREMENT_MODULE
-                val photos = repository.getPhotosByAssetIdAndType(asset.id, photoType)
-                val entries = photos.mapNotNull { photo ->
-                    val imageFile = File(photo.filePath)
-                    if (!imageFile.exists()) return@mapNotNull null
-                    val encoded = Base64.encodeToString(imageFile.readBytes(), Base64.NO_WRAP)
-                    val dataUri = "data:image/jpeg;base64,$encoded"
-                    HtmlMeasurementEntry(
-                        label = photo.fileName,
-                        type = "dsam_photo",
-                        isDiscarded = false,
-                        geoLocation = null,
-                        switchSelection = null,
-                        imageDataUri = dataUri,
-                        docsisRows = emptyList(),
-                        pilotRows = emptyList(),
-                        digitalRows = emptyList(),
-                        ofdmPoints = null
-                    )
-                }
-                val group = if (entries.isNotEmpty()) {
-                    HtmlMeasurementGroup(
-                        label = rxLabel,
-                        entries = entries
-                    )
+            val isNodeAsset = asset.type == AssetType.NODE
+
+            val techNormalized = asset.technology?.trim()?.lowercase(Locale.getDefault()) ?: ""
+            val techKey = techNormalized.replace("_", "").replace(" ", "")
+            val hasRxMeasurements = !(isNodeAsset && (techKey == "vccap" || techKey == "vccaphibrido"))
+
+            fun dsamEntry(photo: Photo, type: String): HtmlMeasurementEntry? {
+                val imageFile = File(photo.filePath)
+                if (!imageFile.exists()) return null
+                val src = if (photoMode == HtmlPhotoMode.RELATIVE_FILES) {
+                    val destDir = File(exportDir, "images/${asset.id}/${photo.photoType.name.lowercase()}")
+                    destDir.mkdirs()
+                    val dest = File(destDir, imageFile.name)
+                    if (!dest.exists()) {
+                        imageFile.copyTo(dest, overwrite = true)
+                    }
+                    "images/${asset.id}/${photo.photoType.name.lowercase()}/${dest.name}"
                 } else {
-                    null
+                    val encoded = Base64.encodeToString(imageFile.readBytes(), Base64.NO_WRAP)
+                    "data:image/jpeg;base64,$encoded"
                 }
-                MeasurementGroupResult(group = group, summary = null)
-            } else {
-                buildMeasurementGroup(
-                    rxLabel,
-                    asset,
-                    assetHeaderLine(report, asset),
-                    rxDir,
-                    switchSelections[asset.id].orEmpty()
+                return HtmlMeasurementEntry(
+                    label = photo.fileName,
+                    type = type,
+                    isDiscarded = false,
+                    geoLocation = if (photo.latitude != null && photo.longitude != null) {
+                        GeoPoint(photo.latitude, photo.longitude)
+                    } else null,
+                    switchSelection = null,
+                    imageDataUri = src,
+                    docsisRows = emptyList(),
+                    pilotRows = emptyList(),
+                    digitalRows = emptyList(),
+                    ofdmPoints = null
                 )
             }
+
+            val rxResult: MeasurementGroupResult = if (isDsam && isNodeAsset && hasRxMeasurements) {
+                val photos = repository.getPhotosByAssetIdAndType(asset.id, PhotoType.MEASUREMENT_RX_CHANNEL_CHECK)
+                val entries = photos.mapNotNull { dsamEntry(it, type = "dsam_rx_channel_check") }
+                val group = if (entries.isNotEmpty()) {
+                    HtmlMeasurementGroup(
+                        label = "RX Channel Check",
+                        geoLocation = groupedGeoLocation(entries.mapNotNull { it.geoLocation }),
+                        entries = entries
+                    )
+                } else null
+                MeasurementGroupResult(group = group, summary = null)
+            } else if (isDsam) {
+                MeasurementGroupResult(group = null, summary = null)
+            } else {
+                buildMeasurementGroup(
+                    label = if (isNodeAsset) "RX" else "Módulo",
+                    asset = asset,
+                    assetHeader = assetHeaderLine(report, asset),
+                    dir = rxDir,
+                    switchSelections = switchSelections[asset.id].orEmpty()
+                )
+            }
+
             val rxChannelGeoPoints = rxResult.summary?.result?.measurementEntries
                 ?.filter { !it.isDiscarded && it.type == "channelexpert" }
                 ?.mapNotNull { it.geoLocation }
                 ?: emptyList()
-            val moduleBundle = if (asset.type == AssetType.NODE) {
-                val moduleAsset = asset.copy(type = AssetType.AMPLIFIER)
-                val moduleDir = File(measurementRoot, MaintenanceStorage.assetFolderName(moduleAsset))
-                if (isDsam) {
-                    val photos = repository.getPhotosByAssetIdAndType(asset.id, PhotoType.MEASUREMENT_MODULE)
-                    val entries = photos.mapNotNull { photo ->
-                        val imageFile = File(photo.filePath)
-                        if (!imageFile.exists()) return@mapNotNull null
-                        val encoded = Base64.encodeToString(imageFile.readBytes(), Base64.NO_WRAP)
-                        val dataUri = "data:image/jpeg;base64,$encoded"
-                        HtmlMeasurementEntry(
-                            label = photo.fileName,
-                            type = "dsam_photo",
-                            isDiscarded = false,
-                            geoLocation = null,
-                            switchSelection = null,
-                            imageDataUri = dataUri,
-                            docsisRows = emptyList(),
-                            pilotRows = emptyList(),
-                            digitalRows = emptyList(),
-                            ofdmPoints = null
-                        )
+
+            val moduleBundle: HtmlMeasurementGroup? = when {
+                isDsam -> {
+                    val channelPhotos = repository.getPhotosByAssetIdAndType(asset.id, PhotoType.MEASUREMENT_MODULE_CHANNEL_CHECK)
+                    val docsisPhotos = repository.getPhotosByAssetIdAndType(asset.id, PhotoType.MEASUREMENT_MODULE_DOCSIS_CHECK)
+                    val entries = buildList {
+                        addAll(channelPhotos.mapNotNull { dsamEntry(it, type = "dsam_module_channel_check") })
+                        addAll(docsisPhotos.mapNotNull { dsamEntry(it, type = "dsam_module_docsis_check") })
                     }
                     if (entries.isNotEmpty()) {
                         HtmlMeasurementGroup(
                             label = "Módulo",
+                            geoLocation = groupedGeoLocation(entries.mapNotNull { it.geoLocation }),
                             entries = entries
                         )
                     } else null
-                } else {
+                }
+                isNodeAsset -> {
+                    val moduleAsset = asset.copy(type = AssetType.AMPLIFIER)
+                    val moduleDir = File(measurementRoot, MaintenanceStorage.assetFolderName(moduleAsset))
                     buildMeasurementGroup(
                         "Módulo",
                         moduleAsset,
@@ -3541,9 +3616,9 @@ val assets = repository.getAssetsByReportId(report.id).first()
                         extraGeoPoints = rxChannelGeoPoints
                     ).group
                 }
-            } else {
-                null
+                else -> null
             }
+
             result[asset.id] = HtmlMeasurementBundle(rx = rxResult.group, module = moduleBundle)
         }
         return result
@@ -3818,6 +3893,64 @@ val assets = repository.getAssetsByReportId(report.id).first()
     }
 
     /**
+     * Export a ZIP containing:
+     * - report.html (NOT base64-heavy; references relative files)
+     * - images/ folder with the referenced photos
+     */
+    suspend fun exportToHtmlWithImagesZip(
+        report: MaintenanceReport,
+        baseName: String = "${exportBaseName(report)}_html_imagenes"
+    ): File = withContext(Dispatchers.IO) {
+        val assets = repository.getAssetsByReportId(report.id).first()
+            .sortedBy { assetSortKey(it) }
+        val passives = repository.getPassivesByReportId(report.id).first()
+        val exportDir = File(context.cacheDir, "export_html_images/${report.id}")
+        if (exportDir.exists()) exportDir.deleteRecursively()
+        exportDir.mkdirs()
+
+        val photosByAsset = mutableMapOf<String, List<Photo>>()
+        val adjustmentsByAsset = mutableMapOf<String, AmplifierAdjustment>()
+        val nodeAdjustmentsByAsset = mutableMapOf<String, NodeAdjustment>()
+
+        val reportFolderName = MaintenanceStorage.reportFolderName(report.eventName, report.id)
+        assets.forEach { asset ->
+            repository.getAmplifierAdjustment(asset.id).first()?.let { adj ->
+                adjustmentsByAsset[asset.id] = adj
+            }
+            if (asset.type == AssetType.NODE) {
+                repository.getNodeAdjustment(asset.id).first()?.let { adj ->
+                    nodeAdjustmentsByAsset[asset.id] = adj
+                }
+            }
+            val photos = repository.getPhotosByAssetId(asset.id).first()
+                .sortedBy { photoSortKey(it) }
+            photosByAsset[asset.id] = photos
+        }
+
+        val adjustedCount = countAdjustedAssets(report, assets)
+        exportToHtml(
+            exportDir = exportDir,
+            report = report,
+            assets = assets,
+            passives = passives,
+            adjustedCount = adjustedCount,
+            photosByAsset = photosByAsset,
+            adjustmentsByAsset = adjustmentsByAsset,
+            nodeAdjustmentsByAsset = nodeAdjustmentsByAsset,
+            reportFolderName = reportFolderName,
+            photoMode = HtmlPhotoMode.RELATIVE_FILES
+        )
+
+        val zipFile = File(context.getExternalFilesDir(null), "${baseName}.zip")
+        if (zipFile.exists()) zipFile.delete()
+
+        ZipFile(zipFile).apply {
+            addFolder(exportDir)
+        }
+        zipFile
+    }
+
+    /**
      * Export importable ZIP for the app: report.json + images/ + measurements/.
      * (No HTML viewer included.)
      */
@@ -3971,6 +4104,13 @@ val assets = repository.getAssetsByReportId(report.id).first()
         val baseName = exportBaseName(report)
         val tmp = exportToHtmlOnly(report, baseName)
         DownloadStore.saveToDownloads(context, tmp, tmp.name, "text/html")
+    }
+
+    suspend fun exportHtmlWithImagesZipToDownloads(report: MaintenanceReport): Uri = withContext(Dispatchers.IO) {
+        val baseName = "${exportBaseName(report)}_html_imagenes"
+        val tmp = exportToHtmlWithImagesZip(report, baseName)
+        val displayName = "${baseName}.zip"
+        DownloadStore.saveToDownloads(context, tmp, displayName, "application/zip")
     }
 
     suspend fun exportAppZipToDownloads(report: MaintenanceReport): Uri = withContext(Dispatchers.IO) {
