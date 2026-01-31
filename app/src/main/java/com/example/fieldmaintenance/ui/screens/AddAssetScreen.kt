@@ -1355,9 +1355,10 @@ fun AddAssetScreen(
             }
 
             val techNormalized = technology?.trim()?.lowercase(Locale.getDefault()) ?: ""
-            val isRphyNode = assetType == AssetType.NODE && techNormalized == "rphy"
+            val techKey = techNormalized.replace("_", "").replace(" ", "")
+            val isRphyLikeNode = assetType == AssetType.NODE && (techKey == "rphy" || techKey == "vccapcompleto")
 
-            if (autoSaved && !isRphyNode) {
+            if (autoSaved && !isRphyLikeNode) {
                 AdjustmentSummaryCard(
                     title = "Carga de Mediciones",
                     status = if (measurementsComplete) "Completo" else "Pendiente",
