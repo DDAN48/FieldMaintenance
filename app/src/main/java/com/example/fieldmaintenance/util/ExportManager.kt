@@ -153,6 +153,8 @@ class ExportManager(private val context: Context, private val repository: Mainte
             PhotoType.OPTICS -> "1_OPTICS"
             PhotoType.MONITORING -> "2_MONITORING"
             PhotoType.SPECTRUM -> "3_SPECTRUM"
+            PhotoType.MEASUREMENT_RX -> "4_MEASUREMENT_RX"
+            PhotoType.MEASUREMENT_MODULE -> "5_MEASUREMENT_MODULE"
         }
         return "${typeOrder}_${p.fileName}"
     }
@@ -163,6 +165,8 @@ class ExportManager(private val context: Context, private val repository: Mainte
             PhotoType.OPTICS -> "Foto TX  y RX con pads"
             PhotoType.MONITORING -> "Foto de monitoria de PO directa y retorno"
             PhotoType.SPECTRUM -> "Fotos de Inyección de portadoras por puerto"
+            PhotoType.MEASUREMENT_RX -> "Mediciones RX (DSAM)"
+            PhotoType.MEASUREMENT_MODULE -> "Mediciones Modulo (DSAM)"
         }
     }
 
@@ -1218,6 +1222,8 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     PhotoType.OPTICS -> if (isNode && technology == "VCCAP") 0 else if (isNode) 2 else 0
                     PhotoType.MONITORING -> if (isNode) 2 else 0
                     PhotoType.SPECTRUM -> 3
+                    PhotoType.MEASUREMENT_RX -> 0
+                    PhotoType.MEASUREMENT_MODULE -> 0
                 }
             }
             fun photoBoxHeight(t: PhotoType): Float = if (t == PhotoType.SPECTRUM) 260f else 360f
@@ -2964,6 +2970,21 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     if (entry.geoLocation) {
                       measurementGeo.textContent = `${'$'}{entry.geoLocation.latitude.toFixed(5)}, ${'$'}{entry.geoLocation.longitude.toFixed(5)}`;
                     }
+                    if (entry.imageDataUri) {
+                      const img = document.createElement('img');
+                      img.src = entry.imageDataUri;
+                      img.alt = entry.label || 'Medición';
+                      img.style.width = '100%';
+                      img.style.maxHeight = '520px';
+                      img.style.objectFit = 'contain';
+                      img.style.border = '1px solid var(--border)';
+                      img.style.borderRadius = '12px';
+                      img.style.background = 'var(--panel-2)';
+                      entryEl.appendChild(img);
+                      entryEl.appendChild(measurementName);
+                      if (measurementGeo.textContent) entryEl.appendChild(measurementGeo);
+                      return entryEl;
+                    }
                     if (entry.type === 'docsisexpert') {
                       const chart = document.createElement('div');
                       chart.className = 'chart';
@@ -3280,15 +3301,51 @@ val assets = repository.getAssetsByReportId(report.id).first()
     ): Map<String, HtmlMeasurementBundle> {
         val result = mutableMapOf<String, HtmlMeasurementBundle>()
         for (asset in assets) {
+            val meterKey = asset.meterType?.trim()?.lowercase(Locale.getDefault()).orEmpty()
+            val isDsam = meterKey == "dsam"
             val rxDir = File(measurementRoot, MaintenanceStorage.assetFolderName(asset))
             val rxLabel = if (asset.type == AssetType.AMPLIFIER) "Módulo" else "RX"
-            val rxResult = buildMeasurementGroup(
-                rxLabel,
-                asset,
-                assetHeaderLine(report, asset),
-                rxDir,
-                switchSelections[asset.id].orEmpty()
-            )
+            val rxResult = if (isDsam) {
+                val photoType = if (rxLabel == "RX") PhotoType.MEASUREMENT_RX else PhotoType.MEASUREMENT_MODULE
+                val photo = repository.getPhotosByAssetIdAndType(asset.id, photoType).firstOrNull()
+                val dataUri = photo?.filePath?.let { path ->
+                    val imageFile = File(path)
+                    if (imageFile.exists()) {
+                        val encoded = Base64.encodeToString(imageFile.readBytes(), Base64.NO_WRAP)
+                        "data:image/jpeg;base64,$encoded"
+                    } else null
+                }
+                val group = if (dataUri != null) {
+                    HtmlMeasurementGroup(
+                        label = rxLabel,
+                        entries = listOf(
+                            HtmlMeasurementEntry(
+                                label = photo.fileName,
+                                type = "dsam_photo",
+                                isDiscarded = false,
+                                geoLocation = null,
+                                switchSelection = null,
+                                imageDataUri = dataUri,
+                                docsisRows = emptyList(),
+                                pilotRows = emptyList(),
+                                digitalRows = emptyList(),
+                                ofdmPoints = null
+                            )
+                        )
+                    )
+                } else {
+                    null
+                }
+                MeasurementGroupResult(group = group, summary = null)
+            } else {
+                buildMeasurementGroup(
+                    rxLabel,
+                    asset,
+                    assetHeaderLine(report, asset),
+                    rxDir,
+                    switchSelections[asset.id].orEmpty()
+                )
+            }
             val rxChannelGeoPoints = rxResult.summary?.result?.measurementEntries
                 ?.filter { !it.isDiscarded && it.type == "channelexpert" }
                 ?.mapNotNull { it.geoLocation }
@@ -3296,14 +3353,44 @@ val assets = repository.getAssetsByReportId(report.id).first()
             val moduleBundle = if (asset.type == AssetType.NODE) {
                 val moduleAsset = asset.copy(type = AssetType.AMPLIFIER)
                 val moduleDir = File(measurementRoot, MaintenanceStorage.assetFolderName(moduleAsset))
-                buildMeasurementGroup(
-                    "Módulo",
-                    moduleAsset,
-                    assetHeaderLine(report, asset),
-                    moduleDir,
-                    switchSelections[moduleAsset.id].orEmpty(),
-                    extraGeoPoints = rxChannelGeoPoints
-                ).group
+                if (isDsam) {
+                    val photo = repository.getPhotosByAssetIdAndType(asset.id, PhotoType.MEASUREMENT_MODULE).firstOrNull()
+                    val dataUri = photo?.filePath?.let { path ->
+                        val imageFile = File(path)
+                        if (imageFile.exists()) {
+                            val encoded = Base64.encodeToString(imageFile.readBytes(), Base64.NO_WRAP)
+                            "data:image/jpeg;base64,$encoded"
+                        } else null
+                    }
+                    if (dataUri != null) {
+                        HtmlMeasurementGroup(
+                            label = "Módulo",
+                            entries = listOf(
+                                HtmlMeasurementEntry(
+                                    label = photo.fileName,
+                                    type = "dsam_photo",
+                                    isDiscarded = false,
+                                    geoLocation = null,
+                                    switchSelection = null,
+                                    imageDataUri = dataUri,
+                                    docsisRows = emptyList(),
+                                    pilotRows = emptyList(),
+                                    digitalRows = emptyList(),
+                                    ofdmPoints = null
+                                )
+                            )
+                        )
+                    } else null
+                } else {
+                    buildMeasurementGroup(
+                        "Módulo",
+                        moduleAsset,
+                        assetHeaderLine(report, asset),
+                        moduleDir,
+                        switchSelections[moduleAsset.id].orEmpty(),
+                        extraGeoPoints = rxChannelGeoPoints
+                    ).group
+                }
             } else {
                 null
             }
@@ -3410,6 +3497,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
             isDiscarded = isDiscarded,
             geoLocation = geoLocation,
             switchSelection = switchSelection,
+            imageDataUri = null,
             docsisRows = docsisRows,
             pilotRows = pilotRows,
             digitalRows = digitalRows,
@@ -3985,6 +4073,7 @@ data class HtmlMeasurementEntry(
     val isDiscarded: Boolean,
     val geoLocation: GeoPoint? = null,
     val switchSelection: String? = null,
+    val imageDataUri: String? = null,
     val docsisRows: List<HtmlDocsisRow>,
     val pilotRows: List<HtmlPilotRow>,
     val digitalRows: List<HtmlDigitalRow>,

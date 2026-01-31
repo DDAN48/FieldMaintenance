@@ -4,6 +4,8 @@ enum class PhotoType {
     MODULE,
     OPTICS,
     SPECTRUM,
-    MONITORING
+    MONITORING,
+    MEASUREMENT_RX,
+    MEASUREMENT_MODULE
 }
 
