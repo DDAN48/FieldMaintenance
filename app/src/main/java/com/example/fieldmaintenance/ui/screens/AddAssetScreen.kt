@@ -1803,10 +1803,12 @@ fun PhotoSection(
         photoType != PhotoType.MEASUREMENT_RX &&
         photoType != PhotoType.MEASUREMENT_MODULE
     fun maxPhotoBytes(type: PhotoType): Int {
-        return if (type == PhotoType.SPECTRUM || type == PhotoType.MONITORING) {
-            200 * 1024
-        } else {
-            600 * 1024
+        return when (type) {
+            // Keep these very small for fast sharing/viewing.
+            PhotoType.SPECTRUM, PhotoType.MONITORING -> 200 * 1024
+            // DSAM measurement photos: must not exceed 400KB.
+            PhotoType.MEASUREMENT_RX, PhotoType.MEASUREMENT_MODULE -> 400 * 1024
+            else -> 600 * 1024
         }
     }
     suspend fun compressPhotoIfNeeded(file: File) {
