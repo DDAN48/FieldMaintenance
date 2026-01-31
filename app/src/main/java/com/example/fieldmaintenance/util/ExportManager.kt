@@ -48,6 +48,8 @@ import java.io.FileOutputStream as JFileOutputStream
 import java.text.SimpleDateFormat
 import java.util.*
 import kotlin.math.abs
+import kotlin.math.pow
+import kotlin.math.roundToInt
 
 class ExportManager(private val context: Context, private val repository: MaintenanceRepository) {
     private enum class HtmlPhotoMode { EMBED_BASE64, RELATIVE_FILES }
@@ -72,6 +74,21 @@ class ExportManager(private val context: Context, private val repository: Mainte
         val event = safeFilePart(report.eventName.ifBlank { "evento" })
         val dt = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(now)
         return "${node}_${event}_$dt"
+    }
+
+    private fun groupedGeoLocation(points: List<GeoPoint>, precisionDecimals: Int = 4): GeoPoint? {
+        if (points.isEmpty()) return null
+        val scale = 10.0.pow(precisionDecimals.toDouble())
+        fun key(p: GeoPoint): Pair<Int, Int> {
+            val latKey = (p.latitude * scale).roundToInt()
+            val lonKey = (p.longitude * scale).roundToInt()
+            return latKey to lonKey
+        }
+        val buckets = points.groupBy(::key)
+        val best = buckets.maxByOrNull { (_, pts) -> pts.size }?.value ?: points
+        val avgLat = best.map { it.latitude }.average()
+        val avgLon = best.map { it.longitude }.average()
+        return GeoPoint(latitude = avgLat, longitude = avgLon)
     }
 
     fun exportDisplayName(report: MaintenanceReport, extensionWithDot: String, now: Date = Date()): String {
@@ -3495,7 +3512,11 @@ val assets = repository.getAssetsByReportId(report.id).first()
                         label = photo.fileName,
                         type = "dsam_photo",
                         isDiscarded = false,
-                        geoLocation = null,
+                        geoLocation = if (photo.latitude != null && photo.longitude != null) {
+                            GeoPoint(photo.latitude, photo.longitude)
+                        } else {
+                            null
+                        },
                         switchSelection = null,
                         imageDataUri = src,
                         docsisRows = emptyList(),
@@ -3507,6 +3528,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                 val group = if (entries.isNotEmpty()) {
                     HtmlMeasurementGroup(
                         label = rxLabel,
+                        geoLocation = groupedGeoLocation(entries.mapNotNull { it.geoLocation }),
                         entries = entries
                     )
                 } else {
@@ -3550,7 +3572,11 @@ val assets = repository.getAssetsByReportId(report.id).first()
                             label = photo.fileName,
                             type = "dsam_photo",
                             isDiscarded = false,
-                            geoLocation = null,
+                            geoLocation = if (photo.latitude != null && photo.longitude != null) {
+                                GeoPoint(photo.latitude, photo.longitude)
+                            } else {
+                                null
+                            },
                             switchSelection = null,
                             imageDataUri = src,
                             docsisRows = emptyList(),
@@ -3562,6 +3588,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     if (entries.isNotEmpty()) {
                         HtmlMeasurementGroup(
                             label = "Módulo",
+                            geoLocation = groupedGeoLocation(entries.mapNotNull { it.geoLocation }),
                             entries = entries
                         )
                     } else null

@@ -2774,22 +2774,24 @@ private fun AssetFileSection(
                         }
                     }
                 }
-                IconButton(
-                    onClick = { showObservationsDialog = true }
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.RemoveRedEye,
-                        contentDescription = "Observaciones",
-                        tint = if (observationSummary.third > 0) {
-                            MaterialTheme.colorScheme.error
-                        } else {
-                            MaterialTheme.colorScheme.primary
-                        }
-                    )
+                if (!isDsam) {
+                    IconButton(
+                        onClick = { showObservationsDialog = true }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.RemoveRedEye,
+                            contentDescription = "Observaciones",
+                            tint = if (observationSummary.third > 0) {
+                                MaterialTheme.colorScheme.error
+                            } else {
+                                MaterialTheme.colorScheme.primary
+                            }
+                        )
+                    }
                 }
             }
             LaunchedEffect(canRefresh, asset.id) {
-                if (canRefresh && observationSummary.third > 0) {
+                if (!isDsam && canRefresh && observationSummary.third > 0) {
                     val key = "obs_auto_shown_${asset.id}"
                     val wasShown = observationPrefs.getBoolean(key, false)
                     if (!wasShown) {
@@ -2798,7 +2800,7 @@ private fun AssetFileSection(
                     }
                 }
             }
-            if (showObservationsDialog) {
+            if (!isDsam && showObservationsDialog) {
                 AlertDialog(
                     onDismissRequest = { showObservationsDialog = false },
                     title = { Text("Observaciones en Mediciones") },
