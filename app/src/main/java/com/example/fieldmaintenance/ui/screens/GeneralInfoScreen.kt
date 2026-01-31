@@ -398,34 +398,44 @@ fun GeneralInfoScreen(navController: NavController, reportId: String) {
                     showFinalizeDialog = false
                 }
             },
-            onSendEmailPackage = {
+            onSendEmailHtml = {
                 scope.launch {
                     if (isExporting) return@launch
                     isExporting = true
                     try {
-                        val bundleFile = exportManager.exportToBundleZip(report!!)
-                        EmailManager.sendEmail(context, report!!.eventName, listOf(bundleFile))
+                        val htmlFile = exportManager.exportToHtmlOnly(report!!)
+                        EmailManager.sendEmail(context, report!!.eventName, listOf(htmlFile))
                     } finally {
                         isExporting = false
                         showFinalizeDialog = false
                     }
                 }
             },
-            onExportPackage = {
+            onExportHtml = {
                 scope.launch {
                     if (isExporting) return@launch
                     isExporting = true
                     try {
-                        exportManager.exportBundleToDownloads(report!!)
-                        snackbarHostState.showSnackbar("ZIP guardado en Descargas/FieldMaintenance")
+                        exportManager.exportHtmlOnlyToDownloads(report!!)
+                        snackbarHostState.showSnackbar("HTML guardado en Descargas/FieldMaintenance")
                     } finally {
                         isExporting = false
                         showFinalizeDialog = false
                     }
                 }
             },
-            onGoHome = {
-                navController.navigate(Screen.Home.route) { popUpTo(0) }
+            onExportForAppJson = {
+                scope.launch {
+                    if (isExporting) return@launch
+                    isExporting = true
+                    try {
+                        exportManager.exportAppZipToDownloads(report!!)
+                        snackbarHostState.showSnackbar("Exportación APP (JSON + carpetas) guardada en Descargas/FieldMaintenance")
+                    } finally {
+                        isExporting = false
+                        showFinalizeDialog = false
+                    }
+                }
             },
             showMissingWarning = hasMissingAssets,
             isProcessing = isExporting
