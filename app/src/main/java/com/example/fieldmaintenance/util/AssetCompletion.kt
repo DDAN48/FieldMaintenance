@@ -84,8 +84,11 @@ private suspend fun isAssetIncomplete(
 
     val measurementsOk = if (isDsam) {
         val isNode = asset.type == AssetType.NODE
-        val hasRxMeasurements = !(isNode && (techKey == "vccap" || techKey == "vccaphibrido"))
-        val hasModuleMeasurements = !(isNode && techKey == "vccapcompleto")
+        // RX measurement photos only exist for NODE assets (and not for VCCAP_Hibrido nodes).
+        val hasRxMeasurements = isNode && !(techKey == "vccap" || techKey == "vccaphibrido")
+        // Module measurement photos exist for NODE assets (unless VCCAP_Completo hides the whole module),
+        // and for AMPLIFIER assets.
+        val hasModuleMeasurements = if (isNode) techKey != "vccapcompleto" else true
 
         val rxChannel = photos.count { it.photoType == PhotoType.MEASUREMENT_RX_CHANNEL_CHECK }
         val moduleChannel = photos.count { it.photoType == PhotoType.MEASUREMENT_MODULE_CHANNEL_CHECK }
