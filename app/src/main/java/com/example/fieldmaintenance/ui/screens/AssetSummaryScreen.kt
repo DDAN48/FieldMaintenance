@@ -324,7 +324,33 @@ fun AssetSummaryScreen(navController: NavController, reportId: String) {
                     isExporting = true
                     try {
                         exportManager.exportBundleToDownloads(report!!)
-                        snackbarHostState.showSnackbar("ZIP guardado en Descargas/FieldMaintenance")
+                        snackbarHostState.showSnackbar("Exportación (HTML) guardada en Descargas/FieldMaintenance")
+                    } finally {
+                        isExporting = false
+                        showFinalizeDialog = false
+                    }
+                }
+            },
+            onExportContinuePackage = {
+                scope.launch {
+                    if (isExporting) return@launch
+                    isExporting = true
+                    try {
+                        exportManager.exportContinuationZipToDownloads(report!!)
+                        snackbarHostState.showSnackbar("Exportación (APP) guardada en Descargas/FieldMaintenance")
+                    } finally {
+                        isExporting = false
+                        showFinalizeDialog = false
+                    }
+                }
+            },
+            onExportJson = {
+                scope.launch {
+                    if (isExporting) return@launch
+                    isExporting = true
+                    try {
+                        exportManager.exportReportJsonToDownloads(report!!)
+                        snackbarHostState.showSnackbar("JSON guardado en Descargas/FieldMaintenance")
                     } finally {
                         isExporting = false
                         showFinalizeDialog = false
@@ -441,6 +467,8 @@ fun FinalizeReportDialog(
     onDismiss: () -> Unit,
     onSendEmailPackage: () -> Unit,
     onExportPackage: () -> Unit,
+    onExportContinuePackage: () -> Unit,
+    onExportJson: () -> Unit,
     onGoHome: () -> Unit,
     showMissingWarning: Boolean,
     isProcessing: Boolean
@@ -461,7 +489,17 @@ fun FinalizeReportDialog(
                     },
                     enabled = !showMissingWarning && !isProcessing
                 ) {
-                    Text("📦 Exportar reporte (ZIP)")
+                    Text("📦 Exportar reporte (HTML)")
+                }
+                TextButton(
+                    onClick = {
+                        if (!showMissingWarning && !isProcessing) {
+                            onExportContinuePackage()
+                        }
+                    },
+                    enabled = !showMissingWarning && !isProcessing
+                ) {
+                    Text("📦 Exportar para continuar mantenimiento (APP)")
                 }
                 TextButton(
                     onClick = {
@@ -471,7 +509,17 @@ fun FinalizeReportDialog(
                     },
                     enabled = !showMissingWarning && !isProcessing
                 ) {
-                    Text("✉️ Enviar reporte (ZIP)")
+                    Text("✉️ Enviar reporte (HTML)")
+                }
+                TextButton(
+                    onClick = {
+                        if (!showMissingWarning && !isProcessing) {
+                            onExportJson()
+                        }
+                    },
+                    enabled = !showMissingWarning && !isProcessing
+                ) {
+                    Text("🧾 Exportar JSON")
                 }
                 TextButton(onClick = {
                     if (!isProcessing) {

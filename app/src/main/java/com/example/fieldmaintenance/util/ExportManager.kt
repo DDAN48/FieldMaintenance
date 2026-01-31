@@ -1431,6 +1431,160 @@ val assets = repository.getAssetsByReportId(report.id).first()
         zipFile
     }
 
+    /**
+     * Export "portable" ZIP intended to be imported back into the app to continue maintenance.
+     *
+     * Includes:
+     * - report.json with ExportDataV2.image/reportImages references
+     * - images/ folder with all asset photos + report photos
+     * - measurements/ folder with measurement files for each asset (and NODE module folders)
+     * - index.html viewer (optional but included)
+     */
+    suspend fun exportToZIPForContinuation(
+        report: MaintenanceReport,
+        baseName: String = "${exportBaseName(report)}_continuar"
+    ): File = withContext(Dispatchers.IO) {
+        val assets = repository.getAssetsByReportId(report.id).first()
+            .sortedBy { assetSortKey(it) }
+        val passives = repository.getPassivesByReportId(report.id).first()
+        val exportDir = File(context.cacheDir, "export_zip_continue/${report.id}")
+        if (exportDir.exists()) exportDir.deleteRecursively()
+        exportDir.mkdirs()
+
+        val photosByAsset = mutableMapOf<String, List<Photo>>()
+        val adjustmentsByAsset = mutableMapOf<String, AmplifierAdjustment>()
+        val nodeAdjustmentsByAsset = mutableMapOf<String, NodeAdjustment>()
+        val switchSelections = collectSwitchSelections(assets)
+
+        val reportFolderName = MaintenanceStorage.reportFolderName(report.eventName, report.id)
+
+        assets.forEach { asset ->
+            repository.getAmplifierAdjustment(asset.id).first()?.let { adj ->
+                adjustmentsByAsset[asset.id] = adj
+            }
+            if (asset.type == AssetType.NODE) {
+                repository.getNodeAdjustment(asset.id).first()?.let { adj ->
+                    nodeAdjustmentsByAsset[asset.id] = adj
+                }
+            }
+
+            val photos = repository.getPhotosByAssetId(asset.id).first()
+                .sortedBy { photoSortKey(it) }
+            photosByAsset[asset.id] = photos
+        }
+
+        fun safeCopyToExport(src: File, relativeDir: String, preferredName: String): String {
+            val cleanDir = relativeDir.trim('/').replace("\\", "/")
+            val destDir = File(exportDir, cleanDir)
+            destDir.mkdirs()
+
+            var name = preferredName
+            var dest = File(destDir, name)
+            if (dest.exists()) {
+                // Ensure we don't overwrite when filenames collide.
+                name = "${System.currentTimeMillis()}_$preferredName"
+                dest = File(destDir, name)
+            }
+            src.copyTo(dest, overwrite = true)
+            return "${cleanDir}/${dest.name}"
+        }
+
+        // Copy asset photos to images/ and build image refs for report.json
+        val imagesMap: Map<String, List<ExportImageRef>> = photosByAsset.mapValues { (assetId, photos) ->
+            photos.mapNotNull { photo ->
+                val src = File(photo.filePath)
+                if (!src.exists()) return@mapNotNull null
+                val rel = safeCopyToExport(
+                    src = src,
+                    relativeDir = "images/$assetId/${photo.photoType.name.lowercase()}",
+                    preferredName = src.name
+                )
+                ExportImageRef(
+                    photoId = photo.id,
+                    photoType = photo.photoType,
+                    fileName = rel
+                )
+            }
+        }
+
+        // Copy report photos (Monitoria/QR) and build refs
+        val reportImageRefs: List<ExportReportImageRef> = repository.getReportPhotosByReportId(report.id).first()
+            .sortedBy { it.createdAt }
+            .mapNotNull { rp ->
+                val src = File(rp.filePath)
+                if (!src.exists()) return@mapNotNull null
+                val rel = safeCopyToExport(
+                    src = src,
+                    relativeDir = "images/report/${rp.type.name.lowercase()}",
+                    preferredName = src.name
+                )
+                ExportReportImageRef(
+                    photoId = rp.id,
+                    type = rp.type,
+                    fileName = rel
+                )
+            }
+
+        // Copy measurement files into measurements/ (if any) so importFromZip can restore them.
+        val measurementsRoot = MaintenanceStorage.ensureReportDir(context, reportFolderName)
+        val measurementsExportRoot = File(exportDir, "measurements").apply { mkdirs() }
+        assets.forEach { asset ->
+            val measurementAssets = buildList {
+                add(asset)
+                // Node has RX measurements under NODE folder, and module measurements under the "AMPLIFIER" folder.
+                if (asset.type == AssetType.NODE) {
+                    add(asset.copy(type = AssetType.AMPLIFIER))
+                }
+            }
+            measurementAssets.forEach { measurementAsset ->
+                val folderName = MaintenanceStorage.assetFolderName(measurementAsset)
+                val srcDir = File(measurementsRoot, folderName)
+                if (!srcDir.exists()) return@forEach
+                val destDir = File(measurementsExportRoot, folderName)
+                destDir.mkdirs()
+                srcDir.listFiles()
+                    ?.filter { it.isFile }
+                    ?.forEach { file ->
+                        file.copyTo(File(destDir, file.name), overwrite = true)
+                    }
+            }
+        }
+
+        val exportData = ExportDataV2(
+            report = report,
+            assets = assets,
+            images = imagesMap,
+            reportImages = reportImageRefs.ifEmpty { null },
+            adjustments = if (adjustmentsByAsset.isEmpty()) null else adjustmentsByAsset,
+            nodeAdjustments = if (nodeAdjustmentsByAsset.isNotEmpty()) nodeAdjustmentsByAsset else null,
+            passives = passives,
+            switchSelections = if (switchSelections.isNotEmpty()) switchSelections else null
+        )
+        File(exportDir, "report.json").writeText(gson.toJson(exportData))
+
+        val adjustedCount = countAdjustedAssets(report, assets)
+        exportToHtml(
+            exportDir = exportDir,
+            report = report,
+            assets = assets,
+            passives = passives,
+            adjustedCount = adjustedCount,
+            photosByAsset = photosByAsset,
+            adjustmentsByAsset = adjustmentsByAsset,
+            nodeAdjustmentsByAsset = nodeAdjustmentsByAsset,
+            reportFolderName = reportFolderName
+        )
+
+        val zipFile = File(context.getExternalFilesDir(null), "${baseName}.zip")
+        if (zipFile.exists()) zipFile.delete()
+
+        ZipFile(zipFile).apply {
+            addFolder(exportDir)
+        }
+
+        zipFile
+    }
+
     private suspend fun exportToHtml(
         exportDir: File,
         report: MaintenanceReport,
@@ -3307,31 +3461,29 @@ val assets = repository.getAssetsByReportId(report.id).first()
             val rxLabel = if (asset.type == AssetType.AMPLIFIER) "Módulo" else "RX"
             val rxResult = if (isDsam) {
                 val photoType = if (rxLabel == "RX") PhotoType.MEASUREMENT_RX else PhotoType.MEASUREMENT_MODULE
-                val photo = repository.getPhotosByAssetIdAndType(asset.id, photoType).firstOrNull()
-                val dataUri = photo?.filePath?.let { path ->
-                    val imageFile = File(path)
-                    if (imageFile.exists()) {
-                        val encoded = Base64.encodeToString(imageFile.readBytes(), Base64.NO_WRAP)
-                        "data:image/jpeg;base64,$encoded"
-                    } else null
+                val photos = repository.getPhotosByAssetIdAndType(asset.id, photoType)
+                val entries = photos.mapNotNull { photo ->
+                    val imageFile = File(photo.filePath)
+                    if (!imageFile.exists()) return@mapNotNull null
+                    val encoded = Base64.encodeToString(imageFile.readBytes(), Base64.NO_WRAP)
+                    val dataUri = "data:image/jpeg;base64,$encoded"
+                    HtmlMeasurementEntry(
+                        label = photo.fileName,
+                        type = "dsam_photo",
+                        isDiscarded = false,
+                        geoLocation = null,
+                        switchSelection = null,
+                        imageDataUri = dataUri,
+                        docsisRows = emptyList(),
+                        pilotRows = emptyList(),
+                        digitalRows = emptyList(),
+                        ofdmPoints = null
+                    )
                 }
-                val group = if (dataUri != null) {
+                val group = if (entries.isNotEmpty()) {
                     HtmlMeasurementGroup(
                         label = rxLabel,
-                        entries = listOf(
-                            HtmlMeasurementEntry(
-                                label = photo.fileName,
-                                type = "dsam_photo",
-                                isDiscarded = false,
-                                geoLocation = null,
-                                switchSelection = null,
-                                imageDataUri = dataUri,
-                                docsisRows = emptyList(),
-                                pilotRows = emptyList(),
-                                digitalRows = emptyList(),
-                                ofdmPoints = null
-                            )
-                        )
+                        entries = entries
                     )
                 } else {
                     null
@@ -3354,31 +3506,29 @@ val assets = repository.getAssetsByReportId(report.id).first()
                 val moduleAsset = asset.copy(type = AssetType.AMPLIFIER)
                 val moduleDir = File(measurementRoot, MaintenanceStorage.assetFolderName(moduleAsset))
                 if (isDsam) {
-                    val photo = repository.getPhotosByAssetIdAndType(asset.id, PhotoType.MEASUREMENT_MODULE).firstOrNull()
-                    val dataUri = photo?.filePath?.let { path ->
-                        val imageFile = File(path)
-                        if (imageFile.exists()) {
-                            val encoded = Base64.encodeToString(imageFile.readBytes(), Base64.NO_WRAP)
-                            "data:image/jpeg;base64,$encoded"
-                        } else null
+                    val photos = repository.getPhotosByAssetIdAndType(asset.id, PhotoType.MEASUREMENT_MODULE)
+                    val entries = photos.mapNotNull { photo ->
+                        val imageFile = File(photo.filePath)
+                        if (!imageFile.exists()) return@mapNotNull null
+                        val encoded = Base64.encodeToString(imageFile.readBytes(), Base64.NO_WRAP)
+                        val dataUri = "data:image/jpeg;base64,$encoded"
+                        HtmlMeasurementEntry(
+                            label = photo.fileName,
+                            type = "dsam_photo",
+                            isDiscarded = false,
+                            geoLocation = null,
+                            switchSelection = null,
+                            imageDataUri = dataUri,
+                            docsisRows = emptyList(),
+                            pilotRows = emptyList(),
+                            digitalRows = emptyList(),
+                            ofdmPoints = null
+                        )
                     }
-                    if (dataUri != null) {
+                    if (entries.isNotEmpty()) {
                         HtmlMeasurementGroup(
                             label = "Módulo",
-                            entries = listOf(
-                                HtmlMeasurementEntry(
-                                    label = photo.fileName,
-                                    type = "dsam_photo",
-                                    isDiscarded = false,
-                                    geoLocation = null,
-                                    switchSelection = null,
-                                    imageDataUri = dataUri,
-                                    docsisRows = emptyList(),
-                                    pilotRows = emptyList(),
-                                    digitalRows = emptyList(),
-                                    ofdmPoints = null
-                                )
-                            )
+                            entries = entries
                         )
                     } else null
                 } else {
@@ -3625,6 +3775,51 @@ val assets = repository.getAssetsByReportId(report.id).first()
         val tmp = exportToBundleZip(report, baseName)
         val displayName = "${baseName}.zip"
         DownloadStore.saveToDownloads(context, tmp, displayName, "application/zip")
+    }
+
+    suspend fun exportContinuationZipToDownloads(report: MaintenanceReport): Uri = withContext(Dispatchers.IO) {
+        val baseName = "${exportBaseName(report)}_continuar"
+        val tmp = exportToZIPForContinuation(report, baseName)
+        val displayName = "${baseName}.zip"
+        DownloadStore.saveToDownloads(context, tmp, displayName, "application/zip")
+    }
+
+    /**
+     * Export only the `report.json` (V2) to Downloads.
+     * Note: this JSON alone is not enough to continue maintenance unless accompanied by images/measurements.
+     */
+    suspend fun exportReportJsonToDownloads(report: MaintenanceReport): Uri = withContext(Dispatchers.IO) {
+        val assets = repository.getAssetsByReportId(report.id).first()
+            .sortedBy { assetSortKey(it) }
+        val passives = repository.getPassivesByReportId(report.id).first()
+        val adjustmentsByAsset = mutableMapOf<String, AmplifierAdjustment>()
+        val nodeAdjustmentsByAsset = mutableMapOf<String, NodeAdjustment>()
+        val switchSelections = collectSwitchSelections(assets)
+
+        assets.forEach { asset ->
+            repository.getAmplifierAdjustment(asset.id).first()?.let { adj ->
+                adjustmentsByAsset[asset.id] = adj
+            }
+            if (asset.type == AssetType.NODE) {
+                repository.getNodeAdjustment(asset.id).first()?.let { adj ->
+                    nodeAdjustmentsByAsset[asset.id] = adj
+                }
+            }
+        }
+
+        val exportData = ExportDataV2(
+            report = report,
+            assets = assets,
+            images = emptyMap(),
+            reportImages = null,
+            adjustments = if (adjustmentsByAsset.isEmpty()) null else adjustmentsByAsset,
+            nodeAdjustments = if (nodeAdjustmentsByAsset.isNotEmpty()) nodeAdjustmentsByAsset else null,
+            passives = passives,
+            switchSelections = if (switchSelections.isNotEmpty()) switchSelections else null
+        )
+        val tmp = File(context.getExternalFilesDir(null), "${exportBaseName(report)}_report.json")
+        tmp.writeText(gson.toJson(exportData))
+        DownloadStore.saveToDownloads(context, tmp, tmp.name, "application/json")
     }
 
     /**

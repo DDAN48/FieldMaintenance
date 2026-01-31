@@ -1531,7 +1531,33 @@ fun AddAssetScreen(
                     isExporting = true
                     try {
                         exportManager.exportBundleToDownloads(r)
-                        snackbarHostState.showSnackbar("ZIP guardado en Descargas/FieldMaintenance")
+                        snackbarHostState.showSnackbar("Exportación (HTML) guardada en Descargas/FieldMaintenance")
+                    } finally {
+                        isExporting = false
+                        showFinalizeDialog = false
+                    }
+                }
+            },
+            onExportContinuePackage = {
+                scope.launch {
+                    if (isExporting) return@launch
+                    isExporting = true
+                    try {
+                        exportManager.exportContinuationZipToDownloads(r)
+                        snackbarHostState.showSnackbar("Exportación (APP) guardada en Descargas/FieldMaintenance")
+                    } finally {
+                        isExporting = false
+                        showFinalizeDialog = false
+                    }
+                }
+            },
+            onExportJson = {
+                scope.launch {
+                    if (isExporting) return@launch
+                    isExporting = true
+                    try {
+                        exportManager.exportReportJsonToDownloads(r)
+                        snackbarHostState.showSnackbar("JSON guardado en Descargas/FieldMaintenance")
                     } finally {
                         isExporting = false
                         showFinalizeDialog = false
@@ -1787,7 +1813,11 @@ fun PhotoSection(
     val isMissingRequired = showRequiredError && minRequired > 0 && photos.size < minRequired
     val isOverMax = photos.size > maxAllowed
     val isAtMax = photos.size >= maxAllowed
-    val allowsGallery = photoType != PhotoType.MODULE && photoType != PhotoType.OPTICS
+    // For DSAM measurement photos we only allow camera capture (no gallery).
+    val allowsGallery = photoType != PhotoType.MODULE &&
+        photoType != PhotoType.OPTICS &&
+        photoType != PhotoType.MEASUREMENT_RX &&
+        photoType != PhotoType.MEASUREMENT_MODULE
     fun maxPhotoBytes(type: PhotoType): Int {
         return if (type == PhotoType.SPECTRUM || type == PhotoType.MONITORING) {
             200 * 1024
@@ -2685,12 +2715,12 @@ private fun AssetFileSection(
             val moduleRequired = requiredCounts(moduleAsset.type, isModule = true)
             val canRefresh = when {
                 isDsam && isNodeAsset -> {
-                    val rxOk = !hasRxMeasurements || dsamRxCount > 0
-                    val moduleOk = !hasModuleMeasurements || dsamModuleCount > 0
+                    val rxOk = !hasRxMeasurements || dsamRxCount >= 1
+                    val moduleOk = !hasModuleMeasurements || dsamModuleCount >= 7
                     rxOk && moduleOk
                 }
                 isDsam && !isNodeAsset -> {
-                    dsamModuleCount > 0
+                    dsamModuleCount >= 7
                 }
                 isNodeAsset -> {
                     if (hasRxMeasurements && hasModuleMeasurements) {
@@ -4106,7 +4136,7 @@ private fun AssetFileSection(
                                     repository = repository,
                                     minRequired = 1,
                                     showRequiredError = false,
-                                    maxAllowed = 1,
+                                    maxAllowed = 8,
                                     onCountChange = { dsamRxCount = it }
                                 )
                             }
@@ -4119,9 +4149,9 @@ private fun AssetFileSection(
                                     assetLabel = assetLabel,
                                     eventName = eventName,
                                     repository = repository,
-                                    minRequired = 1,
+                                    minRequired = 7,
                                     showRequiredError = false,
-                                    maxAllowed = 1,
+                                    maxAllowed = 8,
                                     onCountChange = { dsamModuleCount = it }
                                 )
                             }
@@ -4177,9 +4207,9 @@ private fun AssetFileSection(
                             assetLabel = assetLabel,
                             eventName = eventName,
                             repository = repository,
-                            minRequired = 1,
+                            minRequired = 7,
                             showRequiredError = false,
-                            maxAllowed = 1,
+                            maxAllowed = 8,
                             onCountChange = { dsamModuleCount = it }
                         )
                     } else {

@@ -417,7 +417,33 @@ fun GeneralInfoScreen(navController: NavController, reportId: String) {
                     isExporting = true
                     try {
                         exportManager.exportBundleToDownloads(report!!)
-                        snackbarHostState.showSnackbar("ZIP guardado en Descargas/FieldMaintenance")
+                        snackbarHostState.showSnackbar("Exportación (HTML) guardada en Descargas/FieldMaintenance")
+                    } finally {
+                        isExporting = false
+                        showFinalizeDialog = false
+                    }
+                }
+            },
+            onExportContinuePackage = {
+                scope.launch {
+                    if (isExporting) return@launch
+                    isExporting = true
+                    try {
+                        exportManager.exportContinuationZipToDownloads(report!!)
+                        snackbarHostState.showSnackbar("Exportación (APP) guardada en Descargas/FieldMaintenance")
+                    } finally {
+                        isExporting = false
+                        showFinalizeDialog = false
+                    }
+                }
+            },
+            onExportJson = {
+                scope.launch {
+                    if (isExporting) return@launch
+                    isExporting = true
+                    try {
+                        exportManager.exportReportJsonToDownloads(report!!)
+                        snackbarHostState.showSnackbar("JSON guardado en Descargas/FieldMaintenance")
                     } finally {
                         isExporting = false
                         showFinalizeDialog = false
