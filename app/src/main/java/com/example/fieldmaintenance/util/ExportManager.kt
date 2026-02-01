@@ -38,7 +38,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import net.lingala.zip4j.ZipFile
-import net.lingala.zip4j.model.ZipParameters
 import java.io.File
 import java.io.ByteArrayOutputStream
 import java.io.FileOutputStream
@@ -3951,18 +3950,10 @@ val assets = repository.getAssetsByReportId(report.id).first()
         val zipFile = File(context.getExternalFilesDir(null), "${baseName}.zip")
         if (zipFile.exists()) zipFile.delete()
 
-        // Put report.html and images/ at ZIP root so relative paths work consistently.
-        val reportHtml = File(exportDir, "report.html")
-        val imagesDir = File(exportDir, "images").apply { mkdirs() }
         ZipFile(zipFile).apply {
-            addFile(
-                reportHtml,
-                ZipParameters().apply { fileNameInZip = "report.html" }
-            )
-            addFolder(
-                imagesDir,
-                ZipParameters().apply { fileNameInZip = "images" }
-            )
+            // Previous behavior: keep the whole export folder structure inside the zip.
+            // (User must unzip to load referenced images in browser.)
+            addFolder(exportDir)
         }
         zipFile
     }
