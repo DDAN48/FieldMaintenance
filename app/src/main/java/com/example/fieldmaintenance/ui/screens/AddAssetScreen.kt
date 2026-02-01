@@ -1525,39 +1525,26 @@ fun AddAssetScreen(
                     }
                 }
             },
-            onExportHtml = {
+            onSendEmailHtmlWithImages = {
                 scope.launch {
                     if (isExporting) return@launch
                     isExporting = true
                     try {
-                        exportManager.exportHtmlOnlyToDownloads(r)
-                        snackbarHostState.showSnackbar("HTML guardado en Descargas/FieldMaintenance")
+                        val zipFile = exportManager.exportToHtmlWithImagesZip(r)
+                        com.example.fieldmaintenance.util.EmailManager.sendEmail(context, r.eventName, listOf(zipFile))
                     } finally {
                         isExporting = false
                         showFinalizeDialog = false
                     }
                 }
             },
-            onExportHtmlWithImages = {
+            onSendEmailForAppJson = {
                 scope.launch {
                     if (isExporting) return@launch
                     isExporting = true
                     try {
-                        exportManager.exportHtmlWithImagesZipToDownloads(r)
-                        snackbarHostState.showSnackbar("ZIP (HTML + imágenes) guardado en Descargas/FieldMaintenance")
-                    } finally {
-                        isExporting = false
-                        showFinalizeDialog = false
-                    }
-                }
-            },
-            onExportForAppJson = {
-                scope.launch {
-                    if (isExporting) return@launch
-                    isExporting = true
-                    try {
-                        exportManager.exportAppZipToDownloads(r)
-                        snackbarHostState.showSnackbar("Exportación APP (JSON + carpetas) guardada en Descargas/FieldMaintenance")
+                        val zipFile = exportManager.exportToZIPForApp(r)
+                        com.example.fieldmaintenance.util.EmailManager.sendEmail(context, r.eventName, listOf(zipFile))
                     } finally {
                         isExporting = false
                         showFinalizeDialog = false
