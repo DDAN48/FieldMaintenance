@@ -198,39 +198,26 @@ fun PassivesScreen(navController: NavController, reportId: String) {
                     }
                 }
             },
-            onExportHtml = {
+            onSendEmailHtmlWithImages = {
                 scope.launch {
                     if (isExporting) return@launch
                     isExporting = true
                     try {
-                        exportManager.exportHtmlOnlyToDownloads(report!!)
-                        snackbarHostState.showSnackbar("HTML guardado en Descargas/FieldMaintenance")
+                        val zipFile = exportManager.exportToHtmlWithImagesZip(report!!)
+                        EmailManager.sendEmail(context, report!!.eventName, listOf(zipFile))
                     } finally {
                         isExporting = false
                         showFinalizeDialog = false
                     }
                 }
             },
-            onExportHtmlWithImages = {
+            onSendEmailForAppJson = {
                 scope.launch {
                     if (isExporting) return@launch
                     isExporting = true
                     try {
-                        exportManager.exportHtmlWithImagesZipToDownloads(report!!)
-                        snackbarHostState.showSnackbar("ZIP (HTML + imágenes) guardado en Descargas/FieldMaintenance")
-                    } finally {
-                        isExporting = false
-                        showFinalizeDialog = false
-                    }
-                }
-            },
-            onExportForAppJson = {
-                scope.launch {
-                    if (isExporting) return@launch
-                    isExporting = true
-                    try {
-                        exportManager.exportAppZipToDownloads(report!!)
-                        snackbarHostState.showSnackbar("Exportación APP (JSON + carpetas) guardada en Descargas/FieldMaintenance")
+                        val zipFile = exportManager.exportToZIPForApp(report!!)
+                        EmailManager.sendEmail(context, report!!.eventName, listOf(zipFile))
                     } finally {
                         isExporting = false
                         showFinalizeDialog = false

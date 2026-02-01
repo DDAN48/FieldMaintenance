@@ -2758,7 +2758,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                       return;
                     }
                     const photo = currentPhotos[currentPhotoIndex];
-                    photoImage.src = photo.dataUri || photo.fileName;
+                    photoImage.src = photo.dataUri || encodeURI(photo.fileName);
                     currentPhotoScale = 1;
                     currentPhotoPanX = 0;
                     currentPhotoPanY = 0;
@@ -3170,7 +3170,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     }
                     if (entry.imageDataUri) {
                       const img = document.createElement('img');
-                      img.src = entry.imageDataUri;
+                      img.src = entry.imageDataUri.startsWith('data:') ? entry.imageDataUri : encodeURI(entry.imageDataUri);
                       img.alt = entry.label || 'Medición';
                       img.style.width = '100%';
                       img.style.maxHeight = '520px';
@@ -3951,8 +3951,18 @@ val assets = repository.getAssetsByReportId(report.id).first()
         val zipFile = File(context.getExternalFilesDir(null), "${baseName}.zip")
         if (zipFile.exists()) zipFile.delete()
 
+        // Put report.html and images/ at ZIP root so relative paths work consistently.
+        val reportHtml = File(exportDir, "report.html")
+        val imagesDir = File(exportDir, "images").apply { mkdirs() }
         ZipFile(zipFile).apply {
-            addFolder(exportDir)
+            addFile(
+                reportHtml,
+                ZipParameters().apply { fileNameInZip = "report.html" }
+            )
+            addFolder(
+                imagesDir,
+                ZipParameters().apply { fileNameInZip = "images" }
+            )
         }
         zipFile
     }

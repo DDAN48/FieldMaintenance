@@ -327,39 +327,26 @@ fun AssetSummaryScreen(navController: NavController, reportId: String) {
                     }
                 }
             },
-            onExportHtml = {
+            onSendEmailHtmlWithImages = {
                 scope.launch {
                     if (isExporting) return@launch
                     isExporting = true
                     try {
-                        exportManager.exportHtmlOnlyToDownloads(report!!)
-                        snackbarHostState.showSnackbar("HTML guardado en Descargas/FieldMaintenance")
+                        val zipFile = exportManager.exportToHtmlWithImagesZip(report!!)
+                        EmailManager.sendEmail(context, report!!.eventName, listOf(zipFile))
                     } finally {
                         isExporting = false
                         showFinalizeDialog = false
                     }
                 }
             },
-            onExportHtmlWithImages = {
+            onSendEmailForAppJson = {
                 scope.launch {
                     if (isExporting) return@launch
                     isExporting = true
                     try {
-                        exportManager.exportHtmlWithImagesZipToDownloads(report!!)
-                        snackbarHostState.showSnackbar("ZIP (HTML + imágenes) guardado en Descargas/FieldMaintenance")
-                    } finally {
-                        isExporting = false
-                        showFinalizeDialog = false
-                    }
-                }
-            },
-            onExportForAppJson = {
-                scope.launch {
-                    if (isExporting) return@launch
-                    isExporting = true
-                    try {
-                        exportManager.exportAppZipToDownloads(report!!)
-                        snackbarHostState.showSnackbar("Exportación APP (JSON + carpetas) guardada en Descargas/FieldMaintenance")
+                        val zipFile = exportManager.exportToZIPForApp(report!!)
+                        EmailManager.sendEmail(context, report!!.eventName, listOf(zipFile))
                     } finally {
                         isExporting = false
                         showFinalizeDialog = false
@@ -472,9 +459,8 @@ fun AssetSummaryCard(
 fun FinalizeReportDialog(
     onDismiss: () -> Unit,
     onSendEmailHtml: () -> Unit,
-    onExportHtml: () -> Unit,
-    onExportHtmlWithImages: () -> Unit,
-    onExportForAppJson: () -> Unit,
+    onSendEmailHtmlWithImages: () -> Unit,
+    onSendEmailForAppJson: () -> Unit,
     showMissingWarning: Boolean,
     isProcessing: Boolean
 ) {
@@ -489,26 +475,6 @@ fun FinalizeReportDialog(
                 TextButton(
                     onClick = {
                         if (!showMissingWarning && !isProcessing) {
-                            onExportHtml()
-                        }
-                    },
-                    enabled = !showMissingWarning && !isProcessing
-                ) {
-                    Text("📦 Exportar reporte (HTML)")
-                }
-                TextButton(
-                    onClick = {
-                        if (!showMissingWarning && !isProcessing) {
-                            onExportHtmlWithImages()
-                        }
-                    },
-                    enabled = !showMissingWarning && !isProcessing
-                ) {
-                    Text("📦 Exportar reporte (HTML + imágenes)")
-                }
-                TextButton(
-                    onClick = {
-                        if (!showMissingWarning && !isProcessing) {
                             onSendEmailHtml()
                         }
                     },
@@ -519,12 +485,22 @@ fun FinalizeReportDialog(
                 TextButton(
                     onClick = {
                         if (!showMissingWarning && !isProcessing) {
-                            onExportForAppJson()
+                            onSendEmailHtmlWithImages()
                         }
                     },
                     enabled = !showMissingWarning && !isProcessing
                 ) {
-                    Text("📦 Exportar para APP (JSON)")
+                    Text("✉️ Enviar reporte (HTML + imágenes)")
+                }
+                TextButton(
+                    onClick = {
+                        if (!showMissingWarning && !isProcessing) {
+                            onSendEmailForAppJson()
+                        }
+                    },
+                    enabled = !showMissingWarning && !isProcessing
+                ) {
+                    Text("✉️ Enviar para APP (JSON)")
                 }
 
                 Spacer(modifier = Modifier.height(6.dp))
