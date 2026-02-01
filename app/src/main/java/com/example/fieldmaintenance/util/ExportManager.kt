@@ -69,6 +69,14 @@ class ExportManager(private val context: Context, private val repository: Mainte
             .ifBlank { "NA" }
     }
 
+    private fun safeFileNamePreserveExtension(fileName: String): String {
+        val clean = fileName.trim().ifBlank { "image.jpg" }
+        val dot = clean.lastIndexOf('.')
+        val base = if (dot > 0) clean.substring(0, dot) else clean
+        val ext = if (dot > 0 && dot < clean.length - 1) clean.substring(dot + 1) else "jpg"
+        return "${safeFilePart(base)}.${safeFilePart(ext.lowercase(Locale.getDefault()))}"
+    }
+
     private fun exportBaseName(report: MaintenanceReport, now: Date = Date()): String {
         val node = safeFilePart(report.nodeName.ifBlank { report.id })
         val event = safeFilePart(report.eventName.ifBlank { "evento" })
@@ -1675,10 +1683,8 @@ val assets = repository.getAssetsByReportId(report.id).first()
                         val relPath = if (photoMode == HtmlPhotoMode.RELATIVE_FILES && imageFile.exists()) {
                             val destDir = File(exportDir, "images/${asset.id}/${photo.photoType.name.lowercase()}")
                             destDir.mkdirs()
-                            val dest = File(destDir, imageFile.name)
-                            if (!dest.exists()) {
-                                imageFile.copyTo(dest, overwrite = true)
-                            }
+                            val dest = File(destDir, safeFileNamePreserveExtension(imageFile.name))
+                            imageFile.copyTo(dest, overwrite = true)
                             "images/${asset.id}/${photo.photoType.name.lowercase()}/${dest.name}"
                         } else {
                             null
@@ -3538,10 +3544,8 @@ val assets = repository.getAssetsByReportId(report.id).first()
                 val src = if (photoMode == HtmlPhotoMode.RELATIVE_FILES) {
                     val destDir = File(exportDir, "images/${asset.id}/${photo.photoType.name.lowercase()}")
                     destDir.mkdirs()
-                    val dest = File(destDir, imageFile.name)
-                    if (!dest.exists()) {
-                        imageFile.copyTo(dest, overwrite = true)
-                    }
+                    val dest = File(destDir, safeFileNamePreserveExtension(imageFile.name))
+                    imageFile.copyTo(dest, overwrite = true)
                     "images/${asset.id}/${photo.photoType.name.lowercase()}/${dest.name}"
                 } else {
                     val encoded = Base64.encodeToString(imageFile.readBytes(), Base64.NO_WRAP)
