@@ -120,19 +120,8 @@ fun AssetSummaryScreen(navController: NavController, reportId: String) {
                     val meterKey = asset.meterType?.trim()?.lowercase().orEmpty()
                     val isDsam = meterKey == "dsam"
                     val measurementsOk: Boolean = if (isDsam) {
-                        val techNormalized = asset.technology?.trim()?.lowercase().orEmpty()
-                        val techKey = techNormalized.replace("_", "").replace(" ", "")
-                        val isNode = asset.type == AssetType.NODE
-                        val hasRx = isNode && !(techKey == "vccap" || techKey == "vccaphibrido")
-                        val hasModule = if (isNode) techKey != "vccapcompleto" else true
-
-                        val rxChannel = photos.count { it.photoType == PhotoType.MEASUREMENT_RX_CHANNEL_CHECK }
-                        val moduleChannel = photos.count { it.photoType == PhotoType.MEASUREMENT_MODULE_CHANNEL_CHECK }
-                        val moduleDocsis = photos.count { it.photoType == PhotoType.MEASUREMENT_MODULE_DOCSIS_CHECK }
-
-                        val rxOk = !hasRx || rxChannel >= 1
-                        val moduleOk = !hasModule || (moduleChannel >= 4 && moduleDocsis >= 4)
-                        rxOk && moduleOk
+                        // DSAM measurement photos are optional (non-blocking).
+                        true
                     } else {
                         // ONX/Viavi: keep validating measurement files (IO)
                         val computed by produceState(initialValue = true, asset, reportFolder) {

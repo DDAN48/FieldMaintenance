@@ -2751,15 +2751,8 @@ private fun AssetFileSection(
             val rxRequired = requiredCounts(asset.type, isModule = false)
             val moduleRequired = requiredCounts(moduleAsset.type, isModule = true)
             val canRefresh = when {
-                isDsam && isNodeAsset -> {
-                    val rxOk = !hasRxMeasurements || dsamRxChannelCount >= 1
-                    val moduleChannelOk = !hasModuleMeasurements || dsamModuleChannelCount >= 4
-                    val moduleDocsisOk = !hasModuleMeasurements || dsamModuleDocsisCount >= 4
-                    rxOk && moduleChannelOk && moduleDocsisOk
-                }
-                isDsam && !isNodeAsset -> {
-                    dsamModuleChannelCount >= 4 && dsamModuleDocsisCount >= 4
-                }
+                // DSAM measurement photos are optional (non-blocking).
+                isDsam -> true
                 isNodeAsset -> {
                     if (hasRxMeasurements && hasModuleMeasurements) {
                         meetsRequired(verificationSummaryRx, rxRequired) &&
