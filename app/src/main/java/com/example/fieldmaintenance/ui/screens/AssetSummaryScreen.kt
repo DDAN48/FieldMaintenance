@@ -314,19 +314,6 @@ fun AssetSummaryScreen(navController: NavController, reportId: String) {
                     showFinalizeDialog = false
                 }
             },
-            onSendEmailHtml = {
-                scope.launch {
-                    if (isExporting) return@launch
-                    isExporting = true
-                    try {
-                        val htmlFile = exportManager.exportToHtmlOnly(report!!)
-                        EmailManager.sendEmail(context, report!!.eventName, listOf(htmlFile))
-                    } finally {
-                        isExporting = false
-                        showFinalizeDialog = false
-                    }
-                }
-            },
             onSendEmailHtmlWithImages = {
                 scope.launch {
                     if (isExporting) return@launch
@@ -458,7 +445,6 @@ fun AssetSummaryCard(
 @Composable
 fun FinalizeReportDialog(
     onDismiss: () -> Unit,
-    onSendEmailHtml: () -> Unit,
     onSendEmailHtmlWithImages: () -> Unit,
     onSendEmailForAppJson: () -> Unit,
     showMissingWarning: Boolean,
@@ -472,16 +458,6 @@ fun FinalizeReportDialog(
             Column(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                TextButton(
-                    onClick = {
-                        if (!showMissingWarning && !isProcessing) {
-                            onSendEmailHtml()
-                        }
-                    },
-                    enabled = !showMissingWarning && !isProcessing
-                ) {
-                    Text("✉️ Enviar reporte (HTML)")
-                }
                 TextButton(
                     onClick = {
                         if (!showMissingWarning && !isProcessing) {

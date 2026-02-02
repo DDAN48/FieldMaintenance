@@ -202,19 +202,6 @@ fun MonitorQrScreen(navController: androidx.navigation.NavController, reportId: 
                     showFinalizeDialog = false
                 }
             },
-            onSendEmailHtml = {
-                scope.launch {
-                    if (isExporting) return@launch
-                    isExporting = true
-                    try {
-                        val htmlFile = exportManager.exportToHtmlOnly(report!!)
-                        EmailManager.sendEmail(context, report!!.eventName, listOf(htmlFile))
-                    } finally {
-                        isExporting = false
-                        showFinalizeDialog = false
-                    }
-                }
-            },
             onSendEmailHtmlWithImages = {
                 scope.launch {
                     if (isExporting) return@launch
