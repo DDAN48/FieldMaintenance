@@ -1514,19 +1514,6 @@ fun AddAssetScreen(
                     showFinalizeDialog = false
                 }
             },
-            onSendEmailHtml = {
-                scope.launch {
-                    if (isExporting) return@launch
-                    isExporting = true
-                    try {
-                        val htmlFile = exportManager.exportToHtmlOnly(r)
-                        com.example.fieldmaintenance.util.EmailManager.sendEmail(context, r.eventName, listOf(htmlFile))
-                    } finally {
-                        isExporting = false
-                        showFinalizeDialog = false
-                    }
-                }
-            },
             onSendEmailHtmlWithImages = {
                 scope.launch {
                     if (isExporting) return@launch
