@@ -850,8 +850,10 @@ fun AddAssetScreen(
                     }) {
                         Icon(Icons.Default.Home, contentDescription = "Inicio")
                     }
-                    IconButton(onClick = { showFinalizeDialog = true }) {
-                        Icon(Icons.Default.Download, contentDescription = "Finalizar Reporte")
+                    if (!isEdit) {
+                        IconButton(onClick = { showFinalizeDialog = true }) {
+                            Icon(Icons.Default.Download, contentDescription = "Finalizar Reporte")
+                        }
                     }
                     IconButton(onClick = {
                         scope.launch {
@@ -1503,7 +1505,7 @@ fun AddAssetScreen(
         }
     }
 
-    if (showFinalizeDialog && report != null) {
+    if (!isEdit && showFinalizeDialog && report != null) {
         val exportManager = remember { com.example.fieldmaintenance.util.ExportManager(context, repository) }
         val r = report ?: return
         FinalizeReportDialog(
