@@ -125,45 +125,58 @@ fun AssetSummaryScreen(navController: NavController, reportId: String) {
                     } else {
                         // ONX/Viavi: keep validating measurement files (IO)
                         val computed by produceState(initialValue = true, asset, reportFolder) {
-                            val rxAssetDir = MaintenanceStorage.ensureAssetDir(context, reportFolder, asset)
-                            val rxFiles = rxAssetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
-                            val rxDiscardedFile = File(rxAssetDir, ".discarded_measurements.txt")
-                            val rxDiscardedLabels = loadDiscardedLabels(rxDiscardedFile)
-                            val rxRequired = requiredCounts(asset.type, isModule = false)
-                            val rxSummary = withContext(Dispatchers.IO) {
-                                verifyMeasurementFiles(
-                                    context,
-                                    rxFiles,
-                                    asset,
-                                    repository,
-                                    rxDiscardedLabels,
-                                    expectedDocsisOverride = rxRequired.expectedDocsis,
-                                    expectedChannelOverride = rxRequired.expectedChannel
-                                )
-                            }
-                            val rxOk = meetsRequired(rxSummary, rxRequired)
+                            val techNormalized = asset.technology?.trim()?.lowercase().orEmpty()
+                            val techKey = techNormalized.replace("_", "").replace(" ", "")
+                            val isNode = asset.type == AssetType.NODE
+                            val hasRxMeasurements = !(isNode && (techKey == "vccap" || techKey == "vccaphibrido"))
+                            val hasModuleMeasurements = !(isNode && techKey == "vccapcompleto")
 
-                            val moduleOk = if (asset.type == AssetType.NODE) {
+                            // RX
+                            val rxOk = if (!hasRxMeasurements) {
+                                true
+                            } else {
+                                val rxAssetDir = MaintenanceStorage.ensureAssetDir(context, reportFolder, asset)
+                                val rxFiles = rxAssetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
+                                val rxDiscardedFile = File(rxAssetDir, ".discarded_measurements.txt")
+                                val rxDiscardedLabels = loadDiscardedLabels(rxDiscardedFile)
+                                val rxRequired = requiredCounts(asset.type, isModule = false)
+                                val rxSummary = withContext(Dispatchers.IO) {
+                                    verifyMeasurementFiles(
+                                        context,
+                                        rxFiles,
+                                        asset,
+                                        repository,
+                                        rxDiscardedLabels,
+                                        expectedDocsisOverride = rxRequired.expectedDocsis,
+                                        expectedChannelOverride = rxRequired.expectedChannel
+                                    )
+                                }
+                                meetsRequired(rxSummary, rxRequired)
+                            }
+
+                            // Módulo (NODE only)
+                            val moduleOk = if (!isNode || !hasModuleMeasurements) {
+                                true
+                            } else {
                                 val moduleAsset = asset.copy(type = AssetType.AMPLIFIER)
                                 val moduleAssetDir = MaintenanceStorage.ensureAssetDir(context, reportFolder, moduleAsset)
                                 val moduleFiles = moduleAssetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
                                 val moduleDiscardedFile = File(moduleAssetDir, ".discarded_measurements.txt")
                                 val moduleDiscardedLabels = loadDiscardedLabels(moduleDiscardedFile)
-                                val moduleRequired = requiredCounts(moduleAsset.type, isModule = true)
+                                val moduleRequired = requiredCounts(asset.type, isModule = true)
                                 val moduleSummary = withContext(Dispatchers.IO) {
                                     verifyMeasurementFiles(
                                         context,
                                         moduleFiles,
-                                        moduleAsset,
+                                        asset,
                                         repository,
                                         moduleDiscardedLabels,
                                         expectedDocsisOverride = moduleRequired.expectedDocsis,
-                                        expectedChannelOverride = moduleRequired.expectedChannel
+                                        expectedChannelOverride = moduleRequired.expectedChannel,
+                                        isModuleMeasurement = true
                                     )
                                 }
                                 meetsRequired(moduleSummary, moduleRequired)
-                            } else {
-                                true
                             }
 
                             value = rxOk && moduleOk
