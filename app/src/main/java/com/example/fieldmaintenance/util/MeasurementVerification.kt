@@ -1332,9 +1332,6 @@ suspend fun verifyMeasurementFiles(
                     parseErrorCount += 1
                     parseErrorNames.add(file.name)
                 }
-                if (file.exists()) {
-                    file.delete()
-                }
             }
             name.endsWith(".gz") -> {
                 runCatching {
@@ -1342,9 +1339,6 @@ suspend fun verifyMeasurementFiles(
                 }.onFailure {
                     parseErrorCount += 1
                     parseErrorNames.add(file.name)
-                }
-                if (file.exists()) {
-                    file.delete()
                 }
             }
         }
