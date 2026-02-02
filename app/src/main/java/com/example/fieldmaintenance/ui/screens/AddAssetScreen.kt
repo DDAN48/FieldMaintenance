@@ -2424,8 +2424,26 @@ private fun AssetFileSection(
         val best = buckets.maxByOrNull { it.value.size }?.value ?: points
         GeoPoint(best.map { it.latitude }.average(), best.map { it.longitude }.average())
     }
-    var rxFiles by remember(rxAssetDir) { mutableStateOf(rxAssetDir.listFiles()?.sortedBy { it.name } ?: emptyList()) }
-    var moduleFiles by remember(moduleAssetDir) { mutableStateOf(moduleAssetDir.listFiles()?.sortedBy { it.name } ?: emptyList()) }
+    fun isMeasurementPayloadFile(file: File): Boolean {
+        if (!file.isFile) return false
+        val key = file.name.lowercase(Locale.getDefault())
+        val jsonNumbered = Regex(".*\\.json\\d+$")
+        val jsonDotNumbered = Regex(".*\\.json\\.\\d+$")
+        val jsonHyphenNumbered = Regex(".*\\.json-\\d+$")
+        val isJsonLike = key.endsWith(".json") ||
+            jsonNumbered.matches(key) ||
+            jsonDotNumbered.matches(key) ||
+            jsonHyphenNumbered.matches(key)
+        return isJsonLike || key.endsWith(".zip") || key.endsWith(".gz")
+    }
+    fun listMeasurementPayloadFiles(dir: File): List<File> =
+        dir.listFiles()
+            ?.filter(::isMeasurementPayloadFile)
+            ?.sortedBy { it.name }
+            ?: emptyList()
+
+    var rxFiles by remember(rxAssetDir) { mutableStateOf(listMeasurementPayloadFiles(rxAssetDir)) }
+    var moduleFiles by remember(moduleAssetDir) { mutableStateOf(listMeasurementPayloadFiles(moduleAssetDir)) }
     val scope = rememberCoroutineScope()
     val rxDiscardedFile = remember(rxAssetDir) { File(rxAssetDir, ".discarded_measurements.txt") }
     var rxDiscardedLabels by remember(rxAssetDir) { mutableStateOf(loadDiscardedLabels(rxDiscardedFile)) }
@@ -2581,7 +2599,7 @@ private fun AssetFileSection(
                 surplusIsModule = false
             }
             if (summary.result.duplicateFileCount > 0) {
-                rxFiles = rxAssetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
+                rxFiles = listMeasurementPayloadFiles(rxAssetDir)
             }
         } else {
             verificationSummaryRx = null
@@ -2626,7 +2644,7 @@ private fun AssetFileSection(
                 surplusIsModule = true
             }
             if (summary.result.duplicateFileCount > 0) {
-                moduleFiles = moduleAssetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
+                moduleFiles = listMeasurementPayloadFiles(moduleAssetDir)
             }
         } else {
             verificationSummaryModule = null
@@ -2651,9 +2669,9 @@ private fun AssetFileSection(
     fun refreshVerificationSummary(isModule: Boolean) {
         scope.launch(Dispatchers.IO) {
             val updated = if (isModule) {
-                moduleAssetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
+                listMeasurementPayloadFiles(moduleAssetDir)
             } else {
-                rxAssetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
+                listMeasurementPayloadFiles(rxAssetDir)
             }
             val required = if (isModule) {
                 requiredCounts(moduleValidationAsset.type, isModule = true)
@@ -4202,13 +4220,15 @@ private fun AssetFileSection(
                                 }
                             }
                             if (hasModuleMeasurements) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text("Mediciones Modulo", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                                    IconButton(onClick = { startViaviImport(AssetType.AMPLIFIER) }) {
-                                        Icon(Icons.Default.FileUpload, contentDescription = "Agregar mediciones Modulo")
+                                if (hasRxMeasurements) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text("Mediciones Modulo", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                                        IconButton(onClick = { startViaviImport(AssetType.AMPLIFIER) }) {
+                                            Icon(Icons.Default.FileUpload, contentDescription = "Agregar mediciones Modulo")
+                                        }
                                     }
                                 }
                                 verificationSummaryModule?.let { summary ->
@@ -4292,9 +4312,9 @@ private fun AssetFileSection(
                             scope.launch(Dispatchers.IO) {
                                 file.delete()
                                 val updated = if (isModule) {
-                                    moduleAssetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
+                                    listMeasurementPayloadFiles(moduleAssetDir)
                                 } else {
-                                    rxAssetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
+                                    listMeasurementPayloadFiles(rxAssetDir)
                                 }
                                 val required = if (isModule) {
                                     requiredCounts(moduleAsset.type, isModule = true)
