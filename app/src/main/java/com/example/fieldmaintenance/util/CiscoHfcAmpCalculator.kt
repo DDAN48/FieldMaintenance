@@ -71,6 +71,8 @@ object CiscoHfcAmpCalculator {
 
     fun inputChannelKeyForFreq(freqMHz: Int?): String? {
         return when (freqMHz) {
+            54 -> "L 54"
+            102 -> "L102"
             61 -> "CH3"
             379 -> "CH50"
             750 -> "CH116"
@@ -82,6 +84,8 @@ object CiscoHfcAmpCalculator {
 
     fun inputChannelLabelForFreq(freqMHz: Int?): String {
         return when (freqMHz) {
+            54 -> "L 54"
+            102 -> "L102"
             61 -> "CH3"
             379 -> "CH50"
             750 -> "CH116"

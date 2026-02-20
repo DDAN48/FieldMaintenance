@@ -92,6 +92,10 @@ private fun isEntradaLowAnchorFreq(freqMHz: Int): Boolean = freqMHz == 61 || fre
 private fun isEntradaHighAnchorFreq(freqMHz: Int): Boolean = freqMHz == 750 || freqMHz == 870 || freqMHz == 1000
 private fun isEntradaAnchorFreq(freqMHz: Int): Boolean = isEntradaLowAnchorFreq(freqMHz) || isEntradaHighAnchorFreq(freqMHz)
 
+// Plan anchor allows using L102 as the "low" point too.
+private fun isEntradaPlanLowAnchorFreq(freqMHz: Int): Boolean = isEntradaLowAnchorFreq(freqMHz) || freqMHz == 102
+private fun isEntradaPlanAnchorFreq(freqMHz: Int): Boolean = isEntradaPlanLowAnchorFreq(freqMHz) || isEntradaHighAnchorFreq(freqMHz)
+
 @Composable
 fun AmplifierAdjustmentCard(
     assetId: String,
@@ -391,10 +395,10 @@ fun AmplifierAdjustmentCard(
                             }
                         },
                         onSelectPlanFreq = { freq ->
-                            if (!isEntradaAnchorFreq(freq)) return@SimpleCalcList
+                            if (!isEntradaPlanAnchorFreq(freq)) return@SimpleCalcList
                             dirty = true
                             when {
-                                isEntradaLowAnchorFreq(freq) -> {
+                                isEntradaPlanLowAnchorFreq(freq) -> {
                                     inPlanLowFreq = freq
                                     activeEntradaEdit = EntradaEditTarget.PLAN_LOW
                                 }
@@ -900,7 +904,7 @@ private fun SimpleCalcList(
                     onChange = planState.onChange
                 )
             } else {
-                val canSelect = isEntradaAnchorFreq(r.freqMHz) && onSelectPlanFreq != null
+                val canSelect = isEntradaPlanAnchorFreq(r.freqMHz) && onSelectPlanFreq != null
                 Box(
                     modifier = Modifier
                         .width(110.dp)
