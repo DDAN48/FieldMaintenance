@@ -4324,6 +4324,29 @@ private fun AssetFileSection(
                                 },
                                 isModule = false
                             )
+                        } ?: run {
+                            // Show required measurement types even if empty, so user knows what to load.
+                            val required = requiredCounts(asset.type, isModule = false)
+                            val docsisCountLabel = "0/${required.expectedDocsis}"
+                            val channelCountLabel = "0/${required.expectedChannel}"
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                if (required.expectedDocsis > 0) {
+                                    Text(
+                                        "DOCSIS Expert $docsisCountLabel",
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        fontSize = 18.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                                if (required.expectedChannel > 0) {
+                                    Text(
+                                        "Channel Expert $channelCountLabel",
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        fontSize = 18.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                            }
                         }
                     }
                 }
