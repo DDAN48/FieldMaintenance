@@ -2933,10 +2933,10 @@ private fun AssetFileSection(
                         val chipSelectedText = MaterialTheme.colorScheme.onPrimary
                         val successColor = SuccessGreen
 
-                        val docsisDisplayCount = docsisListEntries.size.coerceAtMost(summary.expectedDocsis)
-                        val channelDisplayCount = channelListEntries.size.coerceAtMost(summary.expectedChannel)
-                        val docsisCountLabel = "${docsisDisplayCount}/${summary.expectedDocsis}"
-                        val channelCountLabel = "${channelDisplayCount}/${summary.expectedChannel}"
+                        val docsisDisplayCount = docsisListEntries.size.coerceAtMost(required.expectedDocsis)
+                        val channelDisplayCount = channelListEntries.size.coerceAtMost(required.expectedChannel)
+                        val docsisCountLabel = "${docsisDisplayCount}/${required.expectedDocsis}"
+                        val channelCountLabel = "${channelDisplayCount}/${required.expectedChannel}"
 
                         data class MeasurementTab(
                             val label: String,
@@ -3524,22 +3524,23 @@ private fun AssetFileSection(
                                     hasError = channelHasError(entry)
                                 )
                             }
-                            if (docsisTabs.isNotEmpty()) {
+                            if (required.expectedDocsis > 0) {
                                 Text("DOCSIS Expert $docsisCountLabel", color = tableTextPrimary, fontSize = 18.sp)
                                 Spacer(Modifier.height(8.dp))
-                                val docsisLabelForEntry = docsisTabs.associate { it.entry to it.label }
-                                MeasurementTabsWithPagerCard(
-                                    tabs = docsisTabs,
-                                    footerProvider = { entry, label ->
-                                        "$label = ${displayLabel(entry)}"
-                                    },
-                                    onDelete = onRequestDelete,
-                                    allowExpand = true,
-                                    alwaysShowContent = true,
-                                    showFooterBlock = false,
-                                    showFooterWhenCollapsed = true
-                                ) { entry ->
-                                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                if (docsisTabs.isNotEmpty()) {
+                                    val docsisLabelForEntry = docsisTabs.associate { it.entry to it.label }
+                                    MeasurementTabsWithPagerCard(
+                                        tabs = docsisTabs,
+                                        footerProvider = { entry, label ->
+                                            "$label = ${displayLabel(entry)}"
+                                        },
+                                        onDelete = onRequestDelete,
+                                        allowExpand = true,
+                                        alwaysShowContent = true,
+                                        showFooterBlock = false,
+                                        showFooterWhenCollapsed = true
+                                    ) { entry ->
+                                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                         val chartData = entry.docsisLevels.keys.sorted().mapNotNull { freq ->
                                             val level = entry.docsisLevels[freq] ?: return@mapNotNull null
                                             val frequency = entry.docsisMeta[freq]?.frequencyMHz ?: freq
@@ -3614,26 +3615,34 @@ private fun AssetFileSection(
                                                 )
                                             }
                                         }
+                                        }
                                     }
+                                } else {
+                                    Text(
+                                        text = "Sin mediciones cargadas.",
+                                        color = tableTextSecondary,
+                                        fontSize = 12.sp
+                                    )
                                 }
                                 Spacer(Modifier.height(12.dp))
                             }
 
-                            if (channelTabs.isNotEmpty()) {
+                            if (required.expectedChannel > 0) {
                                 Text("Channel Expert $channelCountLabel", color = tableTextPrimary, fontSize = 18.sp)
                                 Spacer(Modifier.height(8.dp))
-                                val channelLabelForEntry = channelTabs.associate { it.entry to it.label }
-                                MeasurementTabsWithPagerCard(
-                                    tabs = channelTabs,
-                                    footerProvider = { entry, label ->
-                                        "$label = ${displayLabel(entry)}"
-                                    },
-                                    onDelete = onRequestDelete,
-                                    alwaysShowContent = true,
-                                    showFooterBlock = false,
-                                    showFooterWhenCollapsed = true
-                                ) { entry ->
-                                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                if (channelTabs.isNotEmpty()) {
+                                    val channelLabelForEntry = channelTabs.associate { it.entry to it.label }
+                                    MeasurementTabsWithPagerCard(
+                                        tabs = channelTabs,
+                                        footerProvider = { entry, label ->
+                                            "$label = ${displayLabel(entry)}"
+                                        },
+                                        onDelete = onRequestDelete,
+                                        alwaysShowContent = true,
+                                        showFooterBlock = false,
+                                        showFooterWhenCollapsed = true
+                                    ) { entry ->
+                                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                         val downstreamPoints = buildList {
                                             entry.pilotLevels.forEach { (channel, level) ->
                                                 val frequency = entry.pilotMeta[channel]?.frequencyMHz
@@ -3764,8 +3773,16 @@ private fun AssetFileSection(
                                                 )
                                             }
                                         }
+                                        }
                                     }
+                                } else {
+                                    Text(
+                                        text = "Sin mediciones cargadas.",
+                                        color = tableTextSecondary,
+                                        fontSize = 12.sp
+                                    )
                                 }
+                                Spacer(Modifier.height(12.dp))
                             }
                         } else {
                             val switchOptions = if (assetForDisplay.type == AssetType.AMPLIFIER) {
