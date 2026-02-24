@@ -464,7 +464,8 @@ fun AddAssetScreen(
     )
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
-    val workingAssetId = rememberSaveable(assetId) { assetId ?: UUID.randomUUID().toString() }
+    val backStackEntryId = navController.currentBackStackEntry?.id
+    val workingAssetId = rememberSaveable(backStackEntryId, assetId) { assetId ?: UUID.randomUUID().toString() }
     val isEdit = assetId != null
     val report by viewModel.report.collectAsState()
     var showFinalizeDialog by remember { mutableStateOf(false) }
@@ -4367,9 +4368,15 @@ private fun AssetFileSection(
                         val list = if (isModule) moduleFiles else rxFiles
                         val entryName = entry.label.substringAfterLast('/')
                         val file = list.firstOrNull { it.name == entryName }
-                        if (file != null) {
+                        val fileToDelete = file ?: run {
+                            // If the entry came from inside a .zip/.gz (label like "container.zip/inner.json"),
+                            // delete the container file too.
+                            val containerName = entry.label.substringBefore('/')
+                            list.firstOrNull { it.name == containerName }
+                        }
+                        if (fileToDelete != null) {
                             scope.launch(Dispatchers.IO) {
-                                file.delete()
+                                fileToDelete.delete()
                                 val updated = if (isModule) {
                                     listMeasurementPayloadFiles(moduleAssetDir)
                                 } else {

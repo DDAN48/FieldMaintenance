@@ -136,7 +136,7 @@ fun AssetSummaryScreen(navController: NavController, reportId: String) {
                                 true
                             } else {
                                 val rxAssetDir = MaintenanceStorage.ensureAssetDir(context, reportFolder, asset)
-                                val rxFiles = rxAssetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
+                                val rxFiles = listMeasurementPayloadFiles(rxAssetDir)
                                 val rxDiscardedFile = File(rxAssetDir, ".discarded_measurements.txt")
                                 val rxDiscardedLabels = loadDiscardedLabels(rxDiscardedFile)
                                 val rxRequired = requiredCounts(asset.type, isModule = false)
@@ -160,7 +160,7 @@ fun AssetSummaryScreen(navController: NavController, reportId: String) {
                             } else {
                                 val moduleAsset = asset.copy(type = AssetType.AMPLIFIER)
                                 val moduleAssetDir = MaintenanceStorage.ensureAssetDir(context, reportFolder, moduleAsset)
-                                val moduleFiles = moduleAssetDir.listFiles()?.sortedBy { it.name } ?: emptyList()
+                                val moduleFiles = listMeasurementPayloadFiles(moduleAssetDir)
                                 val moduleDiscardedFile = File(moduleAssetDir, ".discarded_measurements.txt")
                                 val moduleDiscardedLabels = loadDiscardedLabels(moduleDiscardedFile)
                                 val moduleRequired = requiredCounts(asset.type, isModule = true)

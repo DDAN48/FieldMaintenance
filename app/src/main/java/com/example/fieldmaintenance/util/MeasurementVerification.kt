@@ -13,6 +13,25 @@ import java.util.zip.GZIPInputStream
 import java.util.zip.ZipInputStream
 import org.json.JSONObject
 
+fun isMeasurementPayloadFile(file: File): Boolean {
+    if (!file.isFile) return false
+    val key = file.name.lowercase(Locale.getDefault())
+    val jsonNumbered = Regex(".*\\.json\\d+$")
+    val jsonDotNumbered = Regex(".*\\.json\\.\\d+$")
+    val jsonHyphenNumbered = Regex(".*\\.json-\\d+$")
+    val isJsonLike = key.endsWith(".json") ||
+        jsonNumbered.matches(key) ||
+        jsonDotNumbered.matches(key) ||
+        jsonHyphenNumbered.matches(key)
+    return isJsonLike || key.endsWith(".zip") || key.endsWith(".gz")
+}
+
+fun listMeasurementPayloadFiles(dir: File): List<File> =
+    dir.listFiles()
+        ?.filter(::isMeasurementPayloadFile)
+        ?.sortedBy { it.name }
+        ?: emptyList()
+
 fun loadDiscardedLabels(file: File): Set<String> {
     if (!file.exists()) return emptySet()
     return file.readLines().map { it.trim() }.filter { it.isNotEmpty() }.toSet()
