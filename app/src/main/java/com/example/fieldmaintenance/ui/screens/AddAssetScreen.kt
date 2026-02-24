@@ -464,7 +464,8 @@ fun AddAssetScreen(
     )
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
-    val workingAssetId = rememberSaveable(assetId) { assetId ?: UUID.randomUUID().toString() }
+    val backStackEntryId = navController.currentBackStackEntry?.id
+    val workingAssetId = rememberSaveable(backStackEntryId, assetId) { assetId ?: UUID.randomUUID().toString() }
     val isEdit = assetId != null
     val report by viewModel.report.collectAsState()
     var showFinalizeDialog by remember { mutableStateOf(false) }
@@ -4324,6 +4325,29 @@ private fun AssetFileSection(
                                 },
                                 isModule = false
                             )
+                        } ?: run {
+                            // Show required measurement types even if empty, so user knows what to load.
+                            val required = requiredCounts(asset.type, isModule = false)
+                            val docsisCountLabel = "0/${required.expectedDocsis}"
+                            val channelCountLabel = "0/${required.expectedChannel}"
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                if (required.expectedDocsis > 0) {
+                                    Text(
+                                        "DOCSIS Expert $docsisCountLabel",
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        fontSize = 18.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                                if (required.expectedChannel > 0) {
+                                    Text(
+                                        "Channel Expert $channelCountLabel",
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        fontSize = 18.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -4344,9 +4368,15 @@ private fun AssetFileSection(
                         val list = if (isModule) moduleFiles else rxFiles
                         val entryName = entry.label.substringAfterLast('/')
                         val file = list.firstOrNull { it.name == entryName }
-                        if (file != null) {
+                        val fileToDelete = file ?: run {
+                            // If the entry came from inside a .zip/.gz (label like "container.zip/inner.json"),
+                            // delete the container file too.
+                            val containerName = entry.label.substringBefore('/')
+                            list.firstOrNull { it.name == containerName }
+                        }
+                        if (fileToDelete != null) {
                             scope.launch(Dispatchers.IO) {
-                                file.delete()
+                                fileToDelete.delete()
                                 val updated = if (isModule) {
                                     listMeasurementPayloadFiles(moduleAssetDir)
                                 } else {
