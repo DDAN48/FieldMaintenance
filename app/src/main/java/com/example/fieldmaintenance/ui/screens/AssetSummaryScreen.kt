@@ -333,8 +333,8 @@ fun AssetSummaryScreen(navController: NavController, reportId: String) {
                     if (isExporting) return@launch
                     isExporting = true
                     try {
-                        val zipFile = exportManager.exportToHtmlWithImagesZip(report!!)
-                        EmailManager.sendEmail(context, report!!.eventName, listOf(zipFile))
+                        val zipFiles = exportManager.exportToHtmlWithImagesZips(report!!)
+                        EmailManager.sendEmail(context, report!!.eventName, zipFiles)
                     } finally {
                         isExporting = false
                         showFinalizeDialog = false

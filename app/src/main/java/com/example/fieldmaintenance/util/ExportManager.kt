@@ -57,6 +57,7 @@ class ExportManager(private val context: Context, private val repository: Mainte
     private val switchPrefs by lazy {
         context.getSharedPreferences("measurement_switch_positions", Context.MODE_PRIVATE)
     }
+    private val maxEmailZipBytes: Long = 8L * 1024L * 1024L
 
     private fun safeFilePart(value: String): String {
         val v = value.trim().ifBlank { "NA" }
@@ -3956,6 +3957,139 @@ val assets = repository.getAssetsByReportId(report.id).first()
             addFolder(exportDir)
         }
         zipFile
+    }
+
+    /**
+     * Export "HTML + imágenes" but split into multiple ZIP parts if needed to keep each ZIP <= 8MB.
+     *
+     * Each ZIP part is self-contained and includes:
+     * - report.html (relative image references)
+     * - images/ folder (only for the assets included in that part)
+     * - measurements/ folder (payload measurement files for the assets included in that part)
+     */
+    suspend fun exportToHtmlWithImagesZips(
+        report: MaintenanceReport,
+        baseName: String = "${exportBaseName(report)}_html_imagenes",
+        maxZipBytes: Long = maxEmailZipBytes
+    ): List<File> = withContext(Dispatchers.IO) {
+        val allAssets = repository.getAssetsByReportId(report.id).first()
+            .sortedBy { assetSortKey(it) }
+        val passives = repository.getPassivesByReportId(report.id).first()
+
+        val photosByAsset = mutableMapOf<String, List<Photo>>()
+        val adjustmentsByAsset = mutableMapOf<String, AmplifierAdjustment>()
+        val nodeAdjustmentsByAsset = mutableMapOf<String, NodeAdjustment>()
+
+        val reportFolderName = MaintenanceStorage.reportFolderName(report.eventName, report.id)
+        val measurementRoot = MaintenanceStorage.ensureReportDir(context, reportFolderName)
+
+        allAssets.forEach { asset ->
+            repository.getAmplifierAdjustment(asset.id).first()?.let { adj ->
+                adjustmentsByAsset[asset.id] = adj
+            }
+            if (asset.type == AssetType.NODE) {
+                repository.getNodeAdjustment(asset.id).first()?.let { adj ->
+                    nodeAdjustmentsByAsset[asset.id] = adj
+                }
+            }
+            val photos = repository.getPhotosByAssetId(asset.id).first()
+                .sortedBy { photoSortKey(it) }
+            photosByAsset[asset.id] = photos
+        }
+
+        fun estimateBytesForAsset(asset: Asset): Long {
+            val photoBytes = photosByAsset[asset.id].orEmpty().sumOf { p ->
+                runCatching { File(p.filePath).takeIf { it.exists() }?.length() ?: 0L }.getOrDefault(0L)
+            }
+            val measurementBytes = buildList {
+                add(asset)
+                if (asset.type == AssetType.NODE) add(asset.copy(type = AssetType.AMPLIFIER))
+            }.sumOf { measurementAsset ->
+                val folderName = MaintenanceStorage.assetFolderName(measurementAsset)
+                val srcDir = File(measurementRoot, folderName)
+                if (!srcDir.exists()) return@sumOf 0L
+                listMeasurementPayloadFiles(srcDir).sumOf { it.length() }
+            }
+            return photoBytes + measurementBytes
+        }
+
+        fun copyMeasurementPayloadsForAssets(exportDir: File, assets: List<Asset>) {
+            val measurementsExportRoot = File(exportDir, "measurements").apply { mkdirs() }
+            assets.forEach { asset ->
+                val measurementAssets = buildList {
+                    add(asset)
+                    if (asset.type == AssetType.NODE) add(asset.copy(type = AssetType.AMPLIFIER))
+                }
+                measurementAssets.forEach { measurementAsset ->
+                    val folderName = MaintenanceStorage.assetFolderName(measurementAsset)
+                    val srcDir = File(measurementRoot, folderName)
+                    if (!srcDir.exists()) return@forEach
+                    val destDir = File(measurementsExportRoot, folderName)
+                    destDir.mkdirs()
+                    listMeasurementPayloadFiles(srcDir).forEach { file ->
+                        file.copyTo(File(destDir, file.name), overwrite = true)
+                    }
+                }
+            }
+        }
+
+        fun buildZipPart(partAssets: List<Asset>, partIndex: Int): File {
+            val exportDir = File(context.cacheDir, "export_html_images_parts/${report.id}/part_$partIndex")
+            if (exportDir.exists()) exportDir.deleteRecursively()
+            exportDir.mkdirs()
+
+            val adjustedCount = countAdjustedAssets(report, partAssets)
+            exportToHtml(
+                exportDir = exportDir,
+                report = report,
+                assets = partAssets,
+                passives = passives,
+                adjustedCount = adjustedCount,
+                photosByAsset = photosByAsset,
+                adjustmentsByAsset = adjustmentsByAsset,
+                nodeAdjustmentsByAsset = nodeAdjustmentsByAsset,
+                reportFolderName = reportFolderName,
+                photoMode = HtmlPhotoMode.RELATIVE_FILES
+            )
+            copyMeasurementPayloadsForAssets(exportDir, partAssets)
+
+            val zipFile = File(context.getExternalFilesDir(null), "${baseName}_parte_${partIndex}.zip")
+            if (zipFile.exists()) zipFile.delete()
+            ZipFile(zipFile).apply { addFolder(exportDir) }
+            return zipFile
+        }
+
+        val zips = mutableListOf<File>()
+        var start = 0
+        var partIndex = 1
+        while (start < allAssets.size) {
+            var end = start
+            var estimated = 0L
+            while (end < allAssets.size) {
+                val next = estimateBytesForAsset(allAssets[end])
+                if (end == start || estimated + next <= maxZipBytes) {
+                    estimated += next
+                    end += 1
+                } else {
+                    break
+                }
+            }
+            if (end == start) end = (start + 1).coerceAtMost(allAssets.size)
+
+            var chunkEnd = end
+            var chunk = allAssets.subList(start, chunkEnd)
+            var zip = buildZipPart(chunk, partIndex)
+            while (zip.length() > maxZipBytes && chunk.size > 1) {
+                zip.delete()
+                chunkEnd -= 1
+                chunk = allAssets.subList(start, chunkEnd)
+                zip = buildZipPart(chunk, partIndex)
+            }
+            zips.add(zip)
+            start = chunkEnd
+            partIndex += 1
+        }
+        zips
     }
 
     /**

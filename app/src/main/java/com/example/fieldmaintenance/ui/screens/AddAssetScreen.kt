@@ -1520,8 +1520,8 @@ fun AddAssetScreen(
                     if (isExporting) return@launch
                     isExporting = true
                     try {
-                        val zipFile = exportManager.exportToHtmlWithImagesZip(r)
-                        com.example.fieldmaintenance.util.EmailManager.sendEmail(context, r.eventName, listOf(zipFile))
+                        val zipFiles = exportManager.exportToHtmlWithImagesZips(r)
+                        com.example.fieldmaintenance.util.EmailManager.sendEmail(context, r.eventName, zipFiles)
                     } finally {
                         isExporting = false
                         showFinalizeDialog = false
