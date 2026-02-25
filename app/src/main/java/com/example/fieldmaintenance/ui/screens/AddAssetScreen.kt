@@ -2470,6 +2470,51 @@ private fun AssetFileSection(
     val moduleDiscardedFile = remember(moduleAssetDir) { File(moduleAssetDir, ".discarded_measurements.txt") }
     var moduleDiscardedLabels by remember(moduleAssetDir) { mutableStateOf(loadDiscardedLabels(moduleDiscardedFile)) }
 
+    val viaviIntent = remember {
+        context.packageManager.getLaunchIntentForPackage("com.viavisolutions.mobiletech")
+    }
+    fun startViaviImport(assetTypeForImport: AssetType) {
+        onInteraction()
+        if (viaviIntent != null) {
+            navController.currentBackStackEntry?.savedStateHandle?.apply {
+                set(PendingMeasurementReportIdKey, asset.reportId)
+                set(PendingMeasurementAssetIdKey, asset.id)
+                set(PendingMeasurementAssetTypeKey, assetTypeForImport.name)
+            }
+            runCatching { context.startActivity(viaviIntent) }
+                .onFailure {
+                    Toast.makeText(
+                        context,
+                        "No se pudo abrir Viavi",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+        } else {
+            Toast.makeText(
+                context,
+                "Viavi (mobiletech) no está instalada",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+
+    var isExpanded by remember(asset.id) { mutableStateOf(true) }
+    var verificationSummaryRx by remember(asset.id) { mutableStateOf<MeasurementVerificationSummary?>(null) }
+    var verificationSummaryModule by remember(asset.id) { mutableStateOf<MeasurementVerificationSummary?>(null) }
+    var duplicateNotice by remember(asset.id) { mutableStateOf<List<String>>(emptyList()) }
+    var switchDuplicateNotice by remember(asset.id) { mutableStateOf<List<String>>(emptyList()) }
+    var surplusNotice by remember(asset.id) { mutableStateOf<List<String>>(emptyList()) }
+    var surplusSelection by remember(asset.id) { mutableStateOf<Set<String>>(emptySet()) }
+    var surplusTargetCount by remember(asset.id) { mutableStateOf(0) }
+    var surplusIsModule by remember(asset.id) { mutableStateOf(false) }
+    var pendingDeleteEntry by remember(asset.id) { mutableStateOf<MeasurementEntry?>(null) }
+    var pendingDeleteIsModule by remember(asset.id) { mutableStateOf(false) }
+
+    // DSAM measurement photos (new check workflow)
+    var dsamRxChannelCount by remember(asset.id) { mutableStateOf(0) }
+    var dsamModuleChannelCount by remember(asset.id) { mutableStateOf(0) }
+    var dsamModuleDocsisCount by remember(asset.id) { mutableStateOf(0) }
+
     var lastIdentityKey by rememberSaveable(asset.id) { mutableStateOf<String?>(null) }
     LaunchedEffect(identityKey, enableIdentityReset) {
         val prev = lastIdentityKey
@@ -2523,51 +2568,6 @@ private fun AssetFileSection(
         dsamModuleDocsisCount = 0
         onCompletionChange(false)
     }
-
-    val viaviIntent = remember {
-        context.packageManager.getLaunchIntentForPackage("com.viavisolutions.mobiletech")
-    }
-    fun startViaviImport(assetTypeForImport: AssetType) {
-        onInteraction()
-        if (viaviIntent != null) {
-            navController.currentBackStackEntry?.savedStateHandle?.apply {
-                set(PendingMeasurementReportIdKey, asset.reportId)
-                set(PendingMeasurementAssetIdKey, asset.id)
-                set(PendingMeasurementAssetTypeKey, assetTypeForImport.name)
-            }
-            runCatching { context.startActivity(viaviIntent) }
-                .onFailure {
-                    Toast.makeText(
-                        context,
-                        "No se pudo abrir Viavi",
-                        Toast.LENGTH_SHORT
-                    ).show()
-                }
-        } else {
-            Toast.makeText(
-                context,
-                "Viavi (mobiletech) no está instalada",
-                Toast.LENGTH_SHORT
-            ).show()
-        }
-    }
-
-    var isExpanded by remember(asset.id) { mutableStateOf(true) }
-    var verificationSummaryRx by remember(asset.id) { mutableStateOf<MeasurementVerificationSummary?>(null) }
-    var verificationSummaryModule by remember(asset.id) { mutableStateOf<MeasurementVerificationSummary?>(null) }
-    var duplicateNotice by remember(asset.id) { mutableStateOf<List<String>>(emptyList()) }
-    var switchDuplicateNotice by remember(asset.id) { mutableStateOf<List<String>>(emptyList()) }
-    var surplusNotice by remember(asset.id) { mutableStateOf<List<String>>(emptyList()) }
-    var surplusSelection by remember(asset.id) { mutableStateOf<Set<String>>(emptySet()) }
-    var surplusTargetCount by remember(asset.id) { mutableStateOf(0) }
-    var surplusIsModule by remember(asset.id) { mutableStateOf(false) }
-    var pendingDeleteEntry by remember(asset.id) { mutableStateOf<MeasurementEntry?>(null) }
-    var pendingDeleteIsModule by remember(asset.id) { mutableStateOf(false) }
-
-    // DSAM measurement photos (new check workflow)
-    var dsamRxChannelCount by remember(asset.id) { mutableStateOf(0) }
-    var dsamModuleChannelCount by remember(asset.id) { mutableStateOf(0) }
-    var dsamModuleDocsisCount by remember(asset.id) { mutableStateOf(0) }
 
     fun displayLabel(entry: MeasurementEntry): String {
         return if (entry.isDiscarded && !entry.label.contains("DESCARTADA", ignoreCase = true)) {
