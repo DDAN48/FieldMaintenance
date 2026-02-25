@@ -24,5 +24,8 @@ interface PhotoDao {
     
     @Query("DELETE FROM photos WHERE assetId = :assetId")
     suspend fun deletePhotosByAssetId(assetId: String)
+
+    @Query("DELETE FROM photos WHERE assetId = :assetId AND photoType IN (:types)")
+    suspend fun deletePhotosByAssetIdAndTypes(assetId: String, types: List<PhotoType>)
 }
 

@@ -1436,6 +1436,16 @@ fun AddAssetScreen(
                                 reportFolder = MaintenanceStorage.reportFolderName(report?.eventName, reportId),
                                 onInteraction = {},
                                 onCompletionChange = { measurementsComplete = it },
+                                identityKey = listOf(
+                                    assetType.name,
+                                    frequency?.mhz?.toString().orEmpty(),
+                                    technology?.trim().orEmpty(),
+                                    meterType.trim(),
+                                    amplifierMode?.name.orEmpty(),
+                                    port?.name.orEmpty(),
+                                    portIndex?.toString().orEmpty()
+                                ).joinToString("|"),
+                                enableIdentityReset = autoSaved,
                                 asset = Asset(
                                     id = workingAssetId,
                                     reportId = reportId,
@@ -2382,6 +2392,8 @@ private fun AssetFileSection(
     reportFolder: String,
     onInteraction: () -> Unit,
     onCompletionChange: (Boolean) -> Unit = {},
+    identityKey: String,
+    enableIdentityReset: Boolean,
     asset: Asset
 ) {
     val isNodeAsset = asset.type == AssetType.NODE
@@ -2450,6 +2462,60 @@ private fun AssetFileSection(
     var rxDiscardedLabels by remember(rxAssetDir) { mutableStateOf(loadDiscardedLabels(rxDiscardedFile)) }
     val moduleDiscardedFile = remember(moduleAssetDir) { File(moduleAssetDir, ".discarded_measurements.txt") }
     var moduleDiscardedLabels by remember(moduleAssetDir) { mutableStateOf(loadDiscardedLabels(moduleDiscardedFile)) }
+
+    var lastIdentityKey by rememberSaveable(asset.id) { mutableStateOf<String?>(null) }
+    LaunchedEffect(identityKey, enableIdentityReset) {
+        val prev = lastIdentityKey
+        if (prev == null) {
+            lastIdentityKey = identityKey
+            return@LaunchedEffect
+        }
+        if (prev == identityKey) return@LaunchedEffect
+        lastIdentityKey = identityKey
+        if (!enableIdentityReset) return@LaunchedEffect
+
+        withContext(Dispatchers.IO) {
+            // Reset adjustments (force user to confirm again with the new identity).
+            repository.deleteNodeAdjustmentByAssetId(asset.id)
+            repository.deleteAmplifierAdjustmentByAssetId(asset.id)
+
+            // Reset DSAM measurement photos only (not module/optics/monitoring photos).
+            repository.deletePhotosByAssetIdAndTypes(
+                assetId = asset.id,
+                types = listOf(
+                    PhotoType.MEASUREMENT_RX_CHANNEL_CHECK,
+                    PhotoType.MEASUREMENT_MODULE_CHANNEL_CHECK,
+                    PhotoType.MEASUREMENT_MODULE_DOCSIS_CHECK
+                )
+            )
+
+            // Reset imported measurement payload files (ONX/Viavi).
+            listMeasurementPayloadFiles(rxAssetDir).forEach { it.delete() }
+            listMeasurementPayloadFiles(moduleAssetDir).forEach { it.delete() }
+            if (rxDiscardedFile.exists()) rxDiscardedFile.delete()
+            if (moduleDiscardedFile.exists()) moduleDiscardedFile.delete()
+        }
+
+        // Refresh UI state after cleanup.
+        rxFiles = listMeasurementPayloadFiles(rxAssetDir)
+        moduleFiles = listMeasurementPayloadFiles(moduleAssetDir)
+        rxDiscardedLabels = emptySet()
+        moduleDiscardedLabels = emptySet()
+        verificationSummaryRx = null
+        verificationSummaryModule = null
+        duplicateNotice = emptyList()
+        switchDuplicateNotice = emptyList()
+        surplusNotice = emptyList()
+        surplusSelection = emptySet()
+        surplusTargetCount = 0
+        surplusIsModule = false
+        pendingDeleteEntry = null
+        pendingDeleteIsModule = false
+        dsamRxChannelCount = 0
+        dsamModuleChannelCount = 0
+        dsamModuleDocsisCount = 0
+        onCompletionChange(false)
+    }
 
     val viaviIntent = remember {
         context.packageManager.getLaunchIntentForPackage("com.viavisolutions.mobiletech")
