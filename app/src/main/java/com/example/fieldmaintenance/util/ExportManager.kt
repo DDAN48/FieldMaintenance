@@ -4034,7 +4034,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
             }
         }
 
-        fun buildZipPart(partAssets: List<Asset>, partIndex: Int): File {
+        suspend fun buildZipPart(partAssets: List<Asset>, partIndex: Int): File {
             val exportDir = File(context.cacheDir, "export_html_images_parts/${report.id}/part_$partIndex")
             if (exportDir.exists()) exportDir.deleteRecursively()
             exportDir.mkdirs()
