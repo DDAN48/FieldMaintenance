@@ -536,7 +536,9 @@ fun AddAssetScreen(
     // Backward compatibility: old "vccap" now maps to "vccap_hibrido".
     val isVccapHibrido = techKey == "vccap" || techKey == "vccaphibrido"
     val isVccapCompleto = techKey == "vccapcompleto"
-    val isRphyLike = techKey == "rphy" || isVccapCompleto
+    val isRphy = techKey == "rphy"
+    // Node adjustment keeps the same requirements for RPHY and VCCAP_Completo.
+    val isRphyLike = isRphy || isVccapCompleto
     val ampAdj = currentAmplifierAdjustment ?: amplifierAdjustment
     val autoBaseOk = frequency != null
     val autoNodeOk = assetType != AssetType.NODE || technology != null
@@ -608,8 +610,9 @@ fun AddAssetScreen(
     val nodeAllowed = !(assetType == AssetType.NODE && hasNode && !isEdit)
     val autoSaveReady = autoBaseOk && autoNodeOk && autoAmplifierOk && autoAmplifierTablesOk && autoNodeAdjOk && nodeAllowed
     val identityComplete = autoBaseOk && autoNodeOk && autoAmplifierOk
-    val modulePhotoRequired = if (assetType == AssetType.NODE && isRphyLike) 0 else 2
-    val opticsPhotoRequired = if (assetType == AssetType.NODE && (isRphyLike || isVccapHibrido)) {
+    // VCCAP_Completo should require photos like Legacy; only RPHY is exempt.
+    val modulePhotoRequired = if (assetType == AssetType.NODE && isRphy) 0 else 2
+    val opticsPhotoRequired = if (assetType == AssetType.NODE && (isRphy || isVccapHibrido)) {
         0
     } else if (assetType == AssetType.NODE) {
         1
@@ -720,9 +723,10 @@ fun AddAssetScreen(
         val techNormalized = technology?.trim()?.lowercase(Locale.getDefault()) ?: ""
         val techKey = techNormalized.replace("_", "").replace(" ", "")
         val isVccapHibrido = techKey == "vccap" || techKey == "vccaphibrido"
-        val isRphyLike = techKey == "rphy" || techKey == "vccapcompleto"
-        val moduleOk = if (assetType == AssetType.NODE && isRphyLike) true else modulePhotoCount == 2
-        val opticsOk = if (assetType == AssetType.NODE && (isRphyLike || isVccapHibrido)) true
+        val isRphy = techKey == "rphy"
+        // VCCAP_Completo must behave like Legacy for photos/measurements; only RPHY is exempt.
+        val moduleOk = if (assetType == AssetType.NODE && isRphy) true else modulePhotoCount == 2
+        val opticsOk = if (assetType == AssetType.NODE && (isRphy || isVccapHibrido)) true
         else assetType != AssetType.NODE || (opticsPhotoCount in 1..2)
 
         val nodeAllowed = !(assetType == AssetType.NODE && hasNode && !isEdit)
@@ -1302,8 +1306,8 @@ fun AddAssetScreen(
                     }
 
                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        // Foto del Módulo (no para RPHY ni VCCAP_Completo)
-                        if (assetType != AssetType.NODE || !isRphyLike) {
+                        // Foto del Módulo (no para RPHY)
+                        if (assetType != AssetType.NODE || !isRphy) {
                             PhotoSection(
                                 title = "Foto del Módulo y Tapa",
                                 reportId = reportId,
@@ -1312,8 +1316,8 @@ fun AddAssetScreen(
                                 assetLabel = assetDisplayName,
                                 eventName = eventName,
                                 repository = repository,
-                                minRequired = if (assetType == AssetType.NODE && !isRphyLike) 2 else 0,
-                                showRequiredError = attemptedSave && (assetType != AssetType.NODE || !isRphyLike),
+                                minRequired = if (assetType == AssetType.NODE && !isRphy) 2 else 0,
+                                showRequiredError = attemptedSave && (assetType != AssetType.NODE || !isRphy),
                                 maxAllowed = 2,
                                 onCountChange = {
                                     modulePhotoCount = it
@@ -1322,8 +1326,8 @@ fun AddAssetScreen(
                         }
 
                         // Fotos adicionales según tipo
-                        // Foto TX y RX con pads (no para RPHY ni VCCAP)
-                        if (assetType == AssetType.NODE && !isRphyLike && !isVccapHibrido) {
+                        // Foto TX y RX con pads (no para RPHY ni VCCAP_Hibrido)
+                        if (assetType == AssetType.NODE && !isRphy && !isVccapHibrido) {
                             PhotoSection(
                                 title = "Foto TX  y RX con pads",
                                 reportId = reportId,
@@ -1360,7 +1364,7 @@ fun AddAssetScreen(
                         }
 
                         // Fotos de Inyección de portadoras (no para RPHY)
-                        if (assetType != AssetType.NODE || !isRphyLike) {
+                        if (assetType != AssetType.NODE || !isRphy) {
                             // Para NODO con Legacy o VCCAP_Hibrido: 4 fotos, para otros: 3 fotos
                             val maxSpectrumPhotos = if (assetType == AssetType.NODE && (technology == "Legacy" || isVccapHibrido)) 4 else 3
                             PhotoSection(
@@ -1404,7 +1408,8 @@ fun AddAssetScreen(
 
             val techNormalized = technology?.trim()?.lowercase(Locale.getDefault()) ?: ""
             val techKey = techNormalized.replace("_", "").replace(" ", "")
-            val isRphyLikeNode = assetType == AssetType.NODE && (techKey == "rphy" || techKey == "vccapcompleto")
+            // VCCAP_Completo must show Carga de Mediciones (like Legacy). Only RPHY hides it.
+            val isRphyLikeNode = assetType == AssetType.NODE && techKey == "rphy"
 
             if (autoSaved && !isRphyLikeNode) {
                 AdjustmentSummaryCard(
@@ -2416,7 +2421,8 @@ private fun AssetFileSection(
     val techNormalized = asset.technology?.trim()?.lowercase(Locale.getDefault()) ?: ""
     val techKey = techNormalized.replace("_", "").replace(" ", "")
     val hasRxMeasurements = !(isNodeAsset && (techKey == "vccap" || techKey == "vccaphibrido"))
-    val hasModuleMeasurements = !(isNodeAsset && techKey == "vccapcompleto")
+    // VCCAP_Completo must keep module measurements (like Legacy). Only RPHY hides module measurements.
+    val hasModuleMeasurements = !(isNodeAsset && techKey == "rphy")
     val allPhotos by repository.getPhotosByAssetId(asset.id).collectAsState(initial = emptyList())
     val dsamGeo = remember(isDsam, allPhotos) {
         if (!isDsam) return@remember null
