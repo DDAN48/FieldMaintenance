@@ -21,7 +21,7 @@ import com.example.fieldmaintenance.data.model.ReportPhoto
 
 @Database(
     entities = [MaintenanceReport::class, Asset::class, Photo::class, AmplifierAdjustment::class, PassiveItem::class, ReportPhoto::class, NodeAdjustment::class],
-    version = 16,
+    version = 17,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -266,6 +266,17 @@ abstract class AppDatabase : RoomDatabase() {
                     // La columna ya existe, continuar
                 }
                 db.execSQL("UPDATE maintenance_reports SET homesPassedHp = 500 WHERE homesPassedHp IS NULL OR homesPassedHp NOT IN (500, 2000)")
+            }
+        }
+
+        val MIGRATION_16_17 = object : Migration(16, 17) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                try {
+                    db.execSQL("ALTER TABLE maintenance_reports ADD COLUMN directPlantMHz INTEGER NOT NULL DEFAULT 1000")
+                } catch (e: Exception) {
+                    // La columna ya existe, continuar
+                }
+                db.execSQL("UPDATE maintenance_reports SET directPlantMHz = 1000 WHERE directPlantMHz IS NULL OR directPlantMHz NOT IN (750, 870, 1000)")
             }
         }
     }

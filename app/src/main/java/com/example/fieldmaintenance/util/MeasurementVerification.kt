@@ -426,6 +426,7 @@ private fun validateMeasurementValues(
     amplifierTargets: Map<Int, Double>?,
     nodeTxType: String?,
     homesPassedHp: Int?,
+    directPlantMHz: Int?,
     isLegacyNode: Boolean,
     isModuleMeasurement: Boolean,
     skipChannelValidation: Boolean,
@@ -509,12 +510,14 @@ private fun validateMeasurementValues(
         }
         val channels = ruleTable.optJSONObject("channels") ?: return issues
         val maxFreq = rows.mapNotNull { it.frequencyMHz }.maxOrNull()
-        val plantMHz = when {
+        val inferredPlantMHz = when {
             maxFreq == null -> null
             maxFreq >= 950.0 -> 1000
             maxFreq >= 820.0 -> 870
             else -> 750
         }
+        val selectedPlantMHz = directPlantMHz?.takeIf { it == 750 || it == 870 || it == 1000 }
+        val plantMHz = selectedPlantMHz ?: inferredPlantMHz
         val hpKey = homesPassedHp?.takeIf { it == 500 || it == 2000 }?.toString()
         val hpChannelsOverride: JSONObject? = if (assetType == AssetType.NODE && hpKey != null) {
             val hpTargets = ruleTable.optJSONObject("hpTargets")
@@ -837,6 +840,9 @@ suspend fun verifyMeasurementFiles(
 
     val homesPassedHp: Int? = runCatching {
         repository.getReportById(asset.reportId)?.homesPassedHp
+    }.getOrNull()
+    val directPlantMHz: Int? = runCatching {
+        repository.getReportById(asset.reportId)?.directPlantMHz
     }.getOrNull()
 
     fun isJsonLike(name: String): Boolean {
@@ -1272,6 +1278,7 @@ suspend fun verifyMeasurementFiles(
                     amplifierTargets = amplifierTargets,
                     nodeTxType = nodeTxType,
                     homesPassedHp = homesPassedHp,
+                    directPlantMHz = directPlantMHz,
                     isLegacyNode = assetType == AssetType.NODE && asset.technology?.equals("Legacy", ignoreCase = true) == true,
                     isModuleMeasurement = isModuleMeasurement,
                     skipChannelValidation = switchSelection == "IN",
