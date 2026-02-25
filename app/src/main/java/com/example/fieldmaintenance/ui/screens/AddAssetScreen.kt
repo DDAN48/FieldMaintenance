@@ -2420,7 +2420,8 @@ private fun AssetFileSection(
     val moduleValidationAsset = if (isNodeAsset) asset else moduleAsset
     val techNormalized = asset.technology?.trim()?.lowercase(Locale.getDefault()) ?: ""
     val techKey = techNormalized.replace("_", "").replace(" ", "")
-    val hasRxMeasurements = !(isNodeAsset && (techKey == "vccap" || techKey == "vccaphibrido"))
+    // VCCAP_Hibrido and VCCAP_Completo do NOT have RX measurement section.
+    val hasRxMeasurements = !(isNodeAsset && (techKey == "vccap" || techKey == "vccaphibrido" || techKey == "vccapcompleto"))
     // VCCAP_Completo must keep module measurements (like Legacy). Only RPHY hides module measurements.
     val hasModuleMeasurements = !(isNodeAsset && techKey == "rphy")
     val allPhotos by repository.getPhotosByAssetId(asset.id).collectAsState(initial = emptyList())
