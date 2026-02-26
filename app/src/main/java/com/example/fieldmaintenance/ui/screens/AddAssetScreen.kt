@@ -56,6 +56,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.layout.imePadding
 import android.net.Uri
 import android.widget.Toast
 import android.location.Geocoder
@@ -1655,8 +1656,9 @@ private fun FullScreenAdjustmentDialog(
                         modifier = Modifier
                             .weight(1f)
                             .verticalScroll(rememberScrollState())
+                            .imePadding()
                             .padding(horizontal = 16.dp, vertical = 16.dp)
-                            .padding(bottom = 200.dp),
+                            .padding(bottom = 16.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         content()
@@ -1668,7 +1670,8 @@ private fun FullScreenAdjustmentDialog(
                         .fillMaxWidth()
                         .background(MaterialTheme.colorScheme.surface)
                         .navigationBarsPadding()
-                        .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 112.dp)
+                        .imePadding()
+                        .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 16.dp)
                 ) {
                     HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
                     Spacer(Modifier.height(12.dp))

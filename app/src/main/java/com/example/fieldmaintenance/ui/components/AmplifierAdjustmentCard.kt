@@ -14,6 +14,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -36,6 +38,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -137,6 +140,13 @@ fun AmplifierAdjustmentCard(
     var outCh110 by rememberSaveable { mutableStateOf("") }
     var outCh116 by rememberSaveable { mutableStateOf("") }
     var outCh136 by rememberSaveable { mutableStateOf("") }
+
+    fun clearEntradaMeasuredColumn() {
+        if (inCh50.isNotBlank() || inHigh.isNotBlank()) {
+            inCh50 = ""
+            inHigh = ""
+        }
+    }
 
     // Initialize from DB whenever it arrives, but don't overwrite user edits (dirty=true)
     LaunchedEffect(assetId, initial?.updatedAt) {
@@ -365,7 +375,12 @@ fun AmplifierAdjustmentCard(
                         planInputs = mapOf(
                             lowPlanFreq to CalcInputState(
                                 value = inPlanCh50,
-                                onChange = { dirty = true; inPlanCh50 = it },
+                                onChange = {
+                                    if (it == inPlanCh50) return@CalcInputState
+                                    dirty = true
+                                    inPlanCh50 = it
+                                    clearEntradaMeasuredColumn()
+                                },
                                 isError = showRequiredErrors && parseDbmv(inPlanCh50) == null,
                                 enabled = activeEntradaEdit == EntradaEditTarget.PLAN_LOW,
                                 selected = activeEntradaEdit == EntradaEditTarget.PLAN_LOW,
@@ -373,7 +388,12 @@ fun AmplifierAdjustmentCard(
                             ),
                             highPlanFreq to CalcInputState(
                                 value = inPlanHigh,
-                                onChange = { dirty = true; inPlanHigh = it },
+                                onChange = {
+                                    if (it == inPlanHigh) return@CalcInputState
+                                    dirty = true
+                                    inPlanHigh = it
+                                    clearEntradaMeasuredColumn()
+                                },
                                 isError = showRequiredErrors && parseDbmv(inPlanHigh) == null,
                                 enabled = activeEntradaEdit == EntradaEditTarget.PLAN_HIGH,
                                 selected = activeEntradaEdit == EntradaEditTarget.PLAN_HIGH,
@@ -382,30 +402,34 @@ fun AmplifierAdjustmentCard(
                         ),
                         onSelectMeasuredFreq = { freq ->
                             if (!isEntradaAnchorFreq(freq)) return@SimpleCalcList
+                            val isLow = isEntradaLowAnchorFreq(freq)
+                            val isHigh = isEntradaHighAnchorFreq(freq)
+                            val changed = (isLow && inLowFreq != freq) || (isHigh && inHighFreq != freq)
+                            if (!changed) return@SimpleCalcList
                             dirty = true
-                            when {
-                                isEntradaLowAnchorFreq(freq) -> {
-                                    inLowFreq = freq
-                                    activeEntradaEdit = EntradaEditTarget.MEASURED_LOW
-                                }
-                                isEntradaHighAnchorFreq(freq) -> {
-                                    inHighFreq = freq
-                                    activeEntradaEdit = EntradaEditTarget.MEASURED_HIGH
-                                }
+                            clearEntradaMeasuredColumn()
+                            if (isLow) {
+                                inLowFreq = freq
+                                activeEntradaEdit = EntradaEditTarget.MEASURED_LOW
+                            } else if (isHigh) {
+                                inHighFreq = freq
+                                activeEntradaEdit = EntradaEditTarget.MEASURED_HIGH
                             }
                         },
                         onSelectPlanFreq = { freq ->
                             if (!isEntradaPlanAnchorFreq(freq)) return@SimpleCalcList
+                            val isLow = isEntradaPlanLowAnchorFreq(freq)
+                            val isHigh = isEntradaHighAnchorFreq(freq)
+                            val changed = (isLow && inPlanLowFreq != freq) || (isHigh && inPlanHighFreq != freq)
+                            if (!changed) return@SimpleCalcList
                             dirty = true
-                            when {
-                                isEntradaPlanLowAnchorFreq(freq) -> {
-                                    inPlanLowFreq = freq
-                                    activeEntradaEdit = EntradaEditTarget.PLAN_LOW
-                                }
-                                isEntradaHighAnchorFreq(freq) -> {
-                                    inPlanHighFreq = freq
-                                    activeEntradaEdit = EntradaEditTarget.PLAN_HIGH
-                                }
+                            clearEntradaMeasuredColumn()
+                            if (isLow) {
+                                inPlanLowFreq = freq
+                                activeEntradaEdit = EntradaEditTarget.PLAN_LOW
+                            } else if (isHigh) {
+                                inPlanHighFreq = freq
+                                activeEntradaEdit = EntradaEditTarget.PLAN_HIGH
                             }
                         }
                     )
@@ -588,6 +612,8 @@ private fun DbmvField(
     onChange: (String) -> Unit
 ) {
     var wasFocused by remember { mutableStateOf(false) }
+    val bringIntoViewRequester = remember { BringIntoViewRequester() }
+    val scope = rememberCoroutineScope()
     fun ensureSelected() {
         onClick?.invoke()
     }
@@ -599,7 +625,13 @@ private fun DbmvField(
                 onChange(it)
             },
             label = { Text(label) },
-            modifier = modifier,
+            modifier = modifier
+                .bringIntoViewRequester(bringIntoViewRequester)
+                .onFocusChanged {
+                    if (it.isFocused) {
+                        scope.launch { bringIntoViewRequester.bringIntoView() }
+                    }
+                },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
             singleLine = true,
             isError = isError,
@@ -649,8 +681,12 @@ private fun DbmvField(
                     ),
                     modifier = Modifier
                         .fillMaxWidth()
+                        .bringIntoViewRequester(bringIntoViewRequester)
                         .onFocusChanged {
                             if (it.isFocused) ensureSelected()
+                            if (it.isFocused) {
+                                scope.launch { bringIntoViewRequester.bringIntoView() }
+                            }
                         }
                 )
             }
