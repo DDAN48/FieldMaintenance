@@ -3536,7 +3536,8 @@ val assets = repository.getAssetsByReportId(report.id).first()
 
             val techNormalized = asset.technology?.trim()?.lowercase(Locale.getDefault()) ?: ""
             val techKey = techNormalized.replace("_", "").replace(" ", "")
-            val hasRxMeasurements = !(isNodeAsset && (techKey == "vccap" || techKey == "vccaphibrido"))
+            // VCCAP_Hibrido and VCCAP_Completo do NOT have RX measurement section.
+            val hasRxMeasurements = !(isNodeAsset && (techKey == "vccap" || techKey == "vccaphibrido" || techKey == "vccapcompleto"))
 
             fun dsamEntry(photo: Photo, type: String): HtmlMeasurementEntry? {
                 val imageFile = File(photo.filePath)
@@ -4033,7 +4034,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
             }
         }
 
-        fun buildZipPart(partAssets: List<Asset>, partIndex: Int): File {
+        suspend fun buildZipPart(partAssets: List<Asset>, partIndex: Int): File {
             val exportDir = File(context.cacheDir, "export_html_images_parts/${report.id}/part_$partIndex")
             if (exportDir.exists()) exportDir.deleteRecursively()
             exportDir.mkdirs()

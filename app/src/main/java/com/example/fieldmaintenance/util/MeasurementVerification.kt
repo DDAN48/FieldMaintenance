@@ -425,6 +425,8 @@ private fun validateMeasurementValues(
     assetType: AssetType,
     amplifierTargets: Map<Int, Double>?,
     nodeTxType: String?,
+    homesPassedHp: Int?,
+    directPlantMHz: Int?,
     isLegacyNode: Boolean,
     isModuleMeasurement: Boolean,
     skipChannelValidation: Boolean,
@@ -507,15 +509,40 @@ private fun validateMeasurementValues(
             }
         }
         val channels = ruleTable.optJSONObject("channels") ?: return issues
+        val maxFreq = rows.mapNotNull { it.frequencyMHz }.maxOrNull()
+        val inferredPlantMHz = when {
+            maxFreq == null -> null
+            maxFreq >= 950.0 -> 1000
+            maxFreq >= 820.0 -> 870
+            else -> 750
+        }
+        val selectedPlantMHz = directPlantMHz?.takeIf { it == 750 || it == 870 || it == 1000 }
+        val plantMHz = selectedPlantMHz ?: inferredPlantMHz
+        val hpKey = homesPassedHp?.takeIf { it == 500 || it == 2000 }?.toString()
+        val hpChannelsOverride: JSONObject? = if (assetType == AssetType.NODE && hpKey != null) {
+            val hpTargets = ruleTable.optJSONObject("hpTargets")
+                ?.optJSONObject(hpKey)
+            val plantKey = when {
+                hpKey == "500" -> "1000" // Table only provides N+1 1000 MHz for HP500
+                plantMHz != null -> plantMHz.toString()
+                else -> null
+            }
+            if (plantKey != null) {
+                hpTargets
+                    ?.optJSONObject(plantKey)
+                    ?.optJSONObject("channels")
+            } else null
+        } else null
+        val effectiveChannels = hpChannelsOverride ?: channels
         val keys = channels.keys()
         while (keys.hasNext()) {
             val key = keys.next()
             val channel = key.toIntOrNull() ?: continue
-            // Node RX: CH110 no se valida por la tabla "channels" (se usa txTargets en Legacy).
-            if (assetType == AssetType.NODE && channel == 110) continue
+            // Node Legacy (RX): CH110 does NOT validate for levels (per requirement).
+            if (assetType == AssetType.NODE && isLegacyNode && legacyTx != null && channel == 110) continue
             // Nodo Legacy (RX): si tenemos txTargets, los niveles de estos canales se validan por txTargets.
             if (assetType == AssetType.NODE && isLegacyNode && legacyTx != null && legacyAnalogChannels.contains(channel)) continue
-            val rule = channels.optJSONObject(key) ?: continue
+            val rule = effectiveChannels.optJSONObject(key) ?: continue
             fun resolveTolerance(ruleTolerance: Double?, maxTolerance: Double?): Double? {
                 return when {
                     maxTolerance == null -> ruleTolerance
@@ -810,6 +837,13 @@ suspend fun verifyMeasurementFiles(
     } else {
         null
     }
+
+    val homesPassedHp: Int? = runCatching {
+        repository.getReportById(asset.reportId)?.homesPassedHp
+    }.getOrNull()
+    val directPlantMHz: Int? = runCatching {
+        repository.getReportById(asset.reportId)?.directPlantMHz
+    }.getOrNull()
 
     fun isJsonLike(name: String): Boolean {
         val lower = name.lowercase(Locale.getDefault())
@@ -1243,8 +1277,10 @@ suspend fun verifyMeasurementFiles(
                     assetType = assetType,
                     amplifierTargets = amplifierTargets,
                     nodeTxType = nodeTxType,
-                isLegacyNode = assetType == AssetType.NODE && asset.technology?.equals("Legacy", ignoreCase = true) == true,
-                isModuleMeasurement = isModuleMeasurement,
+                    homesPassedHp = homesPassedHp,
+                    directPlantMHz = directPlantMHz,
+                    isLegacyNode = assetType == AssetType.NODE && asset.technology?.equals("Legacy", ignoreCase = true) == true,
+                    isModuleMeasurement = isModuleMeasurement,
                     skipChannelValidation = switchSelection == "IN",
                     toleranceOverride = toleranceOverride,
                     switchSelection = switchSelection

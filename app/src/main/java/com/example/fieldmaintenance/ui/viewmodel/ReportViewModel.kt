@@ -50,7 +50,9 @@ class ReportViewModel(
         nodeName: String,
         responsible: String,
         contractor: String,
-        meterNumber: String
+        meterNumber: String,
+        homesPassedHp: Int,
+        directPlantMHz: Int
     ) {
         viewModelScope.launch {
             val currentReport = _report.value ?: MaintenanceReport(id = reportId)
@@ -60,6 +62,11 @@ class ReportViewModel(
                 responsible = responsible,
                 contractor = contractor,
                 meterNumber = meterNumber,
+                homesPassedHp = if (homesPassedHp == 2000) 2000 else 500,
+                directPlantMHz = when (directPlantMHz) {
+                    750, 870, 1000 -> directPlantMHz
+                    else -> 1000
+                },
                 executionDate = System.currentTimeMillis(),
                 status = com.example.fieldmaintenance.data.model.ReportStatus.SAVED
             )

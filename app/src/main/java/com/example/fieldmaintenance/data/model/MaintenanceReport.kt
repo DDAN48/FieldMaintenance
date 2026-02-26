@@ -13,6 +13,16 @@ data class MaintenanceReport @JvmOverloads constructor(
     val responsible: String = "",
     val contractor: String = "",
     val meterNumber: String = "",
+    /**
+     * Hogares Pasados (HP) for Node validation targets.
+     * Allowed values: 500 or 2000. Defaults to 500.
+     */
+    val homesPassedHp: Int = 500,
+    /**
+     * Direct plant bandwidth reference for NODE output target table selection.
+     * Allowed values: 750, 870, 1000. Defaults to 1000.
+     */
+    val directPlantMHz: Int = 1000,
     val executionDate: Long = System.currentTimeMillis(),
     val status: ReportStatus = ReportStatus.DRAFT,
     val createdAt: Long = System.currentTimeMillis(),

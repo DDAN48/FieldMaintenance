@@ -66,6 +66,8 @@ fun GeneralInfoScreen(navController: NavController, reportId: String) {
     var responsible by remember { mutableStateOf(report?.responsible ?: "") }
     var contractor by remember { mutableStateOf(report?.contractor ?: "") }
     var meterNumber by remember { mutableStateOf(report?.meterNumber ?: "") }
+    var homesPassedHp by remember { mutableStateOf(report?.homesPassedHp ?: 500) }
+    var directPlantMHz by remember { mutableStateOf(report?.directPlantMHz ?: 1000) }
     var attemptedSave by remember { mutableStateOf(false) }
 
     // Track manual edits so autofill doesn't overwrite what the user typed.
@@ -95,6 +97,8 @@ fun GeneralInfoScreen(navController: NavController, reportId: String) {
             responsible = it.responsible
             contractor = it.contractor
             meterNumber = it.meterNumber
+            homesPassedHp = it.homesPassedHp
+            directPlantMHz = it.directPlantMHz
             eventTouched = false
             contractorTouched = false
             eventAutoFilled = false
@@ -226,7 +230,7 @@ fun GeneralInfoScreen(navController: NavController, reportId: String) {
                         // Ensure latest lookup before validating/saving.
                         applyPlanToFields(findPlanRowByNode(), showNoMatchWarning = true)
                         if (validate()) {
-                            viewModel.saveGeneralInfo(eventName, nodeName, responsible, contractor, meterNumber)
+                            viewModel.saveGeneralInfo(eventName, nodeName, responsible, contractor, meterNumber, homesPassedHp, directPlantMHz)
                             val reportFolder = MaintenanceStorage.reportFolderName(eventName, reportId)
                             MaintenanceStorage.ensureReportDir(context, reportFolder)
                             scope.launch { snackbarHostState.showSnackbar("Guardado") }
@@ -336,6 +340,68 @@ fun GeneralInfoScreen(navController: NavController, reportId: String) {
                 }
             )
 
+            var hpExpanded by remember { mutableStateOf(false) }
+            ExposedDropdownMenuBox(
+                expanded = hpExpanded,
+                onExpandedChange = { hpExpanded = !hpExpanded },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                OutlinedTextField(
+                    readOnly = true,
+                    value = homesPassedHp.toString(),
+                    onValueChange = {},
+                    label = { Text("Hogares Pasados (HP)") },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = hpExpanded) },
+                    modifier = Modifier.menuAnchor().fillMaxWidth(),
+                    singleLine = true
+                )
+                ExposedDropdownMenu(
+                    expanded = hpExpanded,
+                    onDismissRequest = { hpExpanded = false }
+                ) {
+                    listOf(500, 2000).forEach { hp ->
+                        DropdownMenuItem(
+                            text = { Text(hp.toString()) },
+                            onClick = {
+                                homesPassedHp = hp
+                                hpExpanded = false
+                            }
+                        )
+                    }
+                }
+            }
+
+            var plantExpanded by remember { mutableStateOf(false) }
+            ExposedDropdownMenuBox(
+                expanded = plantExpanded,
+                onExpandedChange = { plantExpanded = !plantExpanded },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                OutlinedTextField(
+                    readOnly = true,
+                    value = directPlantMHz.toString(),
+                    onValueChange = {},
+                    label = { Text("Frecuencia Directa (MHz)") },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = plantExpanded) },
+                    modifier = Modifier.menuAnchor().fillMaxWidth(),
+                    singleLine = true
+                )
+                ExposedDropdownMenu(
+                    expanded = plantExpanded,
+                    onDismissRequest = { plantExpanded = false }
+                ) {
+                    listOf(1000, 870, 750).forEach { mhz ->
+                        DropdownMenuItem(
+                            text = { Text(mhz.toString()) },
+                            onClick = {
+                                directPlantMHz = mhz
+                                plantExpanded = false
+                            }
+                        )
+                    }
+                }
+            }
+
             // Totales de Pasivos (solo lectura)
             if (passives.isNotEmpty()) {
                 Card(
@@ -363,7 +429,7 @@ fun GeneralInfoScreen(navController: NavController, reportId: String) {
                     // On continue, re-check plan. If no match, event/contractor may be cleared -> validation will show required error.
                     applyPlanToFields(findPlanRowByNode(), showNoMatchWarning = true)
                     if (validate()) {
-                        viewModel.saveGeneralInfo(eventName, nodeName, responsible, contractor, meterNumber)
+                        viewModel.saveGeneralInfo(eventName, nodeName, responsible, contractor, meterNumber, homesPassedHp, directPlantMHz)
                         val reportFolder = MaintenanceStorage.reportFolderName(eventName, reportId)
                         MaintenanceStorage.ensureReportDir(context, reportFolder)
                         navController.navigate(Screen.AssetSummary.createRoute(reportId))

@@ -129,8 +129,10 @@ fun AssetSummaryScreen(navController: NavController, reportId: String) {
                             val techNormalized = asset.technology?.trim()?.lowercase().orEmpty()
                             val techKey = techNormalized.replace("_", "").replace(" ", "")
                             val isNode = asset.type == AssetType.NODE
-                            val hasRxMeasurements = !(isNode && (techKey == "vccap" || techKey == "vccaphibrido"))
-                            val hasModuleMeasurements = !(isNode && techKey == "vccapcompleto")
+                            // VCCAP_Hibrido and VCCAP_Completo do NOT have RX measurement section.
+                            val hasRxMeasurements = !(isNode && (techKey == "vccap" || techKey == "vccaphibrido" || techKey == "vccapcompleto"))
+                            // VCCAP_Completo must keep module measurements (like Legacy). Only RPHY hides module measurements.
+                            val hasModuleMeasurements = !(isNode && techKey == "rphy")
 
                             // RX
                             val rxOk = if (!hasRxMeasurements) {
@@ -193,19 +195,20 @@ fun AssetSummaryScreen(navController: NavController, reportId: String) {
                     ) {
                         val techNormalized = asset.technology?.trim()?.lowercase() ?: ""
                         val techKey = techNormalized.replace("_", "").replace(" ", "")
-                        val isRphyLike = techKey == "rphy" || techKey == "vccapcompleto"
+                        val isRphy = techKey == "rphy"
+                        val isVccapCompleto = techKey == "vccapcompleto"
                         val isVccapHibrido = techKey == "vccap" || techKey == "vccaphibrido"
                         val moduleCount = photos.count { it.photoType == PhotoType.MODULE }
                         val opticsCount = photos.count { it.photoType == PhotoType.OPTICS }
-                        val moduleOk = if (asset.type == AssetType.NODE && isRphyLike) true else moduleCount == 2
-                        val opticsOk = if (asset.type == AssetType.NODE && (isRphyLike || isVccapHibrido)) true
+                        val moduleOk = if (asset.type == AssetType.NODE && isRphy) true else moduleCount == 2
+                        val opticsOk = if (asset.type == AssetType.NODE && (isRphy || isVccapHibrido)) true
                         else asset.type != AssetType.NODE || (opticsCount in 1..2)
 
                         val nodeAdjOk = if (asset.type != AssetType.NODE) true else {
                             val adj = nodeAdjustment
                                 ?: com.example.fieldmaintenance.data.model.NodeAdjustment(assetId = asset.id, reportId = reportId)
                             when {
-                                isRphyLike -> {
+                                isRphy || isVccapCompleto -> {
                                     adj.sfpDistance != null && adj.poDirectaConfirmed && adj.poRetornoConfirmed
                                 }
                                 isVccapHibrido -> {

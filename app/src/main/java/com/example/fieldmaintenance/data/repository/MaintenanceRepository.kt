@@ -111,6 +111,9 @@ class MaintenanceRepository(
     suspend fun upsertAmplifierAdjustment(adjustment: AmplifierAdjustment) =
         amplifierAdjustmentDao.upsert(adjustment)
 
+    suspend fun deleteAmplifierAdjustmentByAssetId(assetId: String) =
+        amplifierAdjustmentDao.deleteByAssetId(assetId)
+
     // Node adjustment (per asset)
     fun getNodeAdjustment(assetId: String): Flow<NodeAdjustment?> =
         nodeAdjustmentDao.getByAssetId(assetId)
@@ -120,6 +123,12 @@ class MaintenanceRepository(
 
     suspend fun upsertNodeAdjustment(adjustment: NodeAdjustment) =
         nodeAdjustmentDao.upsert(adjustment)
+
+    suspend fun deleteNodeAdjustmentByAssetId(assetId: String) =
+        nodeAdjustmentDao.deleteByAssetId(assetId)
+
+    suspend fun deletePhotosByAssetIdAndTypes(assetId: String, types: List<PhotoType>) =
+        photoDao.deletePhotosByAssetIdAndTypes(assetId, types)
 
     // Passives (per report)
     fun getPassivesByReportId(reportId: String): Flow<List<PassiveItem>> =

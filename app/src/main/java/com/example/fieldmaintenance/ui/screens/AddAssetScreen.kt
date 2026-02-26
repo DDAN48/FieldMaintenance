@@ -536,7 +536,9 @@ fun AddAssetScreen(
     // Backward compatibility: old "vccap" now maps to "vccap_hibrido".
     val isVccapHibrido = techKey == "vccap" || techKey == "vccaphibrido"
     val isVccapCompleto = techKey == "vccapcompleto"
-    val isRphyLike = techKey == "rphy" || isVccapCompleto
+    val isRphy = techKey == "rphy"
+    // Node adjustment keeps the same requirements for RPHY and VCCAP_Completo.
+    val isRphyLike = isRphy || isVccapCompleto
     val ampAdj = currentAmplifierAdjustment ?: amplifierAdjustment
     val autoBaseOk = frequency != null
     val autoNodeOk = assetType != AssetType.NODE || technology != null
@@ -608,8 +610,9 @@ fun AddAssetScreen(
     val nodeAllowed = !(assetType == AssetType.NODE && hasNode && !isEdit)
     val autoSaveReady = autoBaseOk && autoNodeOk && autoAmplifierOk && autoAmplifierTablesOk && autoNodeAdjOk && nodeAllowed
     val identityComplete = autoBaseOk && autoNodeOk && autoAmplifierOk
-    val modulePhotoRequired = if (assetType == AssetType.NODE && isRphyLike) 0 else 2
-    val opticsPhotoRequired = if (assetType == AssetType.NODE && (isRphyLike || isVccapHibrido)) {
+    // VCCAP_Completo should require photos like Legacy; only RPHY is exempt.
+    val modulePhotoRequired = if (assetType == AssetType.NODE && isRphy) 0 else 2
+    val opticsPhotoRequired = if (assetType == AssetType.NODE && (isRphy || isVccapHibrido)) {
         0
     } else if (assetType == AssetType.NODE) {
         1
@@ -720,9 +723,10 @@ fun AddAssetScreen(
         val techNormalized = technology?.trim()?.lowercase(Locale.getDefault()) ?: ""
         val techKey = techNormalized.replace("_", "").replace(" ", "")
         val isVccapHibrido = techKey == "vccap" || techKey == "vccaphibrido"
-        val isRphyLike = techKey == "rphy" || techKey == "vccapcompleto"
-        val moduleOk = if (assetType == AssetType.NODE && isRphyLike) true else modulePhotoCount == 2
-        val opticsOk = if (assetType == AssetType.NODE && (isRphyLike || isVccapHibrido)) true
+        val isRphy = techKey == "rphy"
+        // VCCAP_Completo must behave like Legacy for photos/measurements; only RPHY is exempt.
+        val moduleOk = if (assetType == AssetType.NODE && isRphy) true else modulePhotoCount == 2
+        val opticsOk = if (assetType == AssetType.NODE && (isRphy || isVccapHibrido)) true
         else assetType != AssetType.NODE || (opticsPhotoCount in 1..2)
 
         val nodeAllowed = !(assetType == AssetType.NODE && hasNode && !isEdit)
@@ -1302,8 +1306,8 @@ fun AddAssetScreen(
                     }
 
                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        // Foto del Módulo (no para RPHY ni VCCAP_Completo)
-                        if (assetType != AssetType.NODE || !isRphyLike) {
+                        // Foto del Módulo (no para RPHY)
+                        if (assetType != AssetType.NODE || !isRphy) {
                             PhotoSection(
                                 title = "Foto del Módulo y Tapa",
                                 reportId = reportId,
@@ -1312,8 +1316,8 @@ fun AddAssetScreen(
                                 assetLabel = assetDisplayName,
                                 eventName = eventName,
                                 repository = repository,
-                                minRequired = if (assetType == AssetType.NODE && !isRphyLike) 2 else 0,
-                                showRequiredError = attemptedSave && (assetType != AssetType.NODE || !isRphyLike),
+                                minRequired = if (assetType == AssetType.NODE && !isRphy) 2 else 0,
+                                showRequiredError = attemptedSave && (assetType != AssetType.NODE || !isRphy),
                                 maxAllowed = 2,
                                 onCountChange = {
                                     modulePhotoCount = it
@@ -1322,8 +1326,8 @@ fun AddAssetScreen(
                         }
 
                         // Fotos adicionales según tipo
-                        // Foto TX y RX con pads (no para RPHY ni VCCAP)
-                        if (assetType == AssetType.NODE && !isRphyLike && !isVccapHibrido) {
+                        // Foto TX y RX con pads (no para RPHY ni VCCAP_Hibrido)
+                        if (assetType == AssetType.NODE && !isRphy && !isVccapHibrido) {
                             PhotoSection(
                                 title = "Foto TX  y RX con pads",
                                 reportId = reportId,
@@ -1360,7 +1364,7 @@ fun AddAssetScreen(
                         }
 
                         // Fotos de Inyección de portadoras (no para RPHY)
-                        if (assetType != AssetType.NODE || !isRphyLike) {
+                        if (assetType != AssetType.NODE || !isRphy) {
                             // Para NODO con Legacy o VCCAP_Hibrido: 4 fotos, para otros: 3 fotos
                             val maxSpectrumPhotos = if (assetType == AssetType.NODE && (technology == "Legacy" || isVccapHibrido)) 4 else 3
                             PhotoSection(
@@ -1404,7 +1408,8 @@ fun AddAssetScreen(
 
             val techNormalized = technology?.trim()?.lowercase(Locale.getDefault()) ?: ""
             val techKey = techNormalized.replace("_", "").replace(" ", "")
-            val isRphyLikeNode = assetType == AssetType.NODE && (techKey == "rphy" || techKey == "vccapcompleto")
+            // VCCAP_Completo must show Carga de Mediciones (like Legacy). Only RPHY hides it.
+            val isRphyLikeNode = assetType == AssetType.NODE && techKey == "rphy"
 
             if (autoSaved && !isRphyLikeNode) {
                 AdjustmentSummaryCard(
@@ -1436,6 +1441,16 @@ fun AddAssetScreen(
                                 reportFolder = MaintenanceStorage.reportFolderName(report?.eventName, reportId),
                                 onInteraction = {},
                                 onCompletionChange = { measurementsComplete = it },
+                                identityKey = listOf(
+                                    assetType.name,
+                                    frequency?.mhz?.toString().orEmpty(),
+                                    technology?.trim().orEmpty(),
+                                    meterType.trim(),
+                                    amplifierMode?.name.orEmpty(),
+                                    port?.name.orEmpty(),
+                                    portIndex?.toString().orEmpty()
+                                ).joinToString("|"),
+                                enableIdentityReset = autoSaved,
                                 asset = Asset(
                                     id = workingAssetId,
                                     reportId = reportId,
@@ -2382,6 +2397,8 @@ private fun AssetFileSection(
     reportFolder: String,
     onInteraction: () -> Unit,
     onCompletionChange: (Boolean) -> Unit = {},
+    identityKey: String,
+    enableIdentityReset: Boolean,
     asset: Asset
 ) {
     val isNodeAsset = asset.type == AssetType.NODE
@@ -2403,8 +2420,10 @@ private fun AssetFileSection(
     val moduleValidationAsset = if (isNodeAsset) asset else moduleAsset
     val techNormalized = asset.technology?.trim()?.lowercase(Locale.getDefault()) ?: ""
     val techKey = techNormalized.replace("_", "").replace(" ", "")
-    val hasRxMeasurements = !(isNodeAsset && (techKey == "vccap" || techKey == "vccaphibrido"))
-    val hasModuleMeasurements = !(isNodeAsset && techKey == "vccapcompleto")
+    // VCCAP_Hibrido and VCCAP_Completo do NOT have RX measurement section.
+    val hasRxMeasurements = !(isNodeAsset && (techKey == "vccap" || techKey == "vccaphibrido" || techKey == "vccapcompleto"))
+    // VCCAP_Completo must keep module measurements (like Legacy). Only RPHY hides module measurements.
+    val hasModuleMeasurements = !(isNodeAsset && techKey == "rphy")
     val allPhotos by repository.getPhotosByAssetId(asset.id).collectAsState(initial = emptyList())
     val dsamGeo = remember(isDsam, allPhotos) {
         if (!isDsam) return@remember null
@@ -2495,6 +2514,60 @@ private fun AssetFileSection(
     var dsamRxChannelCount by remember(asset.id) { mutableStateOf(0) }
     var dsamModuleChannelCount by remember(asset.id) { mutableStateOf(0) }
     var dsamModuleDocsisCount by remember(asset.id) { mutableStateOf(0) }
+
+    var lastIdentityKey by rememberSaveable(asset.id) { mutableStateOf<String?>(null) }
+    LaunchedEffect(identityKey, enableIdentityReset) {
+        val prev = lastIdentityKey
+        if (prev == null) {
+            lastIdentityKey = identityKey
+            return@LaunchedEffect
+        }
+        if (prev == identityKey) return@LaunchedEffect
+        lastIdentityKey = identityKey
+        if (!enableIdentityReset) return@LaunchedEffect
+
+        withContext(Dispatchers.IO) {
+            // Reset adjustments (force user to confirm again with the new identity).
+            repository.deleteNodeAdjustmentByAssetId(asset.id)
+            repository.deleteAmplifierAdjustmentByAssetId(asset.id)
+
+            // Reset DSAM measurement photos only (not module/optics/monitoring photos).
+            repository.deletePhotosByAssetIdAndTypes(
+                assetId = asset.id,
+                types = listOf(
+                    PhotoType.MEASUREMENT_RX_CHANNEL_CHECK,
+                    PhotoType.MEASUREMENT_MODULE_CHANNEL_CHECK,
+                    PhotoType.MEASUREMENT_MODULE_DOCSIS_CHECK
+                )
+            )
+
+            // Reset imported measurement payload files (ONX/Viavi).
+            listMeasurementPayloadFiles(rxAssetDir).forEach { it.delete() }
+            listMeasurementPayloadFiles(moduleAssetDir).forEach { it.delete() }
+            if (rxDiscardedFile.exists()) rxDiscardedFile.delete()
+            if (moduleDiscardedFile.exists()) moduleDiscardedFile.delete()
+        }
+
+        // Refresh UI state after cleanup.
+        rxFiles = listMeasurementPayloadFiles(rxAssetDir)
+        moduleFiles = listMeasurementPayloadFiles(moduleAssetDir)
+        rxDiscardedLabels = emptySet()
+        moduleDiscardedLabels = emptySet()
+        verificationSummaryRx = null
+        verificationSummaryModule = null
+        duplicateNotice = emptyList()
+        switchDuplicateNotice = emptyList()
+        surplusNotice = emptyList()
+        surplusSelection = emptySet()
+        surplusTargetCount = 0
+        surplusIsModule = false
+        pendingDeleteEntry = null
+        pendingDeleteIsModule = false
+        dsamRxChannelCount = 0
+        dsamModuleChannelCount = 0
+        dsamModuleDocsisCount = 0
+        onCompletionChange(false)
+    }
 
     fun displayLabel(entry: MeasurementEntry): String {
         return if (entry.isDiscarded && !entry.label.contains("DESCARTADA", ignoreCase = true)) {

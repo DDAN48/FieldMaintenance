@@ -24,6 +24,56 @@
           "digitalOffset": -6,
           "digitalTolerance": 1.5
         },
+        "hpTargets": {
+          "500": {
+            "1000": {
+              "channels": {
+                "3": {"target": 36.2, "tolerance": 3},
+                "50": {"target": 41.2, "tolerance": 3},
+                "70": {"target": 44.2, "tolerance": 3},
+                "110": {"target": 40.4, "tolerance": 3},
+                "116": {"target": 47.0, "tolerance": 3},
+                "136": {"target": 49.0, "tolerance": 3},
+                "158": {"target": 51.0, "tolerance": 3}
+              }
+            }
+          },
+          "2000": {
+            "1000": {
+              "channels": {
+                "3": {"target": 33.17, "tolerance": 3},
+                "50": {"target": 38.23, "tolerance": 3},
+                "70": {"target": 40.16, "tolerance": 3},
+                "110": {"target": 37.50, "tolerance": 3},
+                "116": {"target": 44.04, "tolerance": 3},
+                "136": {"target": 45.95, "tolerance": 3},
+                "158": {"target": 48.05, "tolerance": 3}
+              }
+            },
+            "870": {
+              "channels": {
+                "3": {"target": 33.17, "tolerance": 3},
+                "50": {"target": 38.23, "tolerance": 3},
+                "70": {"target": 40.16, "tolerance": 3},
+                "110": {"target": 37.50, "tolerance": 3},
+                "116": {"target": 44.04, "tolerance": 3},
+                "136": {"target": 45.95, "tolerance": 3},
+                "158": {"target": 48.05, "tolerance": 3}
+              }
+            },
+            "750": {
+              "channels": {
+                "3": {"target": 29.10, "tolerance": 3},
+                "50": {"target": 34.13, "tolerance": 3},
+                "70": {"target": 36.05, "tolerance": 3},
+                "110": {"target": 33.37, "tolerance": 3},
+                "116": {"target": 39.91, "tolerance": 3},
+                "136": {"target": 41.81, "tolerance": 3},
+                "158": {"target": 43.89, "tolerance": 3}
+              }
+            }
+          }
+        },
         "channels": {
           "50": {"target": 41, "tolerance": 3},
           "70": {"target": 44, "tolerance": 3},
@@ -38,6 +88,56 @@
           "1550": {"pilotTarget": 28.3, "tolerance": 1},
           "digitalOffset": -6,
           "digitalTolerance": 1.5
+        },
+        "hpTargets": {
+          "500": {
+            "1000": {
+              "channels": {
+                "3": {"target": 36.2, "tolerance": 3},
+                "50": {"target": 41.2, "tolerance": 3},
+                "70": {"target": 44.2, "tolerance": 3},
+                "110": {"target": 40.4, "tolerance": 3},
+                "116": {"target": 47.0, "tolerance": 3},
+                "136": {"target": 49.0, "tolerance": 3},
+                "158": {"target": 51.0, "tolerance": 3}
+              }
+            }
+          },
+          "2000": {
+            "1000": {
+              "channels": {
+                "3": {"target": 33.17, "tolerance": 3},
+                "50": {"target": 38.23, "tolerance": 3},
+                "70": {"target": 40.16, "tolerance": 3},
+                "110": {"target": 37.50, "tolerance": 3},
+                "116": {"target": 44.04, "tolerance": 3},
+                "136": {"target": 45.95, "tolerance": 3},
+                "158": {"target": 48.05, "tolerance": 3}
+              }
+            },
+            "870": {
+              "channels": {
+                "3": {"target": 33.17, "tolerance": 3},
+                "50": {"target": 38.23, "tolerance": 3},
+                "70": {"target": 40.16, "tolerance": 3},
+                "110": {"target": 37.50, "tolerance": 3},
+                "116": {"target": 44.04, "tolerance": 3},
+                "136": {"target": 45.95, "tolerance": 3},
+                "158": {"target": 48.05, "tolerance": 3}
+              }
+            },
+            "750": {
+              "channels": {
+                "3": {"target": 29.10, "tolerance": 3},
+                "50": {"target": 34.13, "tolerance": 3},
+                "70": {"target": 36.05, "tolerance": 3},
+                "110": {"target": 33.37, "tolerance": 3},
+                "116": {"target": 39.91, "tolerance": 3},
+                "136": {"target": 41.81, "tolerance": 3},
+                "158": {"target": 43.89, "tolerance": 3}
+              }
+            }
+          }
         },
         "channels": {
           "50": {"target": 41, "tolerance": 3},
