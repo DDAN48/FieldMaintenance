@@ -1,3 +1,4 @@
+@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @file:Suppress("DEPRECATION")
 
 package com.example.fieldmaintenance.ui.components
