@@ -1656,7 +1656,10 @@ private fun FullScreenAdjustmentDialog(
                         .fillMaxSize()
                         .padding(top = 56.dp)
                         .verticalScroll(rememberScrollState())
-                        .padding(horizontal = 16.dp, vertical = 16.dp),
+                        .padding(horizontal = 16.dp, vertical = 16.dp)
+                        // Extra scroll room so the final action button can be fully visible
+                        // above the system navigation bar on small screens.
+                        .padding(bottom = 96.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     content()
@@ -1679,6 +1682,9 @@ private fun FullScreenAdjustmentDialog(
                             Text("Completar")
                         }
                     }
+
+                    // Allow scrolling past the button so it can be centered/fully visible.
+                    Spacer(Modifier.height(64.dp))
                 }
             }
         }
