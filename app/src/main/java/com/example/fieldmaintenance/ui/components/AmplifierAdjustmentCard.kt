@@ -643,9 +643,7 @@ fun AmplifierAdjustmentCard(
                 Card(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
-                        // Leave room for the bottom "Completar" bar.
-                        .padding(horizontal = 16.dp, vertical = 18.dp)
-                        .padding(bottom = 84.dp),
+                        .padding(horizontal = 16.dp, vertical = 18.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
                     elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
