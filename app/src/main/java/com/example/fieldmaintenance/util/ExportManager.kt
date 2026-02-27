@@ -4031,22 +4031,6 @@ val assets = repository.getAssetsByReportId(report.id).first()
             photosByAsset[asset.id] = photos
         }
 
-        fun estimateBytesForAsset(asset: Asset): Long {
-            val photoBytes = photosByAsset[asset.id].orEmpty().sumOf { p ->
-                runCatching { File(p.filePath).takeIf { it.exists() }?.length() ?: 0L }.getOrDefault(0L)
-            }
-            val measurementBytes = buildList {
-                add(asset)
-                if (asset.type == AssetType.NODE) add(asset.copy(type = AssetType.AMPLIFIER))
-            }.sumOf { measurementAsset ->
-                val folderName = MaintenanceStorage.assetFolderName(measurementAsset)
-                val srcDir = File(measurementRoot, folderName)
-                if (!srcDir.exists()) return@sumOf 0L
-                listMeasurementPayloadFiles(srcDir).sumOf { it.length() }
-            }
-            return photoBytes + measurementBytes
-        }
-
         fun copyMeasurementPayloadsForAssets(exportDir: File, assets: List<Asset>) {
             val measurementsExportRoot = File(exportDir, "measurements").apply { mkdirs() }
             assets.forEach { asset ->
@@ -4097,30 +4081,25 @@ val assets = repository.getAssetsByReportId(report.id).first()
         var start = 0
         var partIndex = 1
         while (start < allAssets.size) {
-            var end = start
-            var estimated = 0L
-            while (end < allAssets.size) {
-                val next = estimateBytesForAsset(allAssets[end])
-                if (end == start || estimated + next <= maxZipBytes) {
-                    estimated += next
-                    end += 1
-                } else {
+            val desiredMaxAssetsPerPart = 4
+            val remaining = allAssets.size - start
+            val initialCount = minOf(desiredMaxAssetsPerPart, remaining)
+            var count = initialCount
+            var zip: File? = null
+            while (count >= 1) {
+                val chunk = allAssets.subList(start, start + count)
+                val candidate = buildZipPart(chunk, partIndex)
+                if (candidate.length() <= maxZipBytes || count == 1) {
+                    zip = candidate
                     break
+                } else {
+                    candidate.delete()
+                    count -= 1
                 }
             }
-            if (end == start) end = (start + 1).coerceAtMost(allAssets.size)
-
-            var chunkEnd = end
-            var chunk = allAssets.subList(start, chunkEnd)
-            var zip = buildZipPart(chunk, partIndex)
-            while (zip.length() > maxZipBytes && chunk.size > 1) {
-                zip.delete()
-                chunkEnd -= 1
-                chunk = allAssets.subList(start, chunkEnd)
-                zip = buildZipPart(chunk, partIndex)
-            }
-            zips.add(zip)
-            start = chunkEnd
+            val built = zip ?: buildZipPart(allAssets.subList(start, start + 1), partIndex)
+            zips.add(built)
+            start += count.coerceAtLeast(1)
             partIndex += 1
         }
         zips
