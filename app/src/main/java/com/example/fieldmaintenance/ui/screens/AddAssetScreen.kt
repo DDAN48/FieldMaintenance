@@ -60,9 +60,9 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBars
-import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import android.net.Uri
 import android.widget.Toast
 import android.location.Geocoder
@@ -1629,12 +1629,7 @@ private fun FullScreenAdjustmentDialog(
             decorFitsSystemWindows = false
         )
     ) {
-        Surface(
-            modifier = Modifier
-                .fillMaxSize()
-                // Keep all content above system bars. IME is handled in bottomBar.
-                .windowInsetsPadding(WindowInsets.safeDrawing)
-        ) {
+        Surface(modifier = Modifier.fillMaxSize()) {
             Scaffold(
                 topBar = {
                     TopAppBar(
@@ -1668,7 +1663,9 @@ private fun FullScreenAdjustmentDialog(
                         modifier = Modifier
                             .fillMaxWidth()
                             .background(MaterialTheme.colorScheme.surface)
-                            .windowInsetsPadding(WindowInsets.ime)
+                            // Always keep action button above system navigation + keyboard.
+                            .navigationBarsPadding()
+                            .imePadding()
                             .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 16.dp)
                     ) {
                         HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
