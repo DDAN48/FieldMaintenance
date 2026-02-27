@@ -1525,15 +1525,47 @@ val assets = repository.getAssetsByReportId(report.id).first()
             return "${cleanDir}/${dest.name}"
         }
 
+        fun safeCompressToExport(
+            src: File,
+            relativeDir: String,
+            preferredName: String,
+            maxBytes: Int
+        ): String {
+            val cleanDir = relativeDir.trim('/').replace("\\", "/")
+            val destDir = File(exportDir, cleanDir)
+            destDir.mkdirs()
+
+            val base = preferredName.substringBeforeLast('.', preferredName).ifBlank { "img_${System.currentTimeMillis()}" }
+            var name = "${base}.jpg"
+            var dest = File(destDir, name)
+            if (dest.exists()) {
+                name = "${System.currentTimeMillis()}_${base}.jpg"
+                dest = File(destDir, name)
+            }
+            runCatching {
+                ImageCompressor.compressForExport(
+                    sourceFile = src,
+                    destFile = dest,
+                    maxBytes = maxBytes
+                )
+            }.onFailure {
+                // Best effort fallback; keep export working even if a file is corrupted.
+                src.copyTo(dest, overwrite = true)
+            }
+            return "${cleanDir}/${dest.name}"
+        }
+
         // Copy asset photos to images/ and build image refs for report.json
         val imagesMap: Map<String, List<ExportImageRef>> = photosByAsset.mapValues { (assetId, photos) ->
             photos.mapNotNull { photo ->
                 val src = File(photo.filePath)
                 if (!src.exists()) return@mapNotNull null
-                val rel = safeCopyToExport(
+                val maxBytes = if (photo.photoType == PhotoType.MODULE) 400 * 1024 else 200 * 1024
+                val rel = safeCompressToExport(
                     src = src,
                     relativeDir = "images/$assetId/${photo.photoType.name.lowercase()}",
-                    preferredName = src.name
+                    preferredName = src.name,
+                    maxBytes = maxBytes
                 )
                 ExportImageRef(
                     photoId = photo.id,
@@ -1549,10 +1581,11 @@ val assets = repository.getAssetsByReportId(report.id).first()
             .mapNotNull { rp ->
                 val src = File(rp.filePath)
                 if (!src.exists()) return@mapNotNull null
-                val rel = safeCopyToExport(
+                val rel = safeCompressToExport(
                     src = src,
                     relativeDir = "images/report/${rp.type.name.lowercase()}",
-                    preferredName = src.name
+                    preferredName = src.name,
+                    maxBytes = 200 * 1024
                 )
                 ExportReportImageRef(
                     photoId = rp.id,

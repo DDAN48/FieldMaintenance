@@ -13,6 +13,7 @@ import kotlin.math.max
 
 object ImageCompressor {
     private const val DEFAULT_MAX_BYTES = 1024 * 1024 // 1MB
+    private const val MIN_DIM_HARD_STOP = 320
 
     /**
      * Compresses the source image into [destFile] aiming for <= [maxBytes] while trying to keep a
@@ -47,23 +48,44 @@ object ImageCompressor {
         var bytes = compressJpegToBytes(bitmap, quality)
 
         // If still too big at low-ish quality, downscale progressively
-        while (bytes.size > maxBytes) {
-            if (quality > 45) {
-                quality -= 10
+        var attempts = 0
+        while (bytes.size > maxBytes && attempts < 60) {
+            attempts += 1
+            if (quality > 25) {
+                quality -= 5
                 bytes = compressJpegToBytes(bitmap, quality)
-            } else {
-                // reduce resolution by 15%
-                val w = (bitmap.width * 0.85).toInt().coerceAtLeast(800)
-                val h = (bitmap.height * 0.85).toInt().coerceAtLeast(800)
+                continue
+            }
+
+            val w = (bitmap.width * 0.85).toInt().coerceAtLeast(MIN_DIM_HARD_STOP)
+            val h = (bitmap.height * 0.85).toInt().coerceAtLeast(MIN_DIM_HARD_STOP)
+            val canDownscale = w < bitmap.width || h < bitmap.height
+            if (canDownscale) {
                 val scaled = Bitmap.createScaledBitmap(bitmap, w, h, true)
                 if (scaled !== bitmap) bitmap.recycle()
                 bitmap = scaled
                 quality = 85
                 bytes = compressJpegToBytes(bitmap, quality)
-
-                // hard stop: accept best-effort once we're already quite small
-                if (bitmap.width <= 900 || bitmap.height <= 900) break
+            } else {
+                // Last resort: squeeze quality further at minimum dimensions.
+                quality = (quality - 3).coerceAtLeast(10)
+                bytes = compressJpegToBytes(bitmap, quality)
+                if (quality <= 10) break
             }
+        }
+
+        // Safety net: if still above maxBytes, keep shrinking aggressively.
+        var guard = 0
+        while (bytes.size > maxBytes && guard < 40) {
+            guard += 1
+            val w = (bitmap.width * 0.80).toInt().coerceAtLeast(200)
+            val h = (bitmap.height * 0.80).toInt().coerceAtLeast(200)
+            val scaled = Bitmap.createScaledBitmap(bitmap, w, h, true)
+            if (scaled !== bitmap) bitmap.recycle()
+            bitmap = scaled
+            quality = 35
+            bytes = compressJpegToBytes(bitmap, quality)
+            if (bitmap.width <= 200 || bitmap.height <= 200) break
         }
 
         destFile.parentFile?.mkdirs()
