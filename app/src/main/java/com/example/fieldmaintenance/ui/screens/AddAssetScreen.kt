@@ -57,6 +57,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.windowInsetsPadding
 import android.net.Uri
 import android.widget.Toast
 import android.location.Geocoder
@@ -1621,66 +1626,61 @@ private fun FullScreenAdjustmentDialog(
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
         Surface(modifier = Modifier.fillMaxSize()) {
-            Box(modifier = Modifier.fillMaxSize()) {
-                TopAppBar(
-                    title = { Text(title) },
-                    navigationIcon = {
-                        IconButton(onClick = onDismiss) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "Volver"
-                            )
-                        }
-                    },
-                    actions = {
-                        IconButton(onClick = onDismiss) {
-                            Icon(
-                                imageVector = Icons.Default.Close,
-                                contentDescription = "Cerrar"
-                            )
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.surface,
-                        titleContentColor = MaterialTheme.colorScheme.onSurface,
-                        navigationIconContentColor = MaterialTheme.colorScheme.onSurface,
-                        actionIconContentColor = MaterialTheme.colorScheme.onSurface
+            Scaffold(
+                topBar = {
+                    TopAppBar(
+                        title = { Text(title) },
+                        navigationIcon = {
+                            IconButton(onClick = onDismiss) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                    contentDescription = "Volver"
+                                )
+                            }
+                        },
+                        actions = {
+                            IconButton(onClick = onDismiss) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Cerrar"
+                                )
+                            }
+                        },
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = MaterialTheme.colorScheme.surface,
+                            titleContentColor = MaterialTheme.colorScheme.onSurface,
+                            navigationIconContentColor = MaterialTheme.colorScheme.onSurface,
+                            actionIconContentColor = MaterialTheme.colorScheme.onSurface
+                        )
                     )
-                )
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(top = 56.dp)
-                ) {
+                },
+                bottomBar = {
                     Column(
                         modifier = Modifier
-                            .weight(1f)
-                            .verticalScroll(rememberScrollState())
-                            .imePadding()
-                            .padding(horizontal = 16.dp, vertical = 16.dp)
-                            .padding(bottom = 16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                            .fillMaxWidth()
+                            .background(MaterialTheme.colorScheme.surface)
+                            .windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime))
+                            .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 16.dp)
                     ) {
-                        content()
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+                        Spacer(Modifier.height(12.dp))
+                        Button(
+                            onClick = onComplete,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Completar")
+                        }
                     }
                 }
+            ) { innerPadding ->
                 Column(
                     modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .fillMaxWidth()
-                        .background(MaterialTheme.colorScheme.surface)
-                        .navigationBarsPadding()
-                        .imePadding()
-                        .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 16.dp)
+                        .padding(innerPadding)
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = 16.dp, vertical = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
-                    Spacer(Modifier.height(12.dp))
-                    Button(
-                        onClick = onComplete,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("Completar")
-                    }
+                    content()
                 }
             }
         }

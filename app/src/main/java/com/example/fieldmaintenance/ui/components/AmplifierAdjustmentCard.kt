@@ -14,6 +14,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.relocation.BringIntoViewRequester
@@ -625,11 +630,17 @@ fun AmplifierAdjustmentCard(
                 dismissOnClickOutside = false
             )
         ) {
-            Box(modifier = Modifier.fillMaxSize()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime))
+            ) {
                 Card(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
-                        .padding(horizontal = 16.dp, vertical = 18.dp),
+                        // Leave room for the bottom "Completar" bar.
+                        .padding(horizontal = 16.dp, vertical = 18.dp)
+                        .padding(bottom = 84.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
                     elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
