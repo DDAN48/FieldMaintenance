@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.BorderStroke
@@ -626,6 +627,7 @@ fun AmplifierAdjustmentCard(
             onDismissRequest = { /* Only dismiss via X */ },
             properties = DialogProperties(
                 usePlatformDefaultWidth = false,
+                decorFitsSystemWindows = false,
                 dismissOnBackPress = false,
                 dismissOnClickOutside = false
             )
@@ -633,7 +635,7 @@ fun AmplifierAdjustmentCard(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime))
+                    .windowInsetsPadding(WindowInsets.safeDrawing.union(WindowInsets.ime))
             ) {
                 Card(
                     modifier = Modifier
