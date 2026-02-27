@@ -628,7 +628,7 @@ fun AmplifierAdjustmentCard(
             onDismissRequest = { /* Only dismiss via X */ },
             properties = DialogProperties(
                 usePlatformDefaultWidth = false,
-                decorFitsSystemWindows = false,
+                decorFitsSystemWindows = true,
                 dismissOnBackPress = false,
                 dismissOnClickOutside = false
             )
@@ -643,7 +643,9 @@ fun AmplifierAdjustmentCard(
                 Card(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
-                        .padding(horizontal = 16.dp, vertical = 18.dp),
+                        // Leave a little room for the fixed "Completar" bottom bar in dialogs.
+                        .padding(horizontal = 16.dp, vertical = 18.dp)
+                        .padding(bottom = 88.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
                     elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)

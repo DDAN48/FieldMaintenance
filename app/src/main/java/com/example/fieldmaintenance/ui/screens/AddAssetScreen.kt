@@ -1621,57 +1621,48 @@ private fun FullScreenAdjustmentDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(
             usePlatformDefaultWidth = false,
-            decorFitsSystemWindows = false
+            // Let the system apply safe insets so bottom actions never
+            // fall behind the Android navigation bar on any device.
+            decorFitsSystemWindows = true
         )
     ) {
         Surface(modifier = Modifier.fillMaxSize()) {
-            Box(modifier = Modifier.fillMaxSize()) {
-                TopAppBar(
-                    title = { Text(title) },
-                    navigationIcon = {
-                        IconButton(onClick = onDismiss) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "Volver"
-                            )
-                        }
-                    },
-                    actions = {
-                        IconButton(onClick = onDismiss) {
-                            Icon(
-                                imageVector = Icons.Default.Close,
-                                contentDescription = "Cerrar"
-                            )
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.surface,
-                        titleContentColor = MaterialTheme.colorScheme.onSurface,
-                        navigationIconContentColor = MaterialTheme.colorScheme.onSurface,
-                        actionIconContentColor = MaterialTheme.colorScheme.onSurface
+            Scaffold(
+                topBar = {
+                    TopAppBar(
+                        title = { Text(title) },
+                        navigationIcon = {
+                            IconButton(onClick = onDismiss) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                    contentDescription = "Volver"
+                                )
+                            }
+                        },
+                        actions = {
+                            IconButton(onClick = onDismiss) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Cerrar"
+                                )
+                            }
+                        },
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = MaterialTheme.colorScheme.surface,
+                            titleContentColor = MaterialTheme.colorScheme.onSurface,
+                            navigationIconContentColor = MaterialTheme.colorScheme.onSurface,
+                            actionIconContentColor = MaterialTheme.colorScheme.onSurface
+                        )
                     )
-                )
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(top = 56.dp)
-                        .verticalScroll(rememberScrollState())
-                        .padding(horizontal = 16.dp, vertical = 16.dp)
-                        // Extra scroll room so the final action button can be fully visible
-                        // above the system navigation bar on small screens.
-                        .padding(bottom = 96.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    content()
-
-                    Spacer(Modifier.height(12.dp))
+                },
+                bottomBar = {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            // Keep the button reachable above navigation/IME, but not fixed.
-                            .navigationBarsPadding()
+                            .background(MaterialTheme.colorScheme.surface)
+                            // Even with decorFitsSystemWindows=true, keep IME handling explicit.
                             .imePadding()
-                            .padding(bottom = 8.dp)
+                            .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 20.dp)
                     ) {
                         HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
                         Spacer(Modifier.height(12.dp))
@@ -1682,9 +1673,19 @@ private fun FullScreenAdjustmentDialog(
                             Text("Completar")
                         }
                     }
-
-                    // Allow scrolling past the button so it can be centered/fully visible.
-                    Spacer(Modifier.height(64.dp))
+                }
+            ) { innerPadding ->
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(innerPadding)
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = 16.dp, vertical = 16.dp)
+                        // Extra room so the last fields aren't hidden behind the fixed bottom bar.
+                        .padding(bottom = 120.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    content()
                 }
             }
         }
