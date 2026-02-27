@@ -21,6 +21,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Card
@@ -34,6 +35,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.IconButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -53,6 +55,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.example.fieldmaintenance.data.model.AmplifierAdjustment
 import com.example.fieldmaintenance.data.model.AmplifierMode
 import com.example.fieldmaintenance.data.model.Frequency
@@ -136,6 +140,9 @@ fun AmplifierAdjustmentCard(
     var planHighFreq by rememberSaveable { mutableStateOf<Int?>(750) }
     var planHighDbmv by rememberSaveable { mutableStateOf("") }
 
+    var agcHintArmed by rememberSaveable(assetId) { mutableStateOf(true) }
+    var agcHintVisible by rememberSaveable(assetId) { mutableStateOf(false) }
+
     var outCh50 by rememberSaveable { mutableStateOf("") }
     var outCh70 by rememberSaveable { mutableStateOf("") }
     var outCh110 by rememberSaveable { mutableStateOf("") }
@@ -167,6 +174,12 @@ fun AmplifierAdjustmentCard(
         planLowDbmv = fmt(initial.planLowDbmv)
         planHighFreq = initial.planHighFreqMHz ?: 750
         planHighDbmv = fmt(initial.planHighDbmv)
+
+        // Only show the AGC hint when the user enters the first Plan Output value.
+        // If values already exist in DB, do not arm the hint.
+        agcHintArmed = initial.planLowDbmv == null && initial.planHighDbmv == null
+        agcHintVisible = false
+
         outCh50 = fmt(initial.outCh50Dbmv)
         outCh70 = fmt(initial.outCh70Dbmv)
         outCh110 = fmt(initial.outCh110Dbmv)
@@ -473,7 +486,15 @@ fun AmplifierAdjustmentCard(
                             modifier = Modifier.width(92.dp),
                             isError = (showRequiredErrors && parseDbmv(planLowDbmv) == null) || isWeirdDbmv(parseDbmv(planLowDbmv)),
                             compact = true,
-                            onChange = { dirty = true; planLowDbmv = it }
+                            onChange = {
+                                val hadNoPlanOutputs = planLowDbmv.trim().isEmpty() && planHighDbmv.trim().isEmpty()
+                                dirty = true
+                                planLowDbmv = it
+                                if (agcHintArmed && hadNoPlanOutputs && it.trim().isNotEmpty()) {
+                                    agcHintVisible = true
+                                    agcHintArmed = false
+                                }
+                            }
                         )
                     }
                     Spacer(Modifier.height(8.dp))
@@ -496,7 +517,15 @@ fun AmplifierAdjustmentCard(
                             modifier = Modifier.width(92.dp),
                             isError = (showRequiredErrors && parseDbmv(planHighDbmv) == null) || isWeirdDbmv(parseDbmv(planHighDbmv)),
                             compact = true,
-                            onChange = { dirty = true; planHighDbmv = it }
+                            onChange = {
+                                val hadNoPlanOutputs = planLowDbmv.trim().isEmpty() && planHighDbmv.trim().isEmpty()
+                                dirty = true
+                                planHighDbmv = it
+                                if (agcHintArmed && hadNoPlanOutputs && it.trim().isNotEmpty()) {
+                                    agcHintVisible = true
+                                    agcHintArmed = false
+                                }
+                            }
                         )
                     }
                     if (isWeirdDbmv(parseDbmv(planLowDbmv)) || isWeirdDbmv(parseDbmv(planHighDbmv))) {
@@ -584,6 +613,45 @@ fun AmplifierAdjustmentCard(
                 TextButton(onClick = { entradaAlert = null }) { Text("Aceptar") }
             }
         )
+    }
+
+    if (agcHintVisible) {
+        Dialog(
+            onDismissRequest = { /* Only dismiss via X */ },
+            properties = DialogProperties(
+                usePlatformDefaultWidth = false,
+                dismissOnBackPress = false,
+                dismissOnClickOutside = false
+            )
+        ) {
+            Box(modifier = Modifier.fillMaxSize()) {
+                Card(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(horizontal = 16.dp, vertical = 18.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        Text(
+                            text = "Colocar swicht del AGC en posición 1 para realizar los ajustes . Ajuste el AGC y regrese a posición 3",
+                            modifier = Modifier.weight(1f),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = ampTextPrimary()
+                        )
+                        IconButton(onClick = { agcHintVisible = false }) {
+                            Icon(Icons.Default.Close, contentDescription = "Cerrar")
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
