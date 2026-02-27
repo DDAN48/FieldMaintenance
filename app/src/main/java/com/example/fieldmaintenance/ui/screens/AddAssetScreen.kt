@@ -1617,6 +1617,10 @@ private fun FullScreenAdjustmentDialog(
     onComplete: () -> Unit,
     content: @Composable () -> Unit
 ) {
+    // Some devices/ROMs don't report nav bar insets correctly inside Dialog windows.
+    // This extra padding guarantees the bottom action isn't hidden behind system buttons.
+    val extraBottomSafePadding = 72.dp
+
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(
@@ -1662,7 +1666,7 @@ private fun FullScreenAdjustmentDialog(
                             .background(MaterialTheme.colorScheme.surface)
                             // Even with decorFitsSystemWindows=true, keep IME handling explicit.
                             .imePadding()
-                            .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 20.dp)
+                            .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 20.dp + extraBottomSafePadding)
                     ) {
                         HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
                         Spacer(Modifier.height(12.dp))
@@ -1682,7 +1686,7 @@ private fun FullScreenAdjustmentDialog(
                         .verticalScroll(rememberScrollState())
                         .padding(horizontal = 16.dp, vertical = 16.dp)
                         // Extra room so the last fields aren't hidden behind the fixed bottom bar.
-                        .padding(bottom = 120.dp),
+                        .padding(bottom = 120.dp + extraBottomSafePadding),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     content()

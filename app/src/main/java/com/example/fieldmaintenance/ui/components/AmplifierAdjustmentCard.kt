@@ -624,6 +624,7 @@ fun AmplifierAdjustmentCard(
     }
 
     if (agcHintVisible) {
+        val extraBottomSafePadding = 72.dp
         Dialog(
             onDismissRequest = { /* Only dismiss via X */ },
             properties = DialogProperties(
@@ -645,7 +646,7 @@ fun AmplifierAdjustmentCard(
                         .align(Alignment.BottomCenter)
                         // Leave a little room for the fixed "Completar" bottom bar in dialogs.
                         .padding(horizontal = 16.dp, vertical = 18.dp)
-                        .padding(bottom = 88.dp),
+                        .padding(bottom = 88.dp + extraBottomSafePadding),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
                     elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
