@@ -81,7 +81,8 @@ private suspend fun isAssetIncomplete(
             adj.outCh70Dbmv != null &&
             adj.outCh110Dbmv != null &&
             adj.outCh116Dbmv != null &&
-            adj.outCh136Dbmv != null
+            adj.outCh136Dbmv != null &&
+            adj.docsisConfirmed
     }
 
     val measurementsOk = if (isDsam) {

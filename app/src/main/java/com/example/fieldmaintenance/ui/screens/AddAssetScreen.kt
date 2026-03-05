@@ -560,7 +560,8 @@ fun AddAssetScreen(
             ampAdj.outCh70Dbmv != null &&
             ampAdj.outCh110Dbmv != null &&
             ampAdj.outCh116Dbmv != null &&
-            ampAdj.outCh136Dbmv != null
+            ampAdj.outCh136Dbmv != null &&
+            ampAdj.docsisConfirmed
         okAdj
     }
     val ampEntradaOk = if (assetType != AssetType.AMPLIFIER) true else {

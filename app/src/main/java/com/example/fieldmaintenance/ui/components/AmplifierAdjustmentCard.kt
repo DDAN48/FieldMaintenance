@@ -31,6 +31,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -44,6 +45,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -151,6 +153,8 @@ fun AmplifierAdjustmentCard(
     var agcHintArmed by rememberSaveable(assetId) { mutableStateOf(true) }
     var agcHintVisible by rememberSaveable(assetId) { mutableStateOf(false) }
 
+    var docsisConfirmed by rememberSaveable(assetId) { mutableStateOf(false) }
+
     var outCh50 by rememberSaveable { mutableStateOf("") }
     var outCh70 by rememberSaveable { mutableStateOf("") }
     var outCh110 by rememberSaveable { mutableStateOf("") }
@@ -188,6 +192,8 @@ fun AmplifierAdjustmentCard(
         agcHintArmed = initial.planLowDbmv == null && initial.planHighDbmv == null
         agcHintVisible = false
 
+        docsisConfirmed = initial.docsisConfirmed
+
         outCh50 = fmt(initial.outCh50Dbmv)
         outCh70 = fmt(initial.outCh70Dbmv)
         outCh110 = fmt(initial.outCh110Dbmv)
@@ -215,6 +221,7 @@ fun AmplifierAdjustmentCard(
             outCh110Dbmv = parseDbmv(outCh110),
             outCh116Dbmv = parseDbmv(outCh116),
             outCh136Dbmv = parseDbmv(outCh136),
+            docsisConfirmed = docsisConfirmed,
         )
     }
 
@@ -609,6 +616,44 @@ fun AmplifierAdjustmentCard(
                         freqText = "1000",
                         calc = salidaCalc?.get("CH158")
                     )
+
+                    Spacer(Modifier.height(10.dp))
+                    HorizontalDivider(color = ampDividerColor(), thickness = 1.dp)
+                    Spacer(Modifier.height(10.dp))
+
+                    val docsisText = when (bandwidth) {
+                        Frequency.MHz_42 -> "DOCSIS en el equipo debe estar entre (29 a 34) dBmV ± 1dB"
+                        Frequency.MHz_85 -> "DOCSIS en el equipo debe estar entre (30 a 35) dBmV ± 1dB"
+                        else -> "Selecciona la Frecuencia para ver instrucciones de DOCSIS."
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = docsisText,
+                            modifier = Modifier.weight(1f),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (showRequiredErrors && !docsisConfirmed) ampErrorColor() else ampTextPrimary()
+                        )
+                        OutlinedButton(
+                            onClick = { dirty = true; docsisConfirmed = !docsisConfirmed },
+                            enabled = bandwidth != null
+                        ) {
+                            if (docsisConfirmed) {
+                                Icon(
+                                    imageVector = Icons.Default.CheckCircle,
+                                    contentDescription = null,
+                                    tint = SuccessGreen
+                                )
+                                Spacer(Modifier.width(6.dp))
+                                Text("Confirmado", color = SuccessGreen)
+                            } else {
+                                Text("Confirmar")
+                            }
+                        }
+                    }
             }
         }
     }

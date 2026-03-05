@@ -33,6 +33,7 @@ object DatabaseProvider {
                 .addMigrations(AppDatabase.MIGRATION_14_15)
                 .addMigrations(AppDatabase.MIGRATION_15_16)
                 .addMigrations(AppDatabase.MIGRATION_16_17)
+                .addMigrations(AppDatabase.MIGRATION_17_18)
                 .build()
             
             repository = MaintenanceRepository(

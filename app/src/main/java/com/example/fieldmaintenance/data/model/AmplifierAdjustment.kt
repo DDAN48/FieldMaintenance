@@ -48,5 +48,8 @@ data class AmplifierAdjustment(
     val outCh116Dbmv: Double? = null,
     val outCh136Dbmv: Double? = null,
 
+    // DOCSIS confirmation (used in adjustment workflow)
+    val docsisConfirmed: Boolean = false,
+
     val updatedAt: Long = System.currentTimeMillis()
 )

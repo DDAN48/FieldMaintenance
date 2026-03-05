@@ -396,7 +396,7 @@ fun NodeAdjustmentCard(
                             Spacer(Modifier.height(4.dp))
                             Text("DOCSIS", fontWeight = FontWeight.Medium)
                             val docsisText = when (frequency) {
-                                Frequency.MHz_42 -> "DOCSIS en el equipo debe estar entre (29 a 34) dBmV ± 1dB"
+                                Frequency.MHz_42 -> "DOCSIS en el equipo debe estar entre (32 a 37) dBmV ± 1dB"
                                 Frequency.MHz_85 -> "DOCSIS en el equipo debe estar entre (30 a 35) dBmV ± 1dB"
                                 else -> "Selecciona la Frecuencia para ver instrucciones de DOCSIS."
                             }
@@ -495,7 +495,7 @@ fun NodeAdjustmentCard(
                                     optionA = "TP_BLACK",
                                     labelA = "Con FRECUENCIA de 42Mhz con test point y cartucho negro colocar pad de 10 en transmisora de nodo.",
                                     optionB = "TP_NO_BLACK",
-                                    labelB = "Con FRECUENCIA de 42Mhz con test point y SIN cartucho negro colocar pad de 10 en transmisora de nodo.",
+                                    labelB = "Con FRECUENCIA de 42Mhz con test point y SIN cartucho negro colocar pad de 11 en transmisora de nodo.",
                                     onSelect = { persist(local.copy(rxPadSelection = it)) }
                                 )
                             }
