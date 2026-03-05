@@ -9,6 +9,7 @@ import android.os.ParcelFileDescriptor
 import android.util.Base64
 import androidx.core.content.ContextCompat
 import com.example.fieldmaintenance.R
+import com.example.fieldmaintenance.BuildConfig
 import com.example.fieldmaintenance.data.model.*
 import com.example.fieldmaintenance.data.model.label
 import com.example.fieldmaintenance.data.repository.MaintenanceRepository
@@ -355,6 +356,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
             report = report,
             assets = assets,
             photos = photosMap,
+            appVersionName = BuildConfig.VERSION_NAME,
             passives = passives,
             reportPhotos = reportPhotos,
             nodeAdjustments = if (nodeAdjustmentsMap.isNotEmpty()) nodeAdjustmentsMap else null,
@@ -392,6 +394,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
         val brandBlue = DeviceRgb(0, 103, 184)
         val lightGray = DeviceRgb(240, 240, 240)
         val dateShort = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date(report.executionDate))
+        val appVersionLabel = "Versión app ${BuildConfig.VERSION_NAME}"
 
         // Agregar espacio arriba para bajar el contenido
         document.add(Paragraph(" "))
@@ -448,6 +451,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
         header.addCell(
             Cell()
                 .add(coverCell("FECHA: $dateShort", bold = false, size = 10f))
+                .add(coverCell(appVersionLabel, bold = false, size = 9f))
                 .setBorder(SolidBorder(ColorConstants.BLACK, 0.8f))
                 .setTextAlignment(TextAlignment.RIGHT)
                 .setVerticalAlignment(VerticalAlignment.TOP)
@@ -1437,6 +1441,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
             report = report,
             assets = assets,
             images = emptyMap(),
+            appVersionName = BuildConfig.VERSION_NAME,
             reportImages = null,
             adjustments = if (adjustmentsByAsset.isEmpty()) null else adjustmentsByAsset,
             nodeAdjustments = if (nodeAdjustmentsByAsset.isNotEmpty()) nodeAdjustmentsByAsset else null,
@@ -1623,6 +1628,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
             report = report,
             assets = assets,
             images = imagesMap,
+            appVersionName = BuildConfig.VERSION_NAME,
             reportImages = reportImageRefs.ifEmpty { null },
             adjustments = if (adjustmentsByAsset.isEmpty()) null else adjustmentsByAsset,
             nodeAdjustments = if (nodeAdjustmentsByAsset.isNotEmpty()) nodeAdjustmentsByAsset else null,
@@ -1674,6 +1680,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
         fun countOf(t: PassiveType) = passiveCounts[t] ?: 0
         val exportDate = Date()
         val exportDateLabel = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(exportDate)
+        val appVersionLabel = "Versión app ${BuildConfig.VERSION_NAME}"
         val logoDataUri = drawableToPngBytes(R.drawable.telecentro_logo, targetW = 140, targetH = 70)?.let { bytes ->
             val encoded = Base64.encodeToString(bytes, Base64.NO_WRAP)
             "data:image/png;base64,$encoded"
@@ -2390,6 +2397,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                           <span class="theme-icon">☀️</span>
                         </div>
                         <div>Exportado: $exportDateLabel</div>
+                        <div>$appVersionLabel</div>
                       </div>
                     </div>
                     <div class="info-grid" id="header-info"></div>
@@ -4217,6 +4225,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
             report = report,
             assets = assets,
             images = imagesMap,
+            appVersionName = BuildConfig.VERSION_NAME,
             reportImages = reportImageRefs.ifEmpty { null },
             adjustments = if (adjustmentsByAsset.isEmpty()) null else adjustmentsByAsset,
             nodeAdjustments = if (nodeAdjustmentsByAsset.isNotEmpty()) nodeAdjustmentsByAsset else null,
@@ -4302,6 +4311,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
             report = report,
             assets = assets,
             images = emptyMap(),
+            appVersionName = BuildConfig.VERSION_NAME,
             reportImages = null,
             adjustments = if (adjustmentsByAsset.isEmpty()) null else adjustmentsByAsset,
             nodeAdjustments = if (nodeAdjustmentsByAsset.isNotEmpty()) nodeAdjustmentsByAsset else null,
@@ -4592,6 +4602,7 @@ data class ExportData(
     val report: MaintenanceReport,
     val assets: List<Asset>,
     val photos: Map<String, List<Photo>>,
+    val appVersionName: String? = null,
     val passives: List<PassiveItem>? = null,
     val reportPhotos: List<ReportPhoto>? = null,
     val nodeAdjustments: Map<String, NodeAdjustment>? = null,
@@ -4619,6 +4630,7 @@ data class ExportDataV2(
     val report: MaintenanceReport,
     val assets: List<Asset>,
     val images: Map<String, List<ExportImageRef>>,
+    val appVersionName: String? = null,
     val reportImages: List<ExportReportImageRef>? = null,
     val adjustments: Map<String, AmplifierAdjustment>? = null,
     val nodeAdjustments: Map<String, NodeAdjustment>? = null,

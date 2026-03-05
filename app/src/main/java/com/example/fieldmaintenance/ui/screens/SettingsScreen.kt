@@ -43,6 +43,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
+import com.example.fieldmaintenance.BuildConfig
 import com.example.fieldmaintenance.ui.navigation.Screen
 import com.example.fieldmaintenance.util.PlanCache
 import com.example.fieldmaintenance.util.PlanCacheStore
@@ -259,6 +260,13 @@ fun SettingsScreen(navController: NavController) {
             val csvLoaded = planCache.sourceUrl == "local_csv" && planCache.rows.isNotEmpty()
             Text(
                 text = if (csvLoaded) "CSV cargado: Sí (${planCache.rows.size} filas)" else "CSV cargado: No",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+            )
+
+            Spacer(Modifier.height(12.dp))
+            Text(
+                text = "Versión app ${BuildConfig.VERSION_NAME}",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
             )
