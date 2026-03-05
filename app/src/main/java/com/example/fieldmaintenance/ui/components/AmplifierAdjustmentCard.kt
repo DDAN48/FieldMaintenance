@@ -168,6 +168,15 @@ fun AmplifierAdjustmentCard(
         }
     }
 
+    fun clearEntradaPlanColumn() {
+        if (inPlanCh50.isNotBlank() || inPlanHigh.isNotBlank()) {
+            inPlanCh50 = ""
+            inPlanHigh = ""
+        }
+    }
+
+    var entradaConfirmed by rememberSaveable(assetId) { mutableStateOf(false) }
+
     // Initialize from DB whenever it arrives, but don't overwrite user edits (dirty=true)
     LaunchedEffect(assetId, initial?.updatedAt) {
         if (assetId.isBlank()) return@LaunchedEffect
@@ -193,6 +202,7 @@ fun AmplifierAdjustmentCard(
         agcHintVisible = false
 
         docsisConfirmed = initial.docsisConfirmed
+        entradaConfirmed = initial.entradaConfirmed
 
         outCh50 = fmt(initial.outCh50Dbmv)
         outCh70 = fmt(initial.outCh70Dbmv)
@@ -222,6 +232,7 @@ fun AmplifierAdjustmentCard(
             outCh116Dbmv = parseDbmv(outCh116),
             outCh136Dbmv = parseDbmv(outCh136),
             docsisConfirmed = docsisConfirmed,
+            entradaConfirmed = entradaConfirmed,
         )
     }
 
@@ -325,6 +336,20 @@ fun AmplifierAdjustmentCard(
                 titleBold = "Niveles ENTRADA",
                 titleLight = ""
             ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedButton(
+                            onClick = {
+                                dirty = true
+                                entradaConfirmed = !entradaConfirmed
+                            }
+                        ) {
+                            Text(if (entradaConfirmed) "Editar" else "Confirmar")
+                        }
+                    }
                     Text(
                         "FWD IN PAD: ${pad?.let { CiscoHfcAmpCalculator.format1(it) } ?: "—"}",
                         style = MaterialTheme.typography.bodySmall,
@@ -387,18 +412,18 @@ fun AmplifierAdjustmentCard(
                                 onChange = { dirty = true; inCh50 = it },
                                 isError = showRequiredErrors && parseDbmv(inCh50) == null,
                                 textColor = if (lowMeasuredBad) ampErrorColor() else null,
-                                enabled = activeEntradaEdit == EntradaEditTarget.MEASURED_LOW,
+                                enabled = !entradaConfirmed && activeEntradaEdit == EntradaEditTarget.MEASURED_LOW,
                                 selected = activeEntradaEdit == EntradaEditTarget.MEASURED_LOW,
-                                onSelect = { activeEntradaEdit = EntradaEditTarget.MEASURED_LOW }
+                                onSelect = { if (!entradaConfirmed) activeEntradaEdit = EntradaEditTarget.MEASURED_LOW }
                             ),
                             highMeasuredFreq to CalcInputState(
                                 value = inHigh,
                                 onChange = { dirty = true; inHigh = it },
                                 isError = showRequiredErrors && parseDbmv(inHigh) == null,
                                 textColor = if (highMeasuredBad) ampErrorColor() else null,
-                                enabled = activeEntradaEdit == EntradaEditTarget.MEASURED_HIGH,
+                                enabled = !entradaConfirmed && activeEntradaEdit == EntradaEditTarget.MEASURED_HIGH,
                                 selected = activeEntradaEdit == EntradaEditTarget.MEASURED_HIGH,
-                                onSelect = { activeEntradaEdit = EntradaEditTarget.MEASURED_HIGH }
+                                onSelect = { if (!entradaConfirmed) activeEntradaEdit = EntradaEditTarget.MEASURED_HIGH }
                             )
                         ),
                         planInputs = mapOf(
@@ -408,12 +433,11 @@ fun AmplifierAdjustmentCard(
                                     if (it == inPlanCh50) return@CalcInputState
                                     dirty = true
                                     inPlanCh50 = it
-                                    clearEntradaMeasuredColumn()
                                 },
                                 isError = showRequiredErrors && parseDbmv(inPlanCh50) == null,
-                                enabled = activeEntradaEdit == EntradaEditTarget.PLAN_LOW,
+                                enabled = !entradaConfirmed && activeEntradaEdit == EntradaEditTarget.PLAN_LOW,
                                 selected = activeEntradaEdit == EntradaEditTarget.PLAN_LOW,
-                                onSelect = { activeEntradaEdit = EntradaEditTarget.PLAN_LOW }
+                                onSelect = { if (!entradaConfirmed) activeEntradaEdit = EntradaEditTarget.PLAN_LOW }
                             ),
                             highPlanFreq to CalcInputState(
                                 value = inPlanHigh,
@@ -421,16 +445,16 @@ fun AmplifierAdjustmentCard(
                                     if (it == inPlanHigh) return@CalcInputState
                                     dirty = true
                                     inPlanHigh = it
-                                    clearEntradaMeasuredColumn()
                                 },
                                 isError = showRequiredErrors && parseDbmv(inPlanHigh) == null,
-                                enabled = activeEntradaEdit == EntradaEditTarget.PLAN_HIGH,
+                                enabled = !entradaConfirmed && activeEntradaEdit == EntradaEditTarget.PLAN_HIGH,
                                 selected = activeEntradaEdit == EntradaEditTarget.PLAN_HIGH,
-                                onSelect = { activeEntradaEdit = EntradaEditTarget.PLAN_HIGH }
+                                onSelect = { if (!entradaConfirmed) activeEntradaEdit = EntradaEditTarget.PLAN_HIGH }
                             )
                         ),
                         onSelectMeasuredFreq = { freq ->
                             if (!isEntradaAnchorFreq(freq)) return@SimpleCalcList
+                            if (entradaConfirmed) return@SimpleCalcList
                             val isLow = isEntradaLowAnchorFreq(freq)
                             val isHigh = isEntradaHighAnchorFreq(freq)
                             val changed = (isLow && inLowFreq != freq) || (isHigh && inHighFreq != freq)
@@ -447,12 +471,13 @@ fun AmplifierAdjustmentCard(
                         },
                         onSelectPlanFreq = { freq ->
                             if (!isEntradaPlanAnchorFreq(freq)) return@SimpleCalcList
+                            if (entradaConfirmed) return@SimpleCalcList
                             val isLow = isEntradaPlanLowAnchorFreq(freq)
                             val isHigh = isEntradaHighAnchorFreq(freq)
                             val changed = (isLow && inPlanLowFreq != freq) || (isHigh && inPlanHighFreq != freq)
                             if (!changed) return@SimpleCalcList
                             dirty = true
-                            clearEntradaMeasuredColumn()
+                            clearEntradaPlanColumn()
                             if (isLow) {
                                 inPlanLowFreq = freq
                                 activeEntradaEdit = EntradaEditTarget.PLAN_LOW

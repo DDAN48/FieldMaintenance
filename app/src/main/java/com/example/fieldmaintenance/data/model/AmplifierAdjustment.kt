@@ -51,5 +51,8 @@ data class AmplifierAdjustment(
     // DOCSIS confirmation (used in adjustment workflow)
     val docsisConfirmed: Boolean = false,
 
+    // Input table confirmation (locks Entrada table to avoid confusion)
+    val entradaConfirmed: Boolean = false,
+
     val updatedAt: Long = System.currentTimeMillis()
 )
