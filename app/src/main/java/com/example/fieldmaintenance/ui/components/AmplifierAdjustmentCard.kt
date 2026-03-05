@@ -573,7 +573,7 @@ fun AmplifierAdjustmentCard(
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             Icon(Icons.Default.Warning, contentDescription = null, tint = ampErrorColor())
                             Text(
-                                "Revisa amplitudes (-20 a 80 dBmV).",
+                                "Revisa amplitudes (-20 a 60 dBmV).",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = ampErrorColor()
                             )
