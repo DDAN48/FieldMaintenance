@@ -531,6 +531,21 @@ fun NodeAdjustmentCard(
                             onToggle = { persist(local.copy(spectrumConfirmed = !local.spectrumConfirmed)) },
                             enabled = frequency != null
                         )
+
+                        Spacer(Modifier.height(4.dp))
+                        Text("DOCSIS", fontWeight = FontWeight.Medium)
+                        val legacyDocsisText = when (frequency) {
+                            Frequency.MHz_42 -> "DOCSIS en el equipo debe estar entre (32 a 37) dBmV ± 1dB"
+                            Frequency.MHz_85 -> "DOCSIS en el equipo debe estar entre (30 a 35) dBmV ± 1dB"
+                            else -> "Selecciona la Frecuencia para ver instrucciones de DOCSIS."
+                        }
+                        // No bloqueante para Legacy: se muestra como confirmación opcional.
+                        ConfirmRow(
+                            text = legacyDocsisText,
+                            confirmed = local.docsisConfirmed,
+                            onToggle = { persist(local.copy(docsisConfirmed = !local.docsisConfirmed)) },
+                            enabled = frequency != null
+                        )
                         }
                     }
             }

@@ -1490,14 +1490,23 @@ fun AddAssetScreen(
                         if (validateAndShowErrors()) {
                             if (assetType == AssetType.AMPLIFIER) {
                                 val existing = repository.listAssetsByReportId(reportId)
-                                val dup = existing.any {
+                                val dupPortAndIndex = existing.any {
                                     it.type == AssetType.AMPLIFIER &&
                                         it.id != workingAssetId &&
                                         it.port == port &&
                                         it.portIndex == portIndex
                                 }
-                                if (dup) {
+                                if (dupPortAndIndex) {
                                     snackbarHostState.showSnackbar("Activo ya existe: ${port?.name}${String.format("%02d", portIndex)}")
+                                    return@launch
+                                }
+                                val dupPortName = existing.any {
+                                    it.type == AssetType.AMPLIFIER &&
+                                        it.id != workingAssetId &&
+                                        it.port == port
+                                }
+                                if (dupPortName) {
+                                    snackbarHostState.showSnackbar("Puerto ya existe: ${port?.name}")
                                     return@launch
                                 }
                             }
