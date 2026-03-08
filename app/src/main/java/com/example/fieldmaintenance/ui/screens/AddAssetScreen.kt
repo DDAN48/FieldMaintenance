@@ -136,6 +136,7 @@ import kotlinx.coroutines.launch
 import java.io.File
 import java.net.URLConnection
 import java.util.UUID
+import android.content.Intent
 
 private data class UpstreamChartPoint(
     val frequencyMHz: Double,
@@ -2494,18 +2495,34 @@ private fun AssetFileSection(
     val moduleDiscardedFile = remember(moduleAssetDir) { File(moduleAssetDir, ".discarded_measurements.txt") }
     var moduleDiscardedLabels by remember(moduleAssetDir) { mutableStateOf(loadDiscardedLabels(moduleDiscardedFile)) }
 
-    val viaviIntent = remember {
-        context.packageManager.getLaunchIntentForPackage("com.viavisolutions.mobiletech")
-    }
     fun startViaviImport(assetTypeForImport: AssetType) {
         onInteraction()
-        if (viaviIntent != null) {
+        val packageName = "com.viavisolutions.mobiletech"
+        val pm = context.packageManager
+        val launchIntent = runCatching {
+            pm.getLaunchIntentForPackage(packageName)
+        }.getOrNull() ?: run {
+            // Fallback: try to resolve a launcher activity explicitly (some devices/apps
+            // can return null transiently).
+            val query = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER).setPackage(packageName)
+            val resolved = pm.queryIntentActivities(query, 0).firstOrNull()
+            resolved?.activityInfo?.let { info ->
+                Intent(Intent.ACTION_MAIN).apply {
+                    addCategory(Intent.CATEGORY_LAUNCHER)
+                    setClassName(info.packageName, info.name)
+                }
+            }
+        }
+        if (launchIntent != null) {
             navController.currentBackStackEntry?.savedStateHandle?.apply {
                 set(PendingMeasurementReportIdKey, asset.reportId)
                 set(PendingMeasurementAssetIdKey, asset.id)
                 set(PendingMeasurementAssetTypeKey, assetTypeForImport.name)
             }
-            runCatching { context.startActivity(viaviIntent) }
+            runCatching {
+                launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(launchIntent)
+            }
                 .onFailure {
                     Toast.makeText(
                         context,
