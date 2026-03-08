@@ -25,10 +25,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalContext
 import com.example.fieldmaintenance.data.model.Frequency
 import com.example.fieldmaintenance.data.model.NodeAdjustment
 import com.example.fieldmaintenance.util.PlanRow
 import java.util.Locale
+import org.json.JSONObject
+import com.example.fieldmaintenance.util.CiscoHfcAmpCalculator
 
 @Composable
 fun NodeAdjustmentCard(
@@ -38,6 +41,8 @@ fun NodeAdjustmentCard(
     frequency: Frequency?,
     technology: String?,
     planRow: PlanRow?,
+    homesPassedHp: Int?,
+    directPlantMHz: Int?,
     adjustment: NodeAdjustment?,
     showRequiredErrors: Boolean,
     onPersist: (NodeAdjustment) -> Unit
@@ -106,6 +111,137 @@ fun NodeAdjustmentCard(
     }
 
     val completeNow = isComplete(local)
+
+    @Composable
+    fun ModuleTargetsTable() {
+        val context = LocalContext.current
+        val rules = remember {
+            runCatching {
+                context.assets.open("measurement_validation.json").use { input ->
+                    val text = input.bufferedReader().use { it.readText() }
+                    JSONObject(text)
+                }
+            }.getOrNull()
+        }
+        val hp = homesPassedHp?.takeIf { it == 500 || it == 2000 }
+        val plant = directPlantMHz?.takeIf { it == 750 || it == 870 || it == 1000 }
+        val channels = listOf(3, 50, 70, 110, 116, 136, 158)
+
+        fun equipmentKeyFor(freq: Frequency?): String? = when (freq) {
+            Frequency.MHz_42 -> "42_55"
+            Frequency.MHz_85 -> "85_105"
+            else -> null
+        }
+
+        fun getTargets(equipmentKey: String, hpKey: String, plantKey: String): Map<Int, Double?> {
+            val table = rules
+                ?.optJSONObject("channelexpert")
+                ?.optJSONObject("node")
+                ?.optJSONObject(equipmentKey)
+                ?.optJSONObject("hpTargets")
+                ?.optJSONObject(hpKey)
+                ?.optJSONObject(plantKey)
+                ?.optJSONObject("channels")
+                ?: return emptyMap()
+            return channels.associateWith { ch ->
+                table.optJSONObject(ch.toString())?.optDouble("target", Double.NaN)?.takeIf { !it.isNaN() }
+            }
+        }
+
+        fun fmtTarget(v: Double?): String {
+            return v?.let { "≈${CiscoHfcAmpCalculator.format1(it)} dBmV" } ?: "—"
+        }
+
+        val headerColor = MaterialTheme.colorScheme.surfaceVariant
+        val borderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)
+        val textSecondary = MaterialTheme.colorScheme.onSurfaceVariant
+
+        val key42 = "42_55"
+        val key85 = "85_105"
+        val hp500_42 = getTargets(key42, "500", "1000")
+        val hp500_85 = getTargets(key85, "500", "1000")
+        val selectedKey = equipmentKeyFor(frequency)
+        val hp2000_1000 = selectedKey?.let { getTargets(it, "2000", "1000") } ?: emptyMap()
+        val hp2000_870 = selectedKey?.let { getTargets(it, "2000", "870") } ?: emptyMap()
+        val hp2000_750 = selectedKey?.let { getTargets(it, "2000", "750") } ?: emptyMap()
+
+        val highlightCol: String? = when (hp) {
+            500 -> if (selectedKey == key85) "HP500_85" else "HP500_42"
+            2000 -> when (plant) {
+                1000 -> "HP2000_1000"
+                870 -> "HP2000_870"
+                750 -> "HP2000_750"
+                else -> null
+            }
+            else -> null
+        }
+
+        fun cellBg(colKey: String): Color? {
+            return if (highlightCol == colKey) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f) else null
+        }
+
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 6.dp)
+        ) {
+            Text(
+                "Tabla de niveles esperados (Módulo)",
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                "Se resalta la combinación según HP y Directa.",
+                style = MaterialTheme.typography.bodySmall,
+                color = textSecondary
+            )
+            Spacer(Modifier.height(6.dp))
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = androidx.compose.foundation.BorderStroke(1.dp, borderColor)
+            ) {
+                Column(modifier = Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 2.dp)
+                    ) {
+                        Text("Piloto", modifier = Modifier.width(56.dp), fontWeight = FontWeight.SemiBold, color = textSecondary)
+                        Text("HP500 1000 42/54", modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold, color = textSecondary)
+                        Text("HP500 1000 85/105", modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold, color = textSecondary)
+                        Text("HP2000 1000", modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold, color = textSecondary)
+                        Text("HP2000 870", modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold, color = textSecondary)
+                        Text("HP2000 750", modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold, color = textSecondary)
+                    }
+                    HorizontalDivider(color = borderColor)
+                    channels.forEach { ch ->
+                        val label = if (ch == 3) "CH3" else "CH$ch"
+                        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Text(label, modifier = Modifier.width(56.dp), fontWeight = FontWeight.SemiBold)
+                            Surface(color = cellBg("HP500_42") ?: Color.Transparent, modifier = Modifier.weight(1f)) {
+                                Text(fmtTarget(hp500_42[ch]), modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp), style = MaterialTheme.typography.bodySmall)
+                            }
+                            Surface(color = cellBg("HP500_85") ?: Color.Transparent, modifier = Modifier.weight(1f)) {
+                                Text(fmtTarget(hp500_85[ch]), modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp), style = MaterialTheme.typography.bodySmall)
+                            }
+                            Surface(color = cellBg("HP2000_1000") ?: Color.Transparent, modifier = Modifier.weight(1f)) {
+                                Text(fmtTarget(hp2000_1000[ch]), modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp), style = MaterialTheme.typography.bodySmall)
+                            }
+                            Surface(color = cellBg("HP2000_870") ?: Color.Transparent, modifier = Modifier.weight(1f)) {
+                                Text(fmtTarget(hp2000_870[ch]), modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp), style = MaterialTheme.typography.bodySmall)
+                            }
+                            Surface(color = cellBg("HP2000_750") ?: Color.Transparent, modifier = Modifier.weight(1f)) {
+                                Text(fmtTarget(hp2000_750[ch]), modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp), style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                        HorizontalDivider(color = borderColor.copy(alpha = 0.6f))
+                    }
+                }
+            }
+        }
+    }
 
     fun persist(newAdj: NodeAdjustment) {
         // Persist snapshot of Plan values + confirmations (only if plan data is available).
@@ -378,6 +514,8 @@ fun NodeAdjustmentCard(
                             )
                             
                             Spacer(Modifier.height(4.dp))
+                            Text("MODULO", fontWeight = FontWeight.SemiBold)
+
                             Text("Espectro", fontWeight = FontWeight.Medium)
                             val spectrumText = when (frequency) {
                                 Frequency.MHz_42 ->
@@ -406,6 +544,8 @@ fun NodeAdjustmentCard(
                                 onToggle = { persist(local.copy(docsisConfirmed = !local.docsisConfirmed)) },
                                 enabled = frequency != null
                             )
+
+                            ModuleTargetsTable()
                         }
                         !isLegacy -> {
                             // Other non-Legacy technologies
@@ -442,6 +582,14 @@ fun NodeAdjustmentCard(
                                 val next = !local.tx1550Confirmed
                                 persist(local.copy(tx1550Confirmed = next, tx1310Confirmed = if (next) false else local.tx1310Confirmed))
                             }
+                        )
+
+                        Spacer(Modifier.height(4.dp))
+                        Text("Medición", fontWeight = FontWeight.Medium)
+                        ConfirmRow(
+                            text = "Confirmar en el test point de la RX que no hay errores en los canales digitales y que estén 6dB por debajo de los pilotos analógicos.",
+                            confirmed = local.measurementConfirmed,
+                            onToggle = { persist(local.copy(measurementConfirmed = !local.measurementConfirmed)) }
                         )
 
                         Spacer(Modifier.height(2.dp))
@@ -509,14 +657,8 @@ fun NodeAdjustmentCard(
                         }
 
                         Spacer(Modifier.height(4.dp))
-                        Text("Medición", fontWeight = FontWeight.Medium)
-                        ConfirmRow(
-                            text = "Confirmar en el test point de la RX que no hay errores en los canales digitales y que estén 6dB por debajo de los pilotos analógicos.",
-                            confirmed = local.measurementConfirmed,
-                            onToggle = { persist(local.copy(measurementConfirmed = !local.measurementConfirmed)) }
-                        )
+                        Text("MODULO", fontWeight = FontWeight.SemiBold)
 
-                        Spacer(Modifier.height(4.dp))
                         Text("Espectro", fontWeight = FontWeight.Medium)
                         val spectrumText = when (frequency) {
                             Frequency.MHz_42 ->
@@ -546,6 +688,8 @@ fun NodeAdjustmentCard(
                             onToggle = { persist(local.copy(docsisConfirmed = !local.docsisConfirmed)) },
                             enabled = frequency != null
                         )
+
+                        ModuleTargetsTable()
                         }
                     }
             }

@@ -1249,6 +1249,8 @@ fun AddAssetScreen(
                         frequency = frequency,
                         technology = technology,
                         planRow = planRowForNode,
+                        homesPassedHp = report?.homesPassedHp,
+                        directPlantMHz = report?.directPlantMHz,
                         adjustment = nodeAdjustment,
                         showRequiredErrors = attemptedSave,
                         onPersist = { adj ->
