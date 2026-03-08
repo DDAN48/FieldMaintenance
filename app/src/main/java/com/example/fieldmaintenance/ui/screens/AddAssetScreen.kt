@@ -2550,6 +2550,31 @@ private fun AssetFileSection(
         lastIdentityKey = identityKey
         if (!enableIdentityReset) return@LaunchedEffect
 
+        // Guard against accidental identity "changes" caused by transient null/blank UI state
+        // (e.g. returning from file picker/Viavi). Only reset when BOTH previous and current
+        // identity keys are "complete" for their asset type.
+        fun isCompleteIdentity(key: String): Boolean {
+            val parts = key.split("|")
+            // Expected order from caller: type|freq|tech|meter|mode|port|portIndex
+            if (parts.isEmpty()) return false
+            val type = parts.getOrNull(0).orEmpty()
+            val freq = parts.getOrNull(1).orEmpty()
+            val tech = parts.getOrNull(2).orEmpty()
+            val meter = parts.getOrNull(3).orEmpty()
+            val mode = parts.getOrNull(4).orEmpty()
+            val port = parts.getOrNull(5).orEmpty()
+            val portIndex = parts.getOrNull(6).orEmpty()
+            return when (type.uppercase(Locale.getDefault())) {
+                "AMPLIFIER" -> freq.isNotBlank() && meter.isNotBlank() && mode.isNotBlank() && port.isNotBlank() && portIndex.isNotBlank()
+                "NODE" -> freq.isNotBlank() && tech.isNotBlank() && meter.isNotBlank()
+                else -> false
+            }
+        }
+        if (!isCompleteIdentity(prev) || !isCompleteIdentity(identityKey)) {
+            // Keep lastIdentityKey updated, but do NOT wipe adjustments/files on incomplete identity.
+            return@LaunchedEffect
+        }
+
         withContext(Dispatchers.IO) {
             // Reset adjustments (force user to confirm again with the new identity).
             repository.deleteNodeAdjustmentByAssetId(asset.id)
