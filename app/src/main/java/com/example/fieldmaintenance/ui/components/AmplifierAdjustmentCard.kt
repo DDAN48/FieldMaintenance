@@ -679,6 +679,27 @@ fun AmplifierAdjustmentCard(
                             }
                         }
                     }
+
+                    Spacer(Modifier.height(10.dp))
+                    Text("Espectro", fontWeight = FontWeight.SemiBold)
+                    val spectrumText = when (amplifierMode) {
+                        AmplifierMode.LE -> when (bandwidth) {
+                            Frequency.MHz_42 -> "Inyectar portadoras con el medidor de campo (DSAM 630 / ONX One Expert) a través del Test Point de entrada del retorno.\nEn nodos de 42Mhz: 2 (dos) portadoras ubicadas en 10Mhz y 42Mhz con una amplitud de 37 dBmv."
+                            Frequency.MHz_85 -> "Inyectar portadoras con el medidor de campo (DSAM 630 / ONX One Expert) a través del Test Point de entrada del retorno.\nEn nodos de 85Mhz: 3(tres) portadoras ubicadas en 10 Mhz, 42 Mhz y 84,5 Mhz con una amplitud de 35dBmv."
+                            else -> "Selecciona la Frecuencia para ver instrucciones de Espectro."
+                        }
+                        AmplifierMode.HGD, AmplifierMode.HGDT -> when (bandwidth) {
+                            Frequency.MHz_42 -> "En nodos de 42Mhz: 2 (dos) portadoras ubicadas en 10Mhz y 42Mhz con una amplitud de 20dBmv."
+                            Frequency.MHz_85 -> "En nodos de 85Mhz: 3(tres) portadoras ubicadas en 10 Mhz, 42 Mhz y 84,5Mhz con una amplitud de 15dBmv."
+                            else -> "Selecciona la Frecuencia para ver instrucciones de Espectro."
+                        }
+                        else -> "Selecciona Tipo de Amplificador para ver instrucciones de Espectro."
+                    }
+                    Text(
+                        text = spectrumText,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = ampTextSecondary()
+                    )
             }
         }
     }
