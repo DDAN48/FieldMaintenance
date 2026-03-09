@@ -152,9 +152,9 @@ fun NodeAdjustmentCard(
             return v?.let { "≈${CiscoHfcAmpCalculator.format1(it)} dBmV" } ?: "—"
         }
 
-        val headerColor = MaterialTheme.colorScheme.surfaceVariant
         val borderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)
         val textSecondary = MaterialTheme.colorScheme.onSurfaceVariant
+        val highlightColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
 
         val key42 = "42_55"
         val key85 = "85_105"
@@ -176,8 +176,8 @@ fun NodeAdjustmentCard(
             else -> null
         }
 
-        fun cellBg(colKey: String): Color? {
-            return if (highlightCol == colKey) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f) else null
+        fun cellBg(colKey: String): Color {
+            return if (highlightCol == colKey) highlightColor else Color.Transparent
         }
 
         Column(
@@ -220,19 +220,19 @@ fun NodeAdjustmentCard(
                         val label = if (ch == 3) "CH3" else "CH$ch"
                         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                             Text(label, modifier = Modifier.width(56.dp), fontWeight = FontWeight.SemiBold)
-                            Surface(color = cellBg("HP500_42") ?: Color.Transparent, modifier = Modifier.weight(1f)) {
+                            Surface(color = cellBg("HP500_42"), modifier = Modifier.weight(1f)) {
                                 Text(fmtTarget(hp500_42[ch]), modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp), style = MaterialTheme.typography.bodySmall)
                             }
-                            Surface(color = cellBg("HP500_85") ?: Color.Transparent, modifier = Modifier.weight(1f)) {
+                            Surface(color = cellBg("HP500_85"), modifier = Modifier.weight(1f)) {
                                 Text(fmtTarget(hp500_85[ch]), modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp), style = MaterialTheme.typography.bodySmall)
                             }
-                            Surface(color = cellBg("HP2000_1000") ?: Color.Transparent, modifier = Modifier.weight(1f)) {
+                            Surface(color = cellBg("HP2000_1000"), modifier = Modifier.weight(1f)) {
                                 Text(fmtTarget(hp2000_1000[ch]), modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp), style = MaterialTheme.typography.bodySmall)
                             }
-                            Surface(color = cellBg("HP2000_870") ?: Color.Transparent, modifier = Modifier.weight(1f)) {
+                            Surface(color = cellBg("HP2000_870"), modifier = Modifier.weight(1f)) {
                                 Text(fmtTarget(hp2000_870[ch]), modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp), style = MaterialTheme.typography.bodySmall)
                             }
-                            Surface(color = cellBg("HP2000_750") ?: Color.Transparent, modifier = Modifier.weight(1f)) {
+                            Surface(color = cellBg("HP2000_750"), modifier = Modifier.weight(1f)) {
                                 Text(fmtTarget(hp2000_750[ch]), modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp), style = MaterialTheme.typography.bodySmall)
                             }
                         }
