@@ -124,7 +124,7 @@ fun NodeAdjustmentCard(
             }.getOrNull()
         }
         val hp = homesPassedHp?.takeIf { it == 500 || it == 2000 }
-        val plant = directPlantMHz?.takeIf { it == 750 || it == 870 || it == 1000 }
+        val direct = directPlantMHz?.takeIf { it == 750 || it == 870 || it == 1000 }
         val channels = listOf(3, 50, 70, 110, 116, 136, 158)
 
         fun equipmentKeyFor(freq: Frequency?): String? = when (freq) {
@@ -154,30 +154,20 @@ fun NodeAdjustmentCard(
 
         val borderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)
         val textSecondary = MaterialTheme.colorScheme.onSurfaceVariant
-        val highlightColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
 
-        val key42 = "42_55"
-        val key85 = "85_105"
-        val hp500_42 = getTargets(key42, "500", "1000")
-        val hp500_85 = getTargets(key85, "500", "1000")
-        val selectedKey = equipmentKeyFor(frequency)
-        val hp2000_1000 = selectedKey?.let { getTargets(it, "2000", "1000") } ?: emptyMap()
-        val hp2000_870 = selectedKey?.let { getTargets(it, "2000", "870") } ?: emptyMap()
-        val hp2000_750 = selectedKey?.let { getTargets(it, "2000", "750") } ?: emptyMap()
-
-        val highlightCol: String? = when (hp) {
-            500 -> if (selectedKey == key85) "HP500_85" else "HP500_42"
-            2000 -> when (plant) {
-                1000 -> "HP2000_1000"
-                870 -> "HP2000_870"
-                750 -> "HP2000_750"
-                else -> null
-            }
+        val equipmentKey = equipmentKeyFor(frequency)
+        val hpKey = hp?.toString()
+        // Table rule: HP500 only provides 1000 MHz targets; HP2000 uses selected plant.
+        val effectiveDirect = when (hp) {
+            500 -> 1000
+            2000 -> direct
             else -> null
         }
-
-        fun cellBg(colKey: String): Color {
-            return if (highlightCol == colKey) highlightColor else Color.Transparent
+        val plantKey = effectiveDirect?.toString()
+        val targets = if (equipmentKey != null && hpKey != null && plantKey != null) {
+            getTargets(equipmentKey, hpKey, plantKey)
+        } else {
+            emptyMap()
         }
 
         Column(
@@ -190,8 +180,14 @@ fun NodeAdjustmentCard(
                 style = MaterialTheme.typography.bodySmall,
                 fontWeight = FontWeight.SemiBold
             )
+            Text("Hogares Pasados (HP): ${hp?.toString() ?: "—"}", style = MaterialTheme.typography.bodySmall, color = textSecondary)
             Text(
-                "Se resalta la combinación según HP y Directa.",
+                "Frecuencia Directa (MHz): ${effectiveDirect?.toString() ?: "—"}${if (hp == 500 && direct != null && direct != 1000) " (HP500 usa 1000)" else ""}",
+                style = MaterialTheme.typography.bodySmall,
+                color = textSecondary
+            )
+            Text(
+                "Frecuencia Retorno (MHz): ${when (frequency) { Frequency.MHz_42 -> "42"; Frequency.MHz_85 -> "85"; else -> "—" }}",
                 style = MaterialTheme.typography.bodySmall,
                 color = textSecondary
             )
@@ -203,38 +199,28 @@ fun NodeAdjustmentCard(
                 border = androidx.compose.foundation.BorderStroke(1.dp, borderColor)
             ) {
                 Column(modifier = Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 2.dp)
-                    ) {
-                        Text("Piloto", modifier = Modifier.width(56.dp), fontWeight = FontWeight.SemiBold, color = textSecondary)
-                        Text("HP500 1000 42/54", modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold, color = textSecondary)
-                        Text("HP500 1000 85/105", modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold, color = textSecondary)
-                        Text("HP2000 1000", modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold, color = textSecondary)
-                        Text("HP2000 870", modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold, color = textSecondary)
-                        Text("HP2000 750", modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold, color = textSecondary)
+                    if (targets.isEmpty()) {
+                        Text(
+                            "No hay datos para mostrar (verifica HP/Directa/Retorno).",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = textSecondary
+                        )
+                        return@Column
+                    }
+                    Row(modifier = Modifier.fillMaxWidth().padding(bottom = 2.dp)) {
+                        Text("Piloto", modifier = Modifier.width(64.dp), fontWeight = FontWeight.SemiBold, color = textSecondary)
+                        Text("Esperado", modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold, color = textSecondary)
                     }
                     HorizontalDivider(color = borderColor)
                     channels.forEach { ch ->
                         val label = if (ch == 3) "CH3" else "CH$ch"
                         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                            Text(label, modifier = Modifier.width(56.dp), fontWeight = FontWeight.SemiBold)
-                            Surface(color = cellBg("HP500_42"), modifier = Modifier.weight(1f)) {
-                                Text(fmtTarget(hp500_42[ch]), modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp), style = MaterialTheme.typography.bodySmall)
-                            }
-                            Surface(color = cellBg("HP500_85"), modifier = Modifier.weight(1f)) {
-                                Text(fmtTarget(hp500_85[ch]), modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp), style = MaterialTheme.typography.bodySmall)
-                            }
-                            Surface(color = cellBg("HP2000_1000"), modifier = Modifier.weight(1f)) {
-                                Text(fmtTarget(hp2000_1000[ch]), modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp), style = MaterialTheme.typography.bodySmall)
-                            }
-                            Surface(color = cellBg("HP2000_870"), modifier = Modifier.weight(1f)) {
-                                Text(fmtTarget(hp2000_870[ch]), modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp), style = MaterialTheme.typography.bodySmall)
-                            }
-                            Surface(color = cellBg("HP2000_750"), modifier = Modifier.weight(1f)) {
-                                Text(fmtTarget(hp2000_750[ch]), modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp), style = MaterialTheme.typography.bodySmall)
-                            }
+                            Text(label, modifier = Modifier.width(64.dp), fontWeight = FontWeight.SemiBold)
+                            Text(
+                                fmtTarget(targets[ch]),
+                                modifier = Modifier.weight(1f),
+                                style = MaterialTheme.typography.bodySmall
+                            )
                         }
                         HorizontalDivider(color = borderColor.copy(alpha = 0.6f))
                     }
