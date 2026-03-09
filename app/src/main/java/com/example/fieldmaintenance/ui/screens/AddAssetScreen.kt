@@ -1503,15 +1503,6 @@ fun AddAssetScreen(
                                     snackbarHostState.showSnackbar("Activo ya existe: ${port?.name}${String.format("%02d", portIndex)}")
                                     return@launch
                                 }
-                                val dupPortName = existing.any {
-                                    it.type == AssetType.AMPLIFIER &&
-                                        it.id != workingAssetId &&
-                                        it.port == port
-                                }
-                                if (dupPortName) {
-                                    snackbarHostState.showSnackbar("Puerto ya existe: ${port?.name}")
-                                    return@launch
-                                }
                             }
                             val fixedAsset = asset.copy(frequencyMHz = frequency!!.mhz)
                             if (isEdit) viewModel.updateAsset(asset) else viewModel.addAsset(asset)
