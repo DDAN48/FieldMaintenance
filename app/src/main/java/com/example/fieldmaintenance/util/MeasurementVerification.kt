@@ -319,6 +319,13 @@ private fun collectChannelRows(json: Any?): List<ChannelRow> {
     return rows
 }
 
+private fun isExcludedDocsisFrequencyMHz(freqMHz: Double?): Boolean {
+    if (freqMHz == null) return false
+    // Viavi/ONX often reports an extra DOCSIS point around 42.5 MHz tied to OFDM,
+    // which is expected to be lower and should not be validated.
+    return kotlin.math.abs(freqMHz - 42.5) <= 0.6
+}
+
 private fun collectMerPairs(results: JSONObject?): List<Pair<Double, Double>> {
     val pairs = mutableListOf<Pair<Double, Double>>()
     val data = results
@@ -497,6 +504,7 @@ private fun validateMeasurementValues(
             docsisRange(ruleTable)
         }
         rows.forEach { row ->
+            if (isExcludedDocsisFrequencyMHz(row.frequencyMHz)) return@forEach
             val level = row.levelDbmv ?: return@forEach
             val adjusted = level + testPointOffset
             if (!isWithinRange(adjusted, min, max)) {
@@ -1133,7 +1141,11 @@ suspend fun verifyMeasurementFiles(
                 }
                 val testPointOffset = parseTestPointOffset(test)
                 val rows = collectChannelRows(results)
-                val docsisFrequencies = rows.mapNotNull { it.frequencyMHz }.distinct().sorted()
+                val docsisFrequencies = rows
+                    .mapNotNull { it.frequencyMHz }
+                    .filterNot(::isExcludedDocsisFrequencyMHz)
+                    .distinct()
+                    .sorted()
                 val pilotChannels = listOf(50, 70, 110, 116, 136)
 
                 val docsisMeta = docsisFrequencies.associateWith { freq ->
@@ -1192,6 +1204,7 @@ suspend fun verifyMeasurementFiles(
                         docsisRange(docsisRules)
                     }
                     docsisLevels.forEach { (freq, level) ->
+                        if (isExcludedDocsisFrequencyMHz(freq)) return@forEach
                         val adjusted = level + testPointOffset
                         docsisOk[freq] = isWithinRange(adjusted, min, max)
                     }
