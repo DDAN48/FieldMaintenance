@@ -4,6 +4,14 @@
       "42_55": { "min": 31, "max": 38 },
       "85_105": { "min": 29, "max": 36 }
     },
+    "nodeTechOverrides": {
+      "vccap": {
+        "42_55": { "min": 29, "max": 34 }
+      },
+      "vccaphibrido": {
+        "42_55": { "min": 29, "max": 34 }
+      }
+    },
     "amplifier": {
       "42_55": { "min": 28, "max": 35 },
       "85_105": { "min": 29, "max": 36 }

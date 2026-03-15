@@ -395,6 +395,25 @@ private fun docsisRange(ruleTable: JSONObject?): Pair<Double?, Double?> {
     return null to null
 }
 
+private fun docsisRangeForNode(
+    rules: JSONObject?,
+    equipmentKey: String,
+    techKey: String?
+): Pair<Double?, Double?> {
+    val docsis = rules?.optJSONObject("docsisexpert") ?: return null to null
+    val normalizedTech = techKey?.trim()?.lowercase(Locale.getDefault())?.replace("_", "")?.replace(" ", "")
+    if (!normalizedTech.isNullOrBlank()) {
+        val overrideTable = docsis
+            .optJSONObject("nodeTechOverrides")
+            ?.optJSONObject(normalizedTech)
+            ?.optJSONObject(equipmentKey)
+        val (omin, omax) = docsisRange(overrideTable)
+        if (omin != null || omax != null) return omin to omax
+    }
+    val defaultTable = docsis.optJSONObject("node")?.optJSONObject(equipmentKey)
+    return docsisRange(defaultTable)
+}
+
 private data class LegacyTxTargets(
     val txType: String,
     val pilotTarget: Double,
@@ -437,6 +456,7 @@ private fun validateMeasurementValues(
     assetType: AssetType,
     amplifierTargets: Map<Int, Double>?,
     nodeTxType: String?,
+    techKey: String?,
     homesPassedHp: Int?,
     directPlantMHz: Int?,
     isLegacyNode: Boolean,
@@ -465,13 +485,17 @@ private fun validateMeasurementValues(
     }
 
     if (type == "docsisexpert") {
-        val ruleTable = rules.optJSONObject("docsisexpert")
-            ?.optJSONObject(assetKey)
-            ?.optJSONObject(equipmentKey)
-        if (ruleTable == null) {
-            return listOf("No hay reglas de DOCSIS para $assetKey/$equipmentKey.")
+        val (min, max) = if (assetType == AssetType.NODE) {
+            docsisRangeForNode(rules, equipmentKey, techKey)
+        } else {
+            val ruleTable = rules.optJSONObject("docsisexpert")
+                ?.optJSONObject(assetKey)
+                ?.optJSONObject(equipmentKey)
+            if (ruleTable == null) {
+                return listOf("No hay reglas de DOCSIS para $assetKey/$equipmentKey.")
+            }
+            docsisRange(ruleTable)
         }
-        val (min, max) = docsisRange(ruleTable)
         rows.forEach { row ->
             val level = row.levelDbmv ?: return@forEach
             val adjusted = level + testPointOffset
@@ -797,6 +821,11 @@ suspend fun verifyMeasurementFiles(
     val geoIssueDetails = mutableListOf<GeoIssueDetail>()
     val rules = loadMeasurementRules(context)
     val equipmentKey = equipmentKeyFor(asset)
+    val techKey = asset.technology
+        ?.trim()
+        ?.lowercase(Locale.getDefault())
+        ?.replace("_", "")
+        ?.replace(" ", "")
     val amplifierAdjustment = if (assetType == AssetType.AMPLIFIER) {
         repository.getAmplifierAdjustmentOne(asset.id)
     } else {
@@ -1157,7 +1186,11 @@ suspend fun verifyMeasurementFiles(
                     val docsisRules = rules.optJSONObject("docsisexpert")
                         ?.optJSONObject(assetKey)
                         ?.optJSONObject(equipmentKey)
-                    val (min, max) = docsisRange(docsisRules)
+                    val (min, max) = if (assetType == AssetType.NODE) {
+                        docsisRangeForNode(rules, equipmentKey, techKey)
+                    } else {
+                        docsisRange(docsisRules)
+                    }
                     docsisLevels.forEach { (freq, level) ->
                         val adjusted = level + testPointOffset
                         docsisOk[freq] = isWithinRange(adjusted, min, max)
@@ -1289,6 +1322,7 @@ suspend fun verifyMeasurementFiles(
                     assetType = assetType,
                     amplifierTargets = amplifierTargets,
                     nodeTxType = nodeTxType,
+                    techKey = techKey,
                     homesPassedHp = homesPassedHp,
                     directPlantMHz = directPlantMHz,
                     isLegacyNode = assetType == AssetType.NODE && asset.technology?.equals("Legacy", ignoreCase = true) == true,
