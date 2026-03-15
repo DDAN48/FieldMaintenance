@@ -73,7 +73,7 @@ private suspend fun isAssetIncomplete(
             adj.inputCh116Dbmv != null &&
             (adj.inputHighFreqMHz == 750 || adj.inputHighFreqMHz == 870 || adj.inputHighFreqMHz == 1000) &&
             (adj.inputLowFreqMHz == 61 || adj.inputLowFreqMHz == 379) &&
-            (adj.inputPlanLowFreqMHz == 61 || adj.inputPlanLowFreqMHz == 102 || adj.inputPlanLowFreqMHz == 379) &&
+            (adj.inputPlanLowFreqMHz == 54 || adj.inputPlanLowFreqMHz == 61 || adj.inputPlanLowFreqMHz == 102 || adj.inputPlanLowFreqMHz == 379) &&
             (adj.inputPlanHighFreqMHz == 750 || adj.inputPlanHighFreqMHz == 870 || adj.inputPlanHighFreqMHz == 1000) &&
             adj.planLowDbmv != null &&
             adj.planHighDbmv != null &&

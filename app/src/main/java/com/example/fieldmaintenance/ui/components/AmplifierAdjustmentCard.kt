@@ -111,7 +111,7 @@ private fun isEntradaHighAnchorFreq(freqMHz: Int): Boolean = freqMHz == 750 || f
 private fun isEntradaAnchorFreq(freqMHz: Int): Boolean = isEntradaLowAnchorFreq(freqMHz) || isEntradaHighAnchorFreq(freqMHz)
 
 // Plan anchor allows using L102 as the "low" point too.
-private fun isEntradaPlanLowAnchorFreq(freqMHz: Int): Boolean = isEntradaLowAnchorFreq(freqMHz) || freqMHz == 102
+private fun isEntradaPlanLowAnchorFreq(freqMHz: Int): Boolean = isEntradaLowAnchorFreq(freqMHz) || freqMHz == 54 || freqMHz == 102
 private fun isEntradaPlanAnchorFreq(freqMHz: Int): Boolean = isEntradaPlanLowAnchorFreq(freqMHz) || isEntradaHighAnchorFreq(freqMHz)
 
 @Composable

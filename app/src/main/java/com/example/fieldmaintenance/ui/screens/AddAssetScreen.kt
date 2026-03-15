@@ -553,7 +553,7 @@ fun AddAssetScreen(
             ampAdj.inputCh116Dbmv != null &&
             (ampAdj.inputHighFreqMHz == 750 || ampAdj.inputHighFreqMHz == 870 || ampAdj.inputHighFreqMHz == 1000) &&
             (ampAdj.inputLowFreqMHz == 61 || ampAdj.inputLowFreqMHz == 379) &&
-            (ampAdj.inputPlanLowFreqMHz == 61 || ampAdj.inputPlanLowFreqMHz == 102 || ampAdj.inputPlanLowFreqMHz == 379) &&
+            (ampAdj.inputPlanLowFreqMHz == 54 || ampAdj.inputPlanLowFreqMHz == 61 || ampAdj.inputPlanLowFreqMHz == 102 || ampAdj.inputPlanLowFreqMHz == 379) &&
             (ampAdj.inputPlanHighFreqMHz == 750 || ampAdj.inputPlanHighFreqMHz == 870 || ampAdj.inputPlanHighFreqMHz == 1000) &&
             ampAdj.planLowDbmv != null &&
             ampAdj.planHighDbmv != null &&
@@ -710,7 +710,7 @@ fun AddAssetScreen(
                 ampAdj.inputCh116Dbmv != null &&
                 (ampAdj.inputHighFreqMHz == 750 || ampAdj.inputHighFreqMHz == 870 || ampAdj.inputHighFreqMHz == 1000) &&
                 (ampAdj.inputLowFreqMHz == 61 || ampAdj.inputLowFreqMHz == 379) &&
-                (ampAdj.inputPlanLowFreqMHz == 61 || ampAdj.inputPlanLowFreqMHz == 102 || ampAdj.inputPlanLowFreqMHz == 379) &&
+                (ampAdj.inputPlanLowFreqMHz == 54 || ampAdj.inputPlanLowFreqMHz == 61 || ampAdj.inputPlanLowFreqMHz == 102 || ampAdj.inputPlanLowFreqMHz == 379) &&
                 (ampAdj.inputPlanHighFreqMHz == 750 || ampAdj.inputPlanHighFreqMHz == 870 || ampAdj.inputPlanHighFreqMHz == 1000) &&
                 ampAdj.planLowDbmv != null &&
                 ampAdj.planHighDbmv != null &&
