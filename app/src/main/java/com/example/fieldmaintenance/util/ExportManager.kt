@@ -1151,7 +1151,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                         return@forEach
                     }
 
-                    val required = requiredCounts(measurementAsset.type, isModule = measurementAsset.type == AssetType.AMPLIFIER && asset.type == AssetType.NODE)
+                    val required = requiredCounts(measurementAsset, isModule = measurementAsset.type == AssetType.AMPLIFIER && asset.type == AssetType.NODE)
                     val summary = verifyMeasurementFiles(
                         context = context,
                         files = files,
@@ -3684,7 +3684,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
         val files = dir.listFiles()?.filter { it.isFile } ?: emptyList()
         if (files.isEmpty()) return MeasurementGroupResult(group = null, summary = null)
         val discardedLabels = loadDiscardedLabels(File(dir, ".discarded_measurements.txt"))
-        val required = requiredCounts(asset.type, isModule = label == "Módulo")
+        val required = requiredCounts(asset, isModule = label == "Módulo")
         val summary = verifyMeasurementFiles(
             context = context,
             files = files,

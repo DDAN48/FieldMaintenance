@@ -57,9 +57,21 @@ fun requiredCounts(assetType: AssetType, isModule: Boolean): RequiredCounts {
                 RequiredCounts(expectedDocsis = 0, expectedChannel = 1, maxDocsisTable = 0, maxChannelTable = 1)
             }
             AssetType.AMPLIFIER -> {
+                // Default amplifier requirements (legacy workflow).
                 RequiredCounts(expectedDocsis = 3, expectedChannel = 4, maxDocsisTable = 3, maxChannelTable = 4)
             }
         }
+    }
+}
+
+fun requiredCounts(asset: Asset, isModule: Boolean): RequiredCounts {
+    if (asset.type != AssetType.AMPLIFIER) return requiredCounts(asset.type, isModule)
+    if (isModule) return requiredCounts(asset.type, isModule)
+    return when (asset.amplifierMode) {
+        com.example.fieldmaintenance.data.model.AmplifierMode.LE -> {
+            RequiredCounts(expectedDocsis = 1, expectedChannel = 2, maxDocsisTable = 1, maxChannelTable = 2)
+        }
+        else -> requiredCounts(asset.type, isModule)
     }
 }
 
@@ -749,11 +761,11 @@ suspend fun verifyMeasurementFiles(
     val isLegacyNode = assetType == AssetType.NODE && asset.technology?.equals("Legacy", ignoreCase = true) == true
     val expectedDocsis = expectedDocsisOverride ?: when (assetType) {
         AssetType.NODE -> 0
-        AssetType.AMPLIFIER -> 4
+        AssetType.AMPLIFIER -> if (asset.amplifierMode == com.example.fieldmaintenance.data.model.AmplifierMode.LE) 1 else 4
     }
     val expectedChannel = expectedChannelOverride ?: when (assetType) {
         AssetType.NODE -> 5
-        AssetType.AMPLIFIER -> 4
+        AssetType.AMPLIFIER -> if (asset.amplifierMode == com.example.fieldmaintenance.data.model.AmplifierMode.LE) 2 else 4
     }
 
     val switchPrefs = context.getSharedPreferences("measurement_switch_positions", Context.MODE_PRIVATE)

@@ -2653,7 +2653,7 @@ private fun AssetFileSection(
         }
         rxDiscardedLabels = updated
         saveDiscardedLabels(rxDiscardedFile, updated)
-        val rxRequired = requiredCounts(asset.type, isModule = false)
+        val rxRequired = requiredCounts(asset, isModule = false)
         scope.launch {
             verificationSummaryRx = verifyMeasurementFiles(
                 context,
@@ -2679,7 +2679,7 @@ private fun AssetFileSection(
         }
         moduleDiscardedLabels = updated
         saveDiscardedLabels(moduleDiscardedFile, updated)
-        val moduleRequired = requiredCounts(moduleValidationAsset.type, isModule = true)
+        val moduleRequired = requiredCounts(moduleValidationAsset, isModule = true)
         scope.launch {
             verificationSummaryModule = verifyMeasurementFiles(
                 context,
@@ -2704,7 +2704,7 @@ private fun AssetFileSection(
             verificationSummaryRx = null
             return@LaunchedEffect
         }
-        val rxRequired = requiredCounts(asset.type, isModule = false)
+        val rxRequired = requiredCounts(asset, isModule = false)
         if (rxFiles.isNotEmpty()) {
             val summary = verifyMeasurementFiles(
                 context,
@@ -2747,7 +2747,7 @@ private fun AssetFileSection(
             verificationSummaryModule = null
             return@LaunchedEffect
         }
-        val moduleRequired = requiredCounts(moduleValidationAsset.type, isModule = true)
+        val moduleRequired = requiredCounts(moduleValidationAsset, isModule = true)
         if (moduleFiles.isNotEmpty()) {
             val summary = verifyMeasurementFiles(
                 context,
@@ -2805,9 +2805,9 @@ private fun AssetFileSection(
                 listMeasurementPayloadFiles(rxAssetDir)
             }
             val required = if (isModule) {
-                requiredCounts(moduleValidationAsset.type, isModule = true)
+                requiredCounts(moduleValidationAsset, isModule = true)
             } else {
-                requiredCounts(asset.type, isModule = false)
+                requiredCounts(asset, isModule = false)
             }
             val summary = if (updated.isNotEmpty()) {
                 verifyMeasurementFiles(
@@ -2873,8 +2873,8 @@ private fun AssetFileSection(
                 .padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            val rxRequired = requiredCounts(asset.type, isModule = false)
-            val moduleRequired = requiredCounts(moduleAsset.type, isModule = true)
+            val rxRequired = requiredCounts(asset, isModule = false)
+            val moduleRequired = requiredCounts(moduleAsset, isModule = true)
             val canRefresh = when {
                 // DSAM measurement photos are optional (non-blocking).
                 isDsam -> true
@@ -3044,7 +3044,7 @@ private fun AssetFileSection(
                 ) {
                     val docsisEntries = summary.result.measurementEntries.filter { it.type == "docsisexpert" }
                     val channelEntries = summary.result.measurementEntries.filter { it.type == "channelexpert" }
-                    val required = requiredCounts(assetForDisplay.type, isModule)
+                    val required = requiredCounts(assetForDisplay, isModule)
 
                     val docsisListEntries = docsisEntries.filterNot { it.isDiscarded }
                     val channelListEntries = channelEntries.filterNot { it.isDiscarded }
@@ -4392,7 +4392,7 @@ private fun AssetFileSection(
                                     )
                                 } ?: run {
                                     // Show required measurement types even if empty, so user knows what to load.
-                                    val required = requiredCounts(moduleValidationAsset.type, isModule = true)
+                                    val required = requiredCounts(moduleValidationAsset, isModule = true)
                                     val docsisCountLabel = "0/${required.expectedDocsis}"
                                     val channelCountLabel = "0/${required.expectedChannel}"
                                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -4457,7 +4457,7 @@ private fun AssetFileSection(
                             )
                         } ?: run {
                             // Show required measurement types even if empty, so user knows what to load.
-                            val required = requiredCounts(asset.type, isModule = false)
+                            val required = requiredCounts(asset, isModule = false)
                             val docsisCountLabel = "0/${required.expectedDocsis}"
                             val channelCountLabel = "0/${required.expectedChannel}"
                             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -4513,9 +4513,9 @@ private fun AssetFileSection(
                                     listMeasurementPayloadFiles(rxAssetDir)
                                 }
                                 val required = if (isModule) {
-                                    requiredCounts(moduleAsset.type, isModule = true)
+                                    requiredCounts(moduleAsset, isModule = true)
                                 } else {
-                                    requiredCounts(asset.type, isModule = false)
+                                    requiredCounts(asset, isModule = false)
                                 }
                                 val summary = if (updated.isNotEmpty()) {
                                     verifyMeasurementFiles(
@@ -4713,7 +4713,7 @@ private fun AssetFileSection(
                         surplusTargetCount = 0
                         scope.launch {
                             if (surplusIsModule) {
-                                val moduleRequired = requiredCounts(moduleAsset.type, isModule = true)
+                                val moduleRequired = requiredCounts(moduleAsset, isModule = true)
                                 verificationSummaryModule = verifyMeasurementFiles(
                                     context,
                                     moduleFiles,
@@ -4725,7 +4725,7 @@ private fun AssetFileSection(
                                     extraGeoPoints = channelExpertGeoPoints(verificationSummaryRx)
                                 )
                             } else {
-                                val rxRequired = requiredCounts(asset.type, isModule = false)
+                                val rxRequired = requiredCounts(asset, isModule = false)
                                 verificationSummaryRx = verifyMeasurementFiles(
                                     context,
                                     rxFiles,

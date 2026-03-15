@@ -109,7 +109,7 @@ fun MonitorQrScreen(navController: androidx.navigation.NavController, reportId: 
                 val files = dir.listFiles()?.sortedBy { it.name } ?: emptyList()
                 if (files.isEmpty()) return
                 val discarded = loadDiscardedLabels(File(dir, ".discarded_measurements.txt"))
-                val required = requiredCounts(targetAsset.type, isModule = isModule)
+                val required = requiredCounts(targetAsset, isModule = isModule)
                 val summary = verifyMeasurementFiles(
                     context = context,
                     files = files,

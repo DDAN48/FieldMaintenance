@@ -142,7 +142,7 @@ fun AssetSummaryScreen(navController: NavController, reportId: String) {
                                 val rxFiles = listMeasurementPayloadFiles(rxAssetDir)
                                 val rxDiscardedFile = File(rxAssetDir, ".discarded_measurements.txt")
                                 val rxDiscardedLabels = loadDiscardedLabels(rxDiscardedFile)
-                                val rxRequired = requiredCounts(asset.type, isModule = false)
+                                val rxRequired = requiredCounts(asset, isModule = false)
                                 val rxSummary = withContext(Dispatchers.IO) {
                                     verifyMeasurementFiles(
                                         context,
@@ -166,7 +166,7 @@ fun AssetSummaryScreen(navController: NavController, reportId: String) {
                                 val moduleFiles = listMeasurementPayloadFiles(moduleAssetDir)
                                 val moduleDiscardedFile = File(moduleAssetDir, ".discarded_measurements.txt")
                                 val moduleDiscardedLabels = loadDiscardedLabels(moduleDiscardedFile)
-                                val moduleRequired = requiredCounts(asset.type, isModule = true)
+                                val moduleRequired = requiredCounts(asset, isModule = true)
                                 val moduleSummary = withContext(Dispatchers.IO) {
                                     verifyMeasurementFiles(
                                         context,
