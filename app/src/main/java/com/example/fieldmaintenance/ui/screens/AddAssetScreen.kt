@@ -1819,9 +1819,7 @@ fun PhotoSection(
     val isOverMax = photos.size > maxAllowed
     val isAtMax = photos.size >= maxAllowed
     // For DSAM measurement photos we only allow camera capture (no gallery).
-    val allowsGallery = photoType != PhotoType.MODULE &&
-        photoType != PhotoType.OPTICS &&
-        photoType != PhotoType.MEASUREMENT_RX &&
+    val allowsGallery = photoType != PhotoType.MEASUREMENT_RX &&
         photoType != PhotoType.MEASUREMENT_MODULE &&
         photoType != PhotoType.MEASUREMENT_RX_CHANNEL_CHECK &&
         photoType != PhotoType.MEASUREMENT_MODULE_CHANNEL_CHECK &&
@@ -1862,13 +1860,16 @@ fun PhotoSection(
     var pendingCameraFilePath by rememberSaveable { mutableStateOf<String?>(null) }
     var pendingCameraUriString by rememberSaveable { mutableStateOf<String?>(null) }
     
-    // Launcher para seleccionar foto de la galería
+    // Launcher para seleccionar fotos de la galería (selección múltiple)
     val galleryLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        uri?.let {
-            scope.launch {
-                try {
+        contract = ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris: List<Uri> ->
+        if (uris.isEmpty()) return@rememberLauncherForActivityResult
+        scope.launch {
+            val remaining = (maxAllowed - photos.size).coerceAtLeast(0)
+            if (remaining == 0) return@launch
+            uris.take(remaining).forEach { uri ->
+                runCatching {
                     val dir = ImageStore.assetPhotoDir(
                         context = context,
                         reportId = reportId,
@@ -1876,7 +1877,7 @@ fun PhotoSection(
                         photoType = photoType.name.lowercase()
                     )
                     val dest = File(dir, "gallery_${System.currentTimeMillis()}.jpg")
-                    ImageStore.copyUriToFile(context, it, dest)
+                    ImageStore.copyUriToFile(context, uri, dest)
                     compressPhotoIfNeeded(dest)
                     repository.insertPhoto(
                         com.example.fieldmaintenance.data.model.Photo(
@@ -1886,8 +1887,6 @@ fun PhotoSection(
                             fileName = dest.name
                         )
                     )
-                } catch (_: Exception) {
-                    // ignore for now
                 }
             }
         }
@@ -2063,7 +2062,7 @@ fun PhotoSection(
             ) {
                 if (allowsGallery) {
                     OutlinedButton(
-                        onClick = { if (!isAtMax) galleryLauncher.launch("image/*") },
+                        onClick = { if (!isAtMax) galleryLauncher.launch(arrayOf("image/*")) },
                         modifier = Modifier.weight(1f),
                         enabled = !isAtMax
                     ) {
