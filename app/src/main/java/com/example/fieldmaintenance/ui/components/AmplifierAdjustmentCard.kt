@@ -150,8 +150,8 @@ fun AmplifierAdjustmentCard(
     var planHighFreq by rememberSaveable { mutableStateOf<Int?>(750) }
     var planHighDbmv by rememberSaveable { mutableStateOf("") }
 
-    var agcHintArmed by rememberSaveable(assetId) { mutableStateOf(true) }
-    var agcHintVisible by rememberSaveable(assetId) { mutableStateOf(false) }
+    // Show AGC hint when entering the adjustment module.
+    var agcHintVisible by rememberSaveable(assetId) { mutableStateOf(true) }
 
     var docsisConfirmed by rememberSaveable(assetId) { mutableStateOf(false) }
 
@@ -195,11 +195,6 @@ fun AmplifierAdjustmentCard(
         planLowDbmv = fmt(initial.planLowDbmv)
         planHighFreq = initial.planHighFreqMHz ?: 750
         planHighDbmv = fmt(initial.planHighDbmv)
-
-        // Only show the AGC hint when the user enters the first Plan Output value.
-        // If values already exist in DB, do not arm the hint.
-        agcHintArmed = initial.planLowDbmv == null && initial.planHighDbmv == null
-        agcHintVisible = false
 
         docsisConfirmed = initial.docsisConfirmed
         entradaConfirmed = initial.entradaConfirmed
@@ -526,15 +521,7 @@ fun AmplifierAdjustmentCard(
                             modifier = Modifier.width(92.dp),
                             isError = (showRequiredErrors && parseDbmv(planLowDbmv) == null) || isWeirdDbmv(parseDbmv(planLowDbmv)),
                             compact = true,
-                            onChange = {
-                                val hadNoPlanOutputs = planLowDbmv.trim().isEmpty() && planHighDbmv.trim().isEmpty()
-                                dirty = true
-                                planLowDbmv = it
-                                if (agcHintArmed && hadNoPlanOutputs && it.trim().isNotEmpty()) {
-                                    agcHintVisible = true
-                                    agcHintArmed = false
-                                }
-                            }
+                            onChange = { dirty = true; planLowDbmv = it }
                         )
                     }
                     Spacer(Modifier.height(8.dp))
@@ -557,15 +544,7 @@ fun AmplifierAdjustmentCard(
                             modifier = Modifier.width(92.dp),
                             isError = (showRequiredErrors && parseDbmv(planHighDbmv) == null) || isWeirdDbmv(parseDbmv(planHighDbmv)),
                             compact = true,
-                            onChange = {
-                                val hadNoPlanOutputs = planLowDbmv.trim().isEmpty() && planHighDbmv.trim().isEmpty()
-                                dirty = true
-                                planHighDbmv = it
-                                if (agcHintArmed && hadNoPlanOutputs && it.trim().isNotEmpty()) {
-                                    agcHintVisible = true
-                                    agcHintArmed = false
-                                }
-                            }
+                            onChange = { dirty = true; planHighDbmv = it }
                         )
                     }
                     if (isWeirdDbmv(parseDbmv(planLowDbmv)) || isWeirdDbmv(parseDbmv(planHighDbmv))) {
@@ -749,7 +728,7 @@ fun AmplifierAdjustmentCard(
                         verticalAlignment = Alignment.Top
                     ) {
                         Text(
-                            text = "Colocar swicht del AGC en posición 1 para realizar los ajustes . Ajuste el AGC y regrese a posición 3",
+                            text = "Colocar el switch del AGC en posición 3 antes de iniciar el ajuste. Luego ajuste el AGC.",
                             modifier = Modifier.weight(1f),
                             style = MaterialTheme.typography.bodyMedium,
                             color = ampTextPrimary()
