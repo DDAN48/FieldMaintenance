@@ -132,6 +132,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
+import android.content.ContentValues
+import android.provider.MediaStore
 // Note: some Material3 versions only support menuAnchor() and menuAnchor(type, enabled).
 import java.io.File
 import java.net.URLConnection
@@ -1852,6 +1854,25 @@ fun PhotoSection(
         }
     }
 
+    suspend fun saveCopyToGallery(source: File) {
+        withContext(Dispatchers.IO) {
+            runCatching {
+                if (!source.exists() || source.length() <= 0L) return@runCatching
+                val resolver = context.contentResolver
+                val name = source.name.substringBeforeLast('.').ifBlank { "FieldMaintenance" }
+                val values = ContentValues().apply {
+                    put(MediaStore.Images.Media.DISPLAY_NAME, "${name}_${System.currentTimeMillis()}.jpg")
+                    put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+                    put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/FieldMaintenance")
+                }
+                val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: return@runCatching
+                resolver.openOutputStream(uri)?.use { out ->
+                    source.inputStream().use { input -> input.copyTo(out) }
+                }
+            }
+        }
+    }
+
     var photoToDelete by remember { mutableStateOf<com.example.fieldmaintenance.data.model.Photo?>(null) }
     var photoToPreview by remember { mutableStateOf<com.example.fieldmaintenance.data.model.Photo?>(null) }
     var latestLocation by remember { mutableStateOf<Location?>(null) }
@@ -1926,6 +1947,8 @@ fun PhotoSection(
                     longitude = labelInfo?.longitude
                 )
             )
+            // Save a copy to the phone gallery as well.
+            saveCopyToGallery(file)
             // clear pending
             pendingCameraFilePath = null
             pendingCameraUriString = null
