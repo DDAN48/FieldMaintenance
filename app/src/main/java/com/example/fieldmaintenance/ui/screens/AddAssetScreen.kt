@@ -3534,6 +3534,32 @@ private fun AssetFileSection(
                                         }
                                     }
                                     Spacer(Modifier.height(8.dp))
+                                    val missingPilots = buildList {
+                                        if (entry.pilotLevels[70] == null) add("70")
+                                        if (entry.pilotLevels[110] == null) add("110")
+                                    }
+                                    if (missingPilots.isNotEmpty()) {
+                                        Spacer(Modifier.height(4.dp))
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clip(RoundedCornerShape(10.dp))
+                                                .background(errorColor.copy(alpha = 0.12f))
+                                                .border(1.dp, errorColor.copy(alpha = 0.35f), RoundedCornerShape(10.dp))
+                                                .padding(horizontal = 10.dp, vertical = 8.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            Icon(Icons.Default.Warning, contentDescription = null, tint = errorColor)
+                                            Text(
+                                                text = "Falta el canal ${missingPilots.joinToString(" o ")}. Notifique de inmediato a su operador.",
+                                                color = errorColor,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                fontWeight = FontWeight.SemiBold
+                                            )
+                                        }
+                                        Spacer(Modifier.height(6.dp))
+                                    }
                                     MeasurementTableCard(
                                         title = "Downstream Analogic Channels",
                                         headers = listOf("Canal", "Freq (MHz)", "Nivel (dBmV)"),
