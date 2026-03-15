@@ -467,6 +467,42 @@ fun FinalizeReportDialog(
     showMissingWarning: Boolean,
     isProcessing: Boolean
 ) {
+    var confirmMissingOpen by remember { mutableStateOf(false) }
+    var pendingExportAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+
+    if (confirmMissingOpen) {
+        AlertDialog(
+            onDismissRequest = { if (!isProcessing) confirmMissingOpen = false },
+            title = { Text("Exportar con información faltante") },
+            text = {
+                Text(
+                    "Falta información (mediciones u otros datos). ¿Desea exportar de todas formas con datos parciales?"
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        if (isProcessing) return@TextButton
+                        confirmMissingOpen = false
+                        onDismiss()
+                        pendingExportAction?.invoke()
+                        pendingExportAction = null
+                    },
+                    enabled = !isProcessing
+                ) {
+                    Text("Exportar")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { if (!isProcessing) confirmMissingOpen = false },
+                    enabled = !isProcessing
+                ) {
+                    Text("Cancelar")
+                }
+            }
+        )
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -477,21 +513,25 @@ fun FinalizeReportDialog(
             ) {
                 TextButton(
                     onClick = {
-                        if (!showMissingWarning && !isProcessing) {
-                            onSendEmailHtmlWithImages()
-                        }
+                        if (isProcessing) return@TextButton
+                        if (showMissingWarning) {
+                            pendingExportAction = onSendEmailHtmlWithImages
+                            confirmMissingOpen = true
+                        } else onSendEmailHtmlWithImages()
                     },
-                    enabled = !showMissingWarning && !isProcessing
+                    enabled = !isProcessing
                 ) {
                     Text("✉️ Enviar reporte (HTML + imágenes)")
                 }
                 TextButton(
                     onClick = {
-                        if (!showMissingWarning && !isProcessing) {
-                            onSendEmailForAppJson()
-                        }
+                        if (isProcessing) return@TextButton
+                        if (showMissingWarning) {
+                            pendingExportAction = onSendEmailForAppJson
+                            confirmMissingOpen = true
+                        } else onSendEmailForAppJson()
                     },
-                    enabled = !showMissingWarning && !isProcessing
+                    enabled = !isProcessing
                 ) {
                     Text("✉️ Enviar para APP (JSON)")
                 }
@@ -499,7 +539,7 @@ fun FinalizeReportDialog(
                 Spacer(modifier = Modifier.height(6.dp))
                 if (showMissingWarning) {
                     Text(
-                        "Debe completar datos de activos o borrarlos para poder exportar",
+                        "Falta información de activos/mediciones. Puede exportar con datos parciales.",
                         style = MaterialTheme.typography.bodySmall,
                         color = Color(0xFFDE3C2A)
                     )
