@@ -312,6 +312,11 @@ fun NodeAdjustmentCard(
                             val currentSfp = local.sfpDistance ?: (planRow?.let {
                                 parsePo(it.distanciaSfp)?.toInt()?.takeIf { dist -> dist in sfpOptions }
                             })
+                            LaunchedEffect(currentSfp) {
+                                if (local.sfpDistance == null && currentSfp != null) {
+                                    persist(local.copy(sfpDistance = currentSfp))
+                                }
+                            }
                             
                             Text("SFP", fontWeight = FontWeight.Medium)
                             ExposedDropdownMenuBox(
@@ -409,6 +414,11 @@ fun NodeAdjustmentCard(
                             val currentSfp = local.sfpDistance ?: (planRow?.let {
                                 parsePo(it.distanciaSfp)?.toInt()?.takeIf { dist -> dist in sfpOptions }
                             })
+                            LaunchedEffect(currentSfp) {
+                                if (local.sfpDistance == null && currentSfp != null) {
+                                    persist(local.copy(sfpDistance = currentSfp))
+                                }
+                            }
                             
                             Text("SFP", fontWeight = FontWeight.Medium)
                             ExposedDropdownMenuBox(
