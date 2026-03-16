@@ -1143,7 +1143,6 @@ suspend fun verifyMeasurementFiles(
                 val rows = collectChannelRows(results)
                 val docsisFrequencies = rows
                     .mapNotNull { it.frequencyMHz }
-                    .filterNot(::isExcludedDocsisFrequencyMHz)
                     .distinct()
                     .sorted()
                 val pilotChannels = listOf(50, 70, 110, 116, 136)

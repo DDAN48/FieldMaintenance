@@ -616,8 +616,8 @@ fun AddAssetScreen(
     val nodeAllowed = !(assetType == AssetType.NODE && hasNode && !isEdit)
     val autoSaveReady = autoBaseOk && autoNodeOk && autoAmplifierOk && autoAmplifierTablesOk && autoNodeAdjOk && nodeAllowed
     val identityComplete = autoBaseOk && autoNodeOk && autoAmplifierOk
-    // VCCAP_Completo should require photos like Legacy; only RPHY is exempt.
-    val modulePhotoRequired = if (assetType == AssetType.NODE && isRphy) 0 else 2
+    // VCCAP_Completo should require photos like Legacy.
+    val modulePhotoRequired = if (assetType == AssetType.NODE) 2 else 0
     val opticsPhotoRequired = if (assetType == AssetType.NODE && (isRphy || isVccapHibrido)) {
         0
     } else if (assetType == AssetType.NODE) {
@@ -730,8 +730,8 @@ fun AddAssetScreen(
         val techKey = techNormalized.replace("_", "").replace(" ", "")
         val isVccapHibrido = techKey == "vccap" || techKey == "vccaphibrido"
         val isRphy = techKey == "rphy"
-        // VCCAP_Completo must behave like Legacy for photos/measurements; only RPHY is exempt.
-        val moduleOk = if (assetType == AssetType.NODE && isRphy) true else modulePhotoCount == 2
+        // VCCAP_Completo must behave like Legacy for photos/measurements.
+        val moduleOk = modulePhotoCount == 2
         val opticsOk = if (assetType == AssetType.NODE && (isRphy || isVccapHibrido)) true
         else assetType != AssetType.NODE || (opticsPhotoCount in 1..2)
 
@@ -1314,24 +1314,21 @@ fun AddAssetScreen(
                     }
 
                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        // Foto del Módulo (no para RPHY)
-                        if (assetType != AssetType.NODE || !isRphy) {
-                            PhotoSection(
-                                title = "Foto del Módulo y Tapa",
-                                reportId = reportId,
-                                assetId = workingAssetId,
-                                photoType = PhotoType.MODULE,
-                                assetLabel = assetDisplayName,
-                                eventName = eventName,
-                                repository = repository,
-                                minRequired = if (assetType == AssetType.NODE && !isRphy) 2 else 0,
-                                showRequiredError = attemptedSave && (assetType != AssetType.NODE || !isRphy),
-                                maxAllowed = 2,
-                                onCountChange = {
-                                    modulePhotoCount = it
-                                }
-                            )
-                        }
+                        PhotoSection(
+                            title = "Foto del Módulo y Tapa",
+                            reportId = reportId,
+                            assetId = workingAssetId,
+                            photoType = PhotoType.MODULE,
+                            assetLabel = assetDisplayName,
+                            eventName = eventName,
+                            repository = repository,
+                            minRequired = if (assetType == AssetType.NODE) 2 else 0,
+                            showRequiredError = attemptedSave && assetType == AssetType.NODE,
+                            maxAllowed = 2,
+                            onCountChange = {
+                                modulePhotoCount = it
+                            }
+                        )
 
                         // Fotos adicionales según tipo
                         // Foto TX y RX con pads (no para RPHY ni VCCAP_Hibrido)
@@ -1821,7 +1818,9 @@ fun PhotoSection(
     val isOverMax = photos.size > maxAllowed
     val isAtMax = photos.size >= maxAllowed
     // For DSAM measurement photos we only allow camera capture (no gallery).
-    val allowsGallery = photoType != PhotoType.MEASUREMENT_RX &&
+    val allowsGallery = photoType != PhotoType.MODULE &&
+        photoType != PhotoType.OPTICS &&
+        photoType != PhotoType.MEASUREMENT_RX &&
         photoType != PhotoType.MEASUREMENT_MODULE &&
         photoType != PhotoType.MEASUREMENT_RX_CHANNEL_CHECK &&
         photoType != PhotoType.MEASUREMENT_MODULE_CHANNEL_CHECK &&
@@ -1883,7 +1882,7 @@ fun PhotoSection(
     
     // Launcher para seleccionar fotos de la galería (selección múltiple)
     val galleryLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenMultipleDocuments()
+        contract = ActivityResultContracts.GetMultipleContents()
     ) { uris: List<Uri> ->
         if (uris.isEmpty()) return@rememberLauncherForActivityResult
         scope.launch {
@@ -2085,7 +2084,7 @@ fun PhotoSection(
             ) {
                 if (allowsGallery) {
                     OutlinedButton(
-                        onClick = { if (!isAtMax) galleryLauncher.launch(arrayOf("image/*")) },
+                        onClick = { if (!isAtMax) galleryLauncher.launch("image/*") },
                         modifier = Modifier.weight(1f),
                         enabled = !isAtMax
                     ) {

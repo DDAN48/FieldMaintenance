@@ -200,7 +200,7 @@ fun AssetSummaryScreen(navController: NavController, reportId: String) {
                         val isVccapHibrido = techKey == "vccap" || techKey == "vccaphibrido"
                         val moduleCount = photos.count { it.photoType == PhotoType.MODULE }
                         val opticsCount = photos.count { it.photoType == PhotoType.OPTICS }
-                        val moduleOk = if (asset.type == AssetType.NODE && isRphy) true else moduleCount == 2
+                        val moduleOk = moduleCount == 2
                         val opticsOk = if (asset.type == AssetType.NODE && (isRphy || isVccapHibrido)) true
                         else asset.type != AssetType.NODE || (opticsCount in 1..2)
 
