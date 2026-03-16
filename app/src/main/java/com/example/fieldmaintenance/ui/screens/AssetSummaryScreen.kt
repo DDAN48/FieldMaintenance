@@ -127,7 +127,7 @@ fun AssetSummaryScreen(navController: NavController, reportId: String) {
                         // ONX/Viavi: keep validating measurement files (IO)
                         val computed by produceState(initialValue = true, asset, reportFolder) {
                             val techNormalized = asset.technology?.trim()?.lowercase().orEmpty()
-                            val techKey = techNormalized.replace("_", "").replace(" ", "")
+                            val techKey = techNormalized.replace(Regex("[^a-z0-9]"), "")
                             val isNode = asset.type == AssetType.NODE
                             // VCCAP_Hibrido and VCCAP_Completo do NOT have RX measurement section.
                             // RPHY hides measurement upload, so do not require them either.
@@ -195,7 +195,7 @@ fun AssetSummaryScreen(navController: NavController, reportId: String) {
                         measurementsOk
                     ) {
                         val techNormalized = asset.technology?.trim()?.lowercase() ?: ""
-                        val techKey = techNormalized.replace("_", "").replace(" ", "")
+                        val techKey = techNormalized.replace(Regex("[^a-z0-9]"), "")
                         val isRphy = techKey == "rphy"
                         val isVccapCompleto = techKey == "vccapcompleto"
                         val isVccapHibrido = techKey == "vccap" || techKey == "vccaphibrido"

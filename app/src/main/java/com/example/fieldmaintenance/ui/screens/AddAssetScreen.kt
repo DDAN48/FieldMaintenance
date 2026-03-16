@@ -537,7 +537,7 @@ fun AddAssetScreen(
     val nodeAdjustment by repository.getNodeAdjustment(workingAssetId).collectAsState(initial = null)
 
     val techNormalized = technology?.trim()?.lowercase(Locale.getDefault()) ?: ""
-    val techKey = techNormalized.replace("_", "").replace(" ", "")
+    val techKey = techNormalized.replace(Regex("[^a-z0-9]"), "")
     // Backward compatibility: old "vccap" now maps to "vccap_hibrido".
     val isVccapHibrido = techKey == "vccap" || techKey == "vccaphibrido"
     val isVccapCompleto = techKey == "vccapcompleto"
@@ -686,7 +686,7 @@ fun AddAssetScreen(
             val planTech = planRowForNode.technology.trim()
             if (planTech.isNotBlank()) {
                 val normalized = planTech.lowercase(Locale.getDefault())
-                val key = normalized.replace("_", "").replace(" ", "")
+                val key = normalized.replace(Regex("[^a-z0-9]"), "")
                 when {
                     normalized == "legacy" -> technology = "Legacy"
                     normalized == "rphy" -> technology = "RPHY"
@@ -727,7 +727,7 @@ fun AddAssetScreen(
         // Photos required
         // We compute counts in PhotoSection via callbacks
         val techNormalized = technology?.trim()?.lowercase(Locale.getDefault()) ?: ""
-        val techKey = techNormalized.replace("_", "").replace(" ", "")
+        val techKey = techNormalized.replace(Regex("[^a-z0-9]"), "")
         val isVccapHibrido = techKey == "vccap" || techKey == "vccaphibrido"
         val isRphy = techKey == "rphy"
         // VCCAP_Completo must behave like Legacy for photos/measurements.
@@ -742,7 +742,7 @@ fun AddAssetScreen(
                 ?: com.example.fieldmaintenance.data.model.NodeAdjustment(assetId = workingAssetId, reportId = reportId)
             val tech = technology?.trim()?.lowercase(Locale.getDefault())
                 ?: planRowForNode?.technology?.trim()?.lowercase(Locale.getDefault()) ?: "legacy"
-            val key = tech.replace("_", "").replace(" ", "")
+            val key = tech.replace(Regex("[^a-z0-9]"), "")
             when {
                 key == "rphy" || key == "vccapcompleto" -> {
                     adj.sfpDistance != null && adj.poDirectaConfirmed && adj.poRetornoConfirmed
@@ -1412,7 +1412,7 @@ fun AddAssetScreen(
             }
 
             val techNormalized = technology?.trim()?.lowercase(Locale.getDefault()) ?: ""
-            val techKey = techNormalized.replace("_", "").replace(" ", "")
+            val techKey = techNormalized.replace(Regex("[^a-z0-9]"), "")
             // VCCAP_Completo must show Carga de Mediciones (like Legacy). Only RPHY hides it.
             val isRphyLikeNode = assetType == AssetType.NODE && techKey == "rphy"
 
@@ -2456,7 +2456,7 @@ private fun AssetFileSection(
     // but must be validated/displayed using NODE rules (measurement_validation.json).
     val moduleValidationAsset = if (isNodeAsset) asset else moduleAsset
     val techNormalized = asset.technology?.trim()?.lowercase(Locale.getDefault()) ?: ""
-    val techKey = techNormalized.replace("_", "").replace(" ", "")
+    val techKey = techNormalized.replace(Regex("[^a-z0-9]"), "")
     // VCCAP_Hibrido and VCCAP_Completo do NOT have RX measurement section.
     val hasRxMeasurements = !(isNodeAsset && (techKey == "vccap" || techKey == "vccaphibrido" || techKey == "vccapcompleto"))
     // VCCAP_Completo must keep module measurements (like Legacy). Only RPHY hides module measurements.
