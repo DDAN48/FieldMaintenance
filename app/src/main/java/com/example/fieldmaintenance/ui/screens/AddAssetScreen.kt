@@ -616,8 +616,9 @@ fun AddAssetScreen(
     val nodeAllowed = !(assetType == AssetType.NODE && hasNode && !isEdit)
     val autoSaveReady = autoBaseOk && autoNodeOk && autoAmplifierOk && autoAmplifierTablesOk && autoNodeAdjOk && nodeAllowed
     val identityComplete = autoBaseOk && autoNodeOk && autoAmplifierOk
-    // Module + cover photos are required.
-    val modulePhotoRequired = 2
+    // For RPHY: require "equipo cerrado" (1 photo) + monitoría PO (1 photo).
+    // For others: require "módulo y tapa" (2 photos).
+    val modulePhotoRequired = if (assetType == AssetType.NODE && isRphy) 1 else 2
     val opticsPhotoRequired = if (assetType == AssetType.NODE && (isRphy || isVccapHibrido)) {
         0
     } else if (assetType == AssetType.NODE) {
@@ -627,13 +628,19 @@ fun AddAssetScreen(
     }
     val modulePhotosOk = modulePhotoRequired == 0 || modulePhotoCount >= modulePhotoRequired
     val opticsPhotosOk = opticsPhotoRequired == 0 || opticsPhotoCount >= opticsPhotoRequired
-    val photosComplete = modulePhotosOk && opticsPhotosOk
+    val monitoringPhotoRequired = if (assetType == AssetType.NODE && isRphy) 1 else 0
+    val monitoringPhotosOk = monitoringPhotoRequired == 0 || monitoringPhotoCount >= monitoringPhotoRequired
+    val photosComplete = modulePhotosOk && opticsPhotosOk && monitoringPhotosOk
     val photoSupportText = buildList {
         if (modulePhotoRequired > 0) {
-            add("Módulo: $modulePhotoCount/$modulePhotoRequired")
+            add(if (assetType == AssetType.NODE && isRphy) "Equipo cerrado: $modulePhotoCount/$modulePhotoRequired"
+            else "Módulo: $modulePhotoCount/$modulePhotoRequired")
         }
         if (opticsPhotoRequired > 0) {
             add("Ópticas: $opticsPhotoCount/$opticsPhotoRequired")
+        }
+        if (monitoringPhotoRequired > 0) {
+            add("Monitoría: $monitoringPhotoCount/$monitoringPhotoRequired")
         }
     }.joinToString(" • ").ifBlank { "" }
     
@@ -730,10 +737,11 @@ fun AddAssetScreen(
         val techKey = techNormalized.replace(Regex("[^a-z0-9]"), "")
         val isVccapHibrido = techKey == "vccap" || techKey == "vccaphibrido"
         val isRphy = techKey == "rphy"
-        // VCCAP_Completo must behave like Legacy for photos/measurements.
-        val moduleOk = modulePhotoCount == 2
+        val moduleRequired = if (assetType == AssetType.NODE && isRphy) 1 else 2
+        val moduleOk = modulePhotoCount >= moduleRequired
         val opticsOk = if (assetType == AssetType.NODE && (isRphy || isVccapHibrido)) true
         else assetType != AssetType.NODE || (opticsPhotoCount in 1..2)
+        val monitoringOk = if (assetType == AssetType.NODE && isRphy) monitoringPhotoCount >= 1 else true
 
         val nodeAllowed = !(assetType == AssetType.NODE && hasNode && !isEdit)
 
@@ -765,7 +773,7 @@ fun AddAssetScreen(
             }
         }
 
-        val ok = baseOk && nodeOk && amplifierOk && amplifierTablesOk && moduleOk && opticsOk && nodeAllowed && nodeAdjOk
+        val ok = baseOk && nodeOk && amplifierOk && amplifierTablesOk && moduleOk && opticsOk && monitoringOk && nodeAllowed && nodeAdjOk
         if (!ok) {
             if (assetType == AssetType.AMPLIFIER && !amplifierTablesOk) {
                 snackbarHostState.showSnackbar("Completa todas las tablas del ajuste del amplificador")
@@ -1315,16 +1323,16 @@ fun AddAssetScreen(
 
                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         PhotoSection(
-                            title = "Foto del Módulo y Tapa",
+                            title = if (assetType == AssetType.NODE && isRphy) "Foto equipo cerrado" else "Foto del Módulo y Tapa",
                             reportId = reportId,
                             assetId = workingAssetId,
                             photoType = PhotoType.MODULE,
                             assetLabel = assetDisplayName,
                             eventName = eventName,
                             repository = repository,
-                            minRequired = 2,
+                            minRequired = if (assetType == AssetType.NODE && isRphy) 1 else 2,
                             showRequiredError = attemptedSave,
-                            maxAllowed = 2,
+                            maxAllowed = if (assetType == AssetType.NODE && isRphy) 1 else 2,
                             onCountChange = {
                                 modulePhotoCount = it
                             }
@@ -1359,8 +1367,8 @@ fun AddAssetScreen(
                                 assetLabel = assetDisplayName,
                                 eventName = eventName,
                                 repository = repository,
-                                minRequired = 0,
-                                showRequiredError = false,
+                                minRequired = if (isRphy) 1 else 0,
+                                showRequiredError = attemptedSave && isRphy,
                                 maxAllowed = 2,
                                 onCountChange = {
                                     monitoringPhotoCount = it

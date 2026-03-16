@@ -201,9 +201,11 @@ fun AssetSummaryScreen(navController: NavController, reportId: String) {
                         val isVccapHibrido = techKey == "vccap" || techKey == "vccaphibrido"
                         val moduleCount = photos.count { it.photoType == PhotoType.MODULE }
                         val opticsCount = photos.count { it.photoType == PhotoType.OPTICS }
-                        val moduleOk = moduleCount == 2
+                        val monitoringCount = photos.count { it.photoType == PhotoType.MONITORING }
+                        val moduleOk = if (asset.type == AssetType.NODE && isRphy) moduleCount >= 1 else moduleCount == 2
                         val opticsOk = if (asset.type == AssetType.NODE && (isRphy || isVccapHibrido)) true
                         else asset.type != AssetType.NODE || (opticsCount in 1..2)
+                        val monitoringOk = if (asset.type == AssetType.NODE && isRphy) monitoringCount >= 1 else true
 
                         val nodeAdjOk = if (asset.type != AssetType.NODE) true else {
                             val adj = nodeAdjustment
@@ -270,7 +272,7 @@ fun AssetSummaryScreen(navController: NavController, reportId: String) {
                                 adj.outCh136Dbmv != null
                         }
 
-                        !(moduleOk && opticsOk && nodeAdjOk && ampAdjOk && measurementsOk)
+                        !(moduleOk && opticsOk && monitoringOk && nodeAdjOk && ampAdjOk && measurementsOk)
                     }
 
                     LaunchedEffect(hasMissingData) {

@@ -33,15 +33,17 @@ private suspend fun isAssetIncomplete(
     val isDsam = meterKey == "dsam"
     val moduleCount = photos.count { it.photoType == PhotoType.MODULE }
     val opticsCount = photos.count { it.photoType == PhotoType.OPTICS }
+    val monitoringCount = photos.count { it.photoType == PhotoType.MONITORING }
     val techNormalized = asset.technology?.trim()?.lowercase() ?: ""
     val techKey = techNormalized.replace(Regex("[^a-z0-9]"), "")
     val isVccapHibrido = techKey == "vccap" || techKey == "vccaphibrido"
     val isVccapCompleto = techKey == "vccapcompleto"
     val isRphy = techKey == "rphy"
     // Require module + cover photos.
-    val moduleOk = moduleCount == 2
+    val moduleOk = if (asset.type == AssetType.NODE && isRphy) moduleCount >= 1 else moduleCount == 2
     val opticsOk = if (asset.type == AssetType.NODE && (isRphy || isVccapHibrido)) true
     else asset.type != AssetType.NODE || (opticsCount in 1..2)
+    val monitoringOk = if (asset.type == AssetType.NODE && isRphy) monitoringCount >= 1 else true
 
     val nodeAdjOk = if (asset.type != AssetType.NODE) true else {
         val adj = repository.getNodeAdjustmentOne(asset.id)
@@ -95,5 +97,5 @@ private suspend fun isAssetIncomplete(
         measurementCount > 0
     }
 
-    return !(moduleOk && opticsOk && nodeAdjOk && ampAdjOk && measurementsOk)
+    return !(moduleOk && opticsOk && monitoringOk && nodeAdjOk && ampAdjOk && measurementsOk)
 }
