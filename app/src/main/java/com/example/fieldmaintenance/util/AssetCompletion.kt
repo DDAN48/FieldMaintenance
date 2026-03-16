@@ -34,12 +34,12 @@ private suspend fun isAssetIncomplete(
     val moduleCount = photos.count { it.photoType == PhotoType.MODULE }
     val opticsCount = photos.count { it.photoType == PhotoType.OPTICS }
     val techNormalized = asset.technology?.trim()?.lowercase() ?: ""
-    val techKey = techNormalized.replace("_", "").replace(" ", "")
+    val techKey = techNormalized.replace(Regex("[^a-z0-9]"), "")
     val isVccapHibrido = techKey == "vccap" || techKey == "vccaphibrido"
-    val isRphy = techKey == "rphy"
     val isVccapCompleto = techKey == "vccapcompleto"
-    // VCCAP_Completo must behave like Legacy for photos/measurements; only RPHY is exempt.
-    val moduleOk = if (asset.type == AssetType.NODE && isRphy) true else moduleCount == 2
+    val isRphy = techKey == "rphy"
+    // Require module + cover photos.
+    val moduleOk = moduleCount == 2
     val opticsOk = if (asset.type == AssetType.NODE && (isRphy || isVccapHibrido)) true
     else asset.type != AssetType.NODE || (opticsCount in 1..2)
 
@@ -85,7 +85,7 @@ private suspend fun isAssetIncomplete(
             adj.docsisConfirmed
     }
 
-    val measurementsOk = if (isDsam) {
+    val measurementsOk = if (isDsam || (asset.type == AssetType.NODE && isRphy)) {
         // DSAM measurement photos are optional (non-blocking).
         true
     } else {

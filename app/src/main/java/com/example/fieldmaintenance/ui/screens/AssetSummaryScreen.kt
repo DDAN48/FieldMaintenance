@@ -130,7 +130,8 @@ fun AssetSummaryScreen(navController: NavController, reportId: String) {
                             val techKey = techNormalized.replace("_", "").replace(" ", "")
                             val isNode = asset.type == AssetType.NODE
                             // VCCAP_Hibrido and VCCAP_Completo do NOT have RX measurement section.
-                            val hasRxMeasurements = !(isNode && (techKey == "vccap" || techKey == "vccaphibrido" || techKey == "vccapcompleto"))
+                            // RPHY hides measurement upload, so do not require them either.
+                            val hasRxMeasurements = !(isNode && (techKey == "vccap" || techKey == "vccaphibrido" || techKey == "vccapcompleto" || techKey == "rphy"))
                             // VCCAP_Completo must keep module measurements (like Legacy). Only RPHY hides module measurements.
                             val hasModuleMeasurements = !(isNode && techKey == "rphy")
 

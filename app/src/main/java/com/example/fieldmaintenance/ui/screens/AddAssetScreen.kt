@@ -616,8 +616,8 @@ fun AddAssetScreen(
     val nodeAllowed = !(assetType == AssetType.NODE && hasNode && !isEdit)
     val autoSaveReady = autoBaseOk && autoNodeOk && autoAmplifierOk && autoAmplifierTablesOk && autoNodeAdjOk && nodeAllowed
     val identityComplete = autoBaseOk && autoNodeOk && autoAmplifierOk
-    // VCCAP_Completo should require photos like Legacy.
-    val modulePhotoRequired = if (assetType == AssetType.NODE) 2 else 0
+    // Module + cover photos are required.
+    val modulePhotoRequired = 2
     val opticsPhotoRequired = if (assetType == AssetType.NODE && (isRphy || isVccapHibrido)) {
         0
     } else if (assetType == AssetType.NODE) {
@@ -1322,8 +1322,8 @@ fun AddAssetScreen(
                             assetLabel = assetDisplayName,
                             eventName = eventName,
                             repository = repository,
-                            minRequired = if (assetType == AssetType.NODE) 2 else 0,
-                            showRequiredError = attemptedSave && assetType == AssetType.NODE,
+                            minRequired = 2,
+                            showRequiredError = attemptedSave,
                             maxAllowed = 2,
                             onCountChange = {
                                 modulePhotoCount = it
