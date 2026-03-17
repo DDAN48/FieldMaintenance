@@ -213,7 +213,10 @@ Al presionar “Enviar por correo” la app pregunta:
 Los archivos se guardan en:
 Descargas/FieldMaintenance
 
-[Imagen 10: Finalizar Reporte]
+Nota:
+- Si falta información (mediciones u otros datos), la app mostrará una advertencia y preguntará si desea exportar con información parcial.
+
+[Imagen 10: Exportación a dispositivo (9.2)]
 
 ============================================================
 10) PAPELERA
