@@ -21,6 +21,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
@@ -31,7 +32,9 @@ import androidx.navigation.compose.rememberNavController
 import com.example.fieldmaintenance.ui.navigation.NavGraph
 import com.example.fieldmaintenance.ui.theme.FieldMaintenanceTheme
 import com.example.fieldmaintenance.util.PlanRepository
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
     private val sharedUrisState = mutableStateOf<List<Uri>>(emptyList())
@@ -49,9 +52,15 @@ class MainActivity : ComponentActivity() {
                     val context = LocalContext.current
                     var appReady by remember { mutableStateOf(false) }
                     LaunchedEffect(Unit) {
+                        // Let Compose render the splash at least once.
+                        withFrameNanos { }
                         val start = SystemClock.uptimeMillis()
                         // Refresh del Plan al iniciar. Si falla/no trae filas, se usa el cache guardado.
-                        runCatching { PlanRepository(context).refreshOnAppStart() }
+                        runCatching {
+                            withContext(Dispatchers.IO) {
+                                PlanRepository(context).refreshOnAppStart()
+                            }
+                        }
                         // Ensure the splash is visible (avoid white screen flicker).
                         val elapsed = SystemClock.uptimeMillis() - start
                         val minSplashMs = 450L
