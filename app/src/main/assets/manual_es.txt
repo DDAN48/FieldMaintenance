@@ -156,6 +156,22 @@ Se puede agregar foto de monitoria de PO de directa y retorno.
 Incluye tablas de niveles y campos requeridos.
 En “Niveles ENTRADA” la selección 750/870 MHz muestra una flecha (desplegable).
 
+Procedimiento recomendado:
+
+6.2.1 Tabla “Niveles ENTRADA”
+- Completar la columna **Medido** con los niveles medidos en el equipo (según las selecciones de frecuencia).
+- Completar la columna **Plano** con los niveles objetivo/plan (según las selecciones de frecuencia).
+- Al finalizar, presionar **Confirmar** para bloquear la tabla y evitar cambios accidentales.
+
+[Imagen 12: Ajuste de Amplificador - Niveles ENTRADA]
+
+6.2.2 Tabla “Niveles SALIDA”
+- Seleccionar las frecuencias “L output Plano” y “H output Plano” e ingresar sus valores en dBmV.
+- Completar la columna **Medido** por canal.
+- Revisar advertencias en pantalla (no bloqueantes) y confirmar DOCSIS si corresponde.
+
+[Imagen 13: Ajuste de Amplificador - Niveles SALIDA]
+
 Fotos:
 Se puede agregar las fotos de modulo y tapa .Bloqueante si no se agrega.
 Se puede agregar las fotos de inyección de portadora.
