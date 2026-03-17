@@ -130,6 +130,15 @@ Tipos:
 Campo “Frec módulo”:
 Define la frecuencia del módulo (ej: 42 MHz o 85 MHz).
 
+Estructura de la pantalla (4 secciones):
+Al agregar/editar un activo, la pantalla se organiza en 4 módulos:
+1) Identidad del activo
+2) Ajuste (Ajuste de Nodo o Ajuste de Amplificador, según tipo)
+3) Fotos
+4) Carga de Mediciones
+
+[Imagen 14: Agregar/Editar Activo - secciones (Identidad/Ajuste/Fotos/Mediciones)]
+
 6.1 Activo tipo NODO: Módulo “Ajuste de Nodo”
 Ubicación: inmediatamente después de “Tipo de Activo” + “Frec módulo”.
 Características:
@@ -177,6 +186,28 @@ Se puede agregar las fotos de modulo y tapa .Bloqueante si no se agrega.
 Se puede agregar las fotos de inyección de portadora.
 
 [Imagen 7: Ajuste de Amplificador]
+
+6.3 Módulo “Carga de Mediciones”
+Este módulo permite cargar y visualizar mediciones del equipo (según medidor ONX/VIAVI/DSAM).
+
+Pantalla principal:
+- Se muestra el estado de georreferencia.
+- Se muestran contadores de mediciones requeridas (DOCSIS Expert y Channel Expert).
+- Se utiliza el ícono de “subir” para cargar archivos de medición.
+
+[Imagen 15: Carga de Mediciones - pantalla principal]
+
+Validación y visualización:
+- Channel Expert muestra gráficos/tablas por puerto (IN/MAIN/AUX/AUXDC).
+- Los valores fuera de rango se marcan en rojo según reglas.
+
+[Imagen 16: Carga de Mediciones - Channel Expert]
+
+DOCSIS Expert:
+- Muestra los canales upstream en gráfico y tabla.
+- La frecuencia 42.5 MHz se visualiza, pero se ignora en la validación (no se marca en rojo).
+
+[Imagen 17: Carga de Mediciones - DOCSIS Expert]
 
 ============================================================
 7) PANTALLA “PASIVOS”
