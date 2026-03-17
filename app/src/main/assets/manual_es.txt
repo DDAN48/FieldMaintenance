@@ -268,7 +268,7 @@ Se importa desde Dispositivo (Descargas) seleccionando un archivo:
 
 Si el archivo no es válido, la app avisa.
 
-[Imagen 12: Importar]
+[Imagen 18: Importar]
 
 ============================================================
 12) NOTAS Y RECOMENDACIONES
