@@ -728,7 +728,7 @@ fun AmplifierAdjustmentCard(
                         verticalAlignment = Alignment.Top
                     ) {
                         Text(
-                            text = "Colocar el switch del AGC en posición 3 antes de iniciar el ajuste. Luego ajuste el AGC.",
+                            text = "Colocar el swich del AGC en posición 1 antes de iniciar el ajuste. Luego de terminado el ajuste proceda con el del AGC.",
                             modifier = Modifier.weight(1f),
                             style = MaterialTheme.typography.bodyMedium,
                             color = ampTextPrimary()

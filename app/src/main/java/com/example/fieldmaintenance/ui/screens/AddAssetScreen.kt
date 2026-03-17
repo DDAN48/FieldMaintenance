@@ -616,6 +616,46 @@ fun AddAssetScreen(
     val nodeAllowed = !(assetType == AssetType.NODE && hasNode && !isEdit)
     val autoSaveReady = autoBaseOk && autoNodeOk && autoAmplifierOk && autoAmplifierTablesOk && autoNodeAdjOk && nodeAllowed
     val identityComplete = autoBaseOk && autoNodeOk && autoAmplifierOk
+
+    val ampIdentityComplete = assetType == AssetType.AMPLIFIER &&
+        frequency != null &&
+        amplifierMode != null &&
+        port != null &&
+        portIndex != null
+    val ampPortCode = remember(port, portIndex) {
+        if (port == null || portIndex == null) null else "${port?.name}${String.format("%02d", portIndex)}"
+    }
+    val ampDuplicatePort by produceState(
+        initialValue = false,
+        ampIdentityComplete,
+        reportId,
+        workingAssetId,
+        port,
+        portIndex
+    ) {
+        if (!ampIdentityComplete) {
+            value = false
+            return@produceState
+        }
+        value = withContext(Dispatchers.IO) {
+            val existing = repository.listAssetsByReportId(reportId)
+            existing.any {
+                it.type == AssetType.AMPLIFIER &&
+                    it.id != workingAssetId &&
+                    it.port == port &&
+                    it.portIndex == portIndex
+            }
+        }
+    }
+    var lastDupPortNotified by rememberSaveable(reportId, workingAssetId) { mutableStateOf<String?>(null) }
+    LaunchedEffect(ampDuplicatePort, ampIdentityComplete, ampPortCode) {
+        val code = ampPortCode ?: return@LaunchedEffect
+        if (!ampIdentityComplete) return@LaunchedEffect
+        if (!ampDuplicatePort) return@LaunchedEffect
+        if (lastDupPortNotified == code) return@LaunchedEffect
+        lastDupPortNotified = code
+        snackbarHostState.showSnackbar("Activo ya existe: $code")
+    }
     // For RPHY: require "equipo cerrado" (1 photo) + monitoría PO (1 photo).
     // For others: require "módulo y tapa" (2 photos).
     val modulePhotoRequired = if (assetType == AssetType.NODE && isRphy) 1 else 2
@@ -940,6 +980,7 @@ fun AddAssetScreen(
                 status = if (identityComplete) "Completo" else "Pendiente",
                 actionLabel = if (identityComplete) "Editar" else "Completar",
                 isComplete = identityComplete,
+                supportingText = if (ampDuplicatePort && ampPortCode != null) "Puerto duplicado: $ampPortCode" else null,
                 onAction = { showIdentityDialog = true }
             )
 
@@ -1149,7 +1190,7 @@ fun AddAssetScreen(
                                         trailingIcon = {
                                             ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedPort)
                                         },
-                                        isError = attemptedSave && port == null,
+                                        isError = (attemptedSave && port == null) || (ampIdentityComplete && ampDuplicatePort),
                                         supportingText = {
                                             if (attemptedSave && port == null) Text("Obligatorio")
                                         }
@@ -1189,7 +1230,7 @@ fun AddAssetScreen(
                                         trailingIcon = {
                                             ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedIndex)
                                         },
-                                        isError = attemptedSave && portIndex == null,
+                                        isError = (attemptedSave && portIndex == null) || (ampIdentityComplete && ampDuplicatePort),
                                         supportingText = {
                                             if (attemptedSave && portIndex == null) Text("Obligatorio")
                                         }
@@ -1209,6 +1250,14 @@ fun AddAssetScreen(
                                         }
                                     }
                                 }
+                            }
+                            if (ampIdentityComplete && ampDuplicatePort && ampPortCode != null) {
+                                Text(
+                                    text = "Puerto duplicado. Activo ya existe: $ampPortCode",
+                                    color = MaterialTheme.colorScheme.error,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.SemiBold
+                                )
                             }
                         }
                     }
