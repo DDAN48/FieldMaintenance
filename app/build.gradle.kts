@@ -15,8 +15,8 @@ android {
         applicationId = "com.example.fieldmaintenance"
         minSdk = 24
         targetSdk = 36
-        versionCode = 11
-        versionName = "6.5.5"
+        versionCode = 12
+        versionName = "6.5.6"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
