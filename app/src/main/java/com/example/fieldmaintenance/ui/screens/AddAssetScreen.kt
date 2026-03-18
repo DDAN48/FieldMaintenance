@@ -614,7 +614,6 @@ fun AddAssetScreen(
     }
 
     val nodeAllowed = !(assetType == AssetType.NODE && hasNode && !isEdit)
-    val autoSaveReady = autoBaseOk && autoNodeOk && autoAmplifierOk && autoAmplifierTablesOk && autoNodeAdjOk && nodeAllowed
     val identityComplete = autoBaseOk && autoNodeOk && autoAmplifierOk
 
     val ampIdentityComplete = assetType == AssetType.AMPLIFIER &&
@@ -827,19 +826,19 @@ fun AddAssetScreen(
     }
 
     LaunchedEffect(
-        autoSaveReady,
+        identityComplete,
+        nodeAllowed,
+        ampDuplicatePort,
         assetType,
         frequency,
         technology,
         meterType,
         amplifierMode,
         port,
-        portIndex,
-        nodeAdjustment,
-        currentAmplifierAdjustment,
-        amplifierAdjustment
+        portIndex
     ) {
-        if (!autoSaveReady) return@LaunchedEffect
+        if (!identityComplete || !nodeAllowed) return@LaunchedEffect
+        if (assetType == AssetType.AMPLIFIER && ampDuplicatePort) return@LaunchedEffect
         val asset = Asset(
             id = workingAssetId,
             reportId = reportId,
@@ -851,12 +850,14 @@ fun AddAssetScreen(
             technology = if (assetType == AssetType.NODE) technology else null,
             meterType = meterType
         )
-        if (isEdit || autoSaved) {
+        // Prevent double-insert if recomposed while saving.
+        val wasAutoSaved = autoSaved
+        if (!wasAutoSaved) autoSaved = true
+        if (isEdit || wasAutoSaved) {
             viewModel.updateAsset(asset)
         } else {
             viewModel.addAsset(asset)
         }
-        autoSaved = true
         withContext(Dispatchers.IO) {
             val reportFolder = MaintenanceStorage.reportFolderName(report?.eventName, reportId)
             MaintenanceStorage.ensureAssetDir(context, reportFolder, asset)
@@ -1535,6 +1536,11 @@ fun AddAssetScreen(
             Button(
                 onClick = {
                     scope.launch {
+                        // If the asset is already auto-saved (identity complete), allow leaving without forcing completion.
+                        if (!isEdit && autoSaved) {
+                            navController.navigate(Screen.AssetSummary.createRoute(reportId))
+                            return@launch
+                        }
                         val asset = Asset(
                             id = workingAssetId,
                             reportId = reportId,
@@ -1578,7 +1584,11 @@ fun AddAssetScreen(
                     containerColor = MaterialTheme.colorScheme.primary
                 )
             ) {
-                Text(if (assetType == AssetType.NODE) "Agregar Nodo" else "+ Agregar Activo")
+                Text(
+                    if (!isEdit && autoSaved) "Volver a Resumen"
+                    else if (assetType == AssetType.NODE) "Agregar Nodo"
+                    else "+ Agregar Activo"
+                )
             }
         }
     }
