@@ -54,6 +54,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -124,6 +125,7 @@ fun AmplifierAdjustmentCard(
     onCurrentChange: (AmplifierAdjustment) -> Unit,
     onPersist: suspend (AmplifierAdjustment) -> Unit
 ) {
+    val scope = rememberCoroutineScope()
     var entradaAlert by remember(assetId) { mutableStateOf<EntradaAlert?>(null) }
 
     var dirty by rememberSaveable(assetId) { mutableStateOf(false) }
@@ -231,6 +233,18 @@ fun AmplifierAdjustmentCard(
         )
     }
 
+    var latestStableForPersist by remember(assetId) { mutableStateOf<AmplifierAdjustment?>(null) }
+    DisposableEffect(assetId) {
+        onDispose {
+            val stable = latestStableForPersist ?: return@onDispose
+            if (assetId.isBlank()) return@onDispose
+            // Flush latest edits even if the dialog is closed before debounce fires.
+            scope.launch {
+                onPersist(stable.copy(updatedAt = System.currentTimeMillis()))
+            }
+        }
+    }
+
     // Auto persist (debounced) – only if we have an assetId
     LaunchedEffect(assetId) {
         if (assetId.isBlank()) return@LaunchedEffect
@@ -240,6 +254,7 @@ fun AmplifierAdjustmentCard(
         snapshotFlow { buildAdjustment().copy(updatedAt = 0L) }
             .distinctUntilChanged()
             .collect { stable ->
+                latestStableForPersist = stable
                 onCurrentChange(stable.copy(assetId = assetId))
                 job?.cancel()
                 job = launch {
@@ -770,7 +785,6 @@ private fun DbmvField(
 ) {
     var wasFocused by remember { mutableStateOf(false) }
     val bringIntoViewRequester = remember { BringIntoViewRequester() }
-    val scope = rememberCoroutineScope()
     fun ensureSelected() {
         onClick?.invoke()
     }
