@@ -522,6 +522,7 @@ fun AddAssetScreen(
         spectrumPhotoCount = allPhotos.count { it.photoType == PhotoType.SPECTRUM }
     }
     var autoSaved by rememberSaveable(workingAssetId) { mutableStateOf(false) }
+    var isAutoSaving by rememberSaveable(workingAssetId) { mutableStateOf(false) }
     var showIdentityDialog by rememberSaveable { mutableStateOf(false) }
     var showPhotosDialog by rememberSaveable { mutableStateOf(false) }
     var showMeasurementsDialog by rememberSaveable { mutableStateOf(false) }
@@ -839,6 +840,8 @@ fun AddAssetScreen(
     ) {
         if (!identityComplete || !nodeAllowed) return@LaunchedEffect
         if (assetType == AssetType.AMPLIFIER && ampDuplicatePort) return@LaunchedEffect
+        if (isAutoSaving) return@LaunchedEffect
+        isAutoSaving = true
         val asset = Asset(
             id = workingAssetId,
             reportId = reportId,
@@ -850,17 +853,16 @@ fun AddAssetScreen(
             technology = if (assetType == AssetType.NODE) technology else null,
             meterType = meterType
         )
-        // Prevent double-insert if recomposed while saving.
-        val wasAutoSaved = autoSaved
-        if (!wasAutoSaved) autoSaved = true
-        if (isEdit || wasAutoSaved) {
-            viewModel.updateAsset(asset)
-        } else {
-            viewModel.addAsset(asset)
-        }
-        withContext(Dispatchers.IO) {
-            val reportFolder = MaintenanceStorage.reportFolderName(report?.eventName, reportId)
-            MaintenanceStorage.ensureAssetDir(context, reportFolder, asset)
+        try {
+            val wasAutoSaved = autoSaved
+            withContext(Dispatchers.IO) {
+                if (isEdit || wasAutoSaved) repository.updateAsset(asset) else repository.insertAsset(asset)
+                val reportFolder = MaintenanceStorage.reportFolderName(report?.eventName, reportId)
+                MaintenanceStorage.ensureAssetDir(context, reportFolder, asset)
+            }
+            autoSaved = true
+        } finally {
+            isAutoSaving = false
         }
     }
 
