@@ -1538,11 +1538,6 @@ fun AddAssetScreen(
             Button(
                 onClick = {
                     scope.launch {
-                        // If the asset is already auto-saved (identity complete), allow leaving without forcing completion.
-                        if (!isEdit && autoSaved) {
-                            navController.navigate(Screen.AssetSummary.createRoute(reportId))
-                            return@launch
-                        }
                         val asset = Asset(
                             id = workingAssetId,
                             reportId = reportId,
@@ -1586,11 +1581,7 @@ fun AddAssetScreen(
                     containerColor = MaterialTheme.colorScheme.primary
                 )
             ) {
-                Text(
-                    if (!isEdit && autoSaved) "Volver a Resumen"
-                    else if (assetType == AssetType.NODE) "Agregar Nodo"
-                    else "+ Agregar Activo"
-                )
+                Text(if (assetType == AssetType.NODE) "Agregar Nodo" else "+ Agregar Activo")
             }
         }
     }
