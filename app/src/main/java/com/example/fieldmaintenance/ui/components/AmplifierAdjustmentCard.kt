@@ -783,6 +783,7 @@ private fun DbmvField(
     onClick: (() -> Unit)? = null,
     onChange: (String) -> Unit
 ) {
+    val scope = rememberCoroutineScope()
     var wasFocused by remember { mutableStateOf(false) }
     val bringIntoViewRequester = remember { BringIntoViewRequester() }
     fun ensureSelected() {
