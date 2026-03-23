@@ -205,7 +205,7 @@ fun AssetSummaryScreen(navController: NavController, reportId: String) {
                         val moduleOk = if (asset.type == AssetType.NODE && isRphy) moduleCount >= 1 else moduleCount == 2
                         val opticsOk = if (asset.type == AssetType.NODE && (isRphy || isVccapHibrido)) true
                         else asset.type != AssetType.NODE || (opticsCount in 1..2)
-                        val monitoringOk = if (asset.type == AssetType.NODE && isRphy) monitoringCount >= 1 else true
+                        val monitoringOk = if (asset.type == AssetType.NODE && isRphy) monitoringCount >= 2 else true
 
                         val nodeAdjOk = if (asset.type != AssetType.NODE) true else {
                             val adj = nodeAdjustment

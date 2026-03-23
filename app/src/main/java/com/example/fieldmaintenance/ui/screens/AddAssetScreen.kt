@@ -668,7 +668,7 @@ fun AddAssetScreen(
     }
     val modulePhotosOk = modulePhotoRequired == 0 || modulePhotoCount >= modulePhotoRequired
     val opticsPhotosOk = opticsPhotoRequired == 0 || opticsPhotoCount >= opticsPhotoRequired
-    val monitoringPhotoRequired = if (assetType == AssetType.NODE && isRphy) 1 else 0
+    val monitoringPhotoRequired = if (assetType == AssetType.NODE && isRphy) 2 else 0
     val monitoringPhotosOk = monitoringPhotoRequired == 0 || monitoringPhotoCount >= monitoringPhotoRequired
     val photosComplete = modulePhotosOk && opticsPhotosOk && monitoringPhotosOk
     val photoSupportText = buildList {
@@ -781,7 +781,7 @@ fun AddAssetScreen(
         val moduleOk = modulePhotoCount >= moduleRequired
         val opticsOk = if (assetType == AssetType.NODE && (isRphy || isVccapHibrido)) true
         else assetType != AssetType.NODE || (opticsPhotoCount in 1..2)
-        val monitoringOk = if (assetType == AssetType.NODE && isRphy) monitoringPhotoCount >= 1 else true
+        val monitoringOk = if (assetType == AssetType.NODE && isRphy) monitoringPhotoCount >= 2 else true
 
         val nodeAllowed = !(assetType == AssetType.NODE && hasNode && !isEdit)
 
@@ -1419,7 +1419,7 @@ fun AddAssetScreen(
                                 assetLabel = assetDisplayName,
                                 eventName = eventName,
                                 repository = repository,
-                                minRequired = if (isRphy) 1 else 0,
+                                minRequired = if (isRphy) 2 else 0,
                                 showRequiredError = attemptedSave && isRphy,
                                 maxAllowed = 2,
                                 onCountChange = {
