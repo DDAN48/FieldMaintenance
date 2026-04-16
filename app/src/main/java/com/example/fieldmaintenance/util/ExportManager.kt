@@ -2293,6 +2293,14 @@ val assets = repository.getAssetsByReportId(report.id).first()
                   .collapse[open] summary::after {
                     transform: rotate(180deg);
                   }
+                  .cell-entered {
+                    background: rgba(138, 180, 255, 0.18);
+                    box-shadow: inset 0 0 0 1px rgba(138, 180, 255, 0.28);
+                    font-weight: 700;
+                  }
+                  .cell-calculated {
+                    background: rgba(255, 255, 255, 0.04);
+                  }
                   .chart {
                     width: 100%;
                     height: 220px;
@@ -2967,6 +2975,23 @@ val assets = repository.getAssetsByReportId(report.id).first()
                       container.append(document.createTextNode('Sin datos de ajuste.'));
                       return container;
                     }
+
+                    function normalizeCanalKey(value) {
+                      return String(value || '').replace(/\s+/g, '').toUpperCase();
+                    }
+                    const inputLow = amp.inputLowFreqMHz != null ? Number(amp.inputLowFreqMHz) : null;
+                    const inputHigh = amp.inputHighFreqMHz != null ? Number(amp.inputHighFreqMHz) : null;
+                    const planLow = amp.inputPlanLowFreqMHz != null ? Number(amp.inputPlanLowFreqMHz) : null;
+                    const planHigh = amp.inputPlanHighFreqMHz != null ? Number(amp.inputPlanHighFreqMHz) : null;
+                    const outputPlanLow = amp.planLowFreqMHz != null ? Number(amp.planLowFreqMHz) : null;
+                    const outputPlanHigh = amp.planHighFreqMHz != null ? Number(amp.planHighFreqMHz) : null;
+
+                    const legend = document.createElement('div');
+                    legend.className = 'muted';
+                    legend.style.margin = '6px 0 10px 0';
+                    legend.textContent = 'Celdas sombreadas: valores ingresados.';
+                    container.appendChild(legend);
+
                     // Keep the same structure and names as the app:
                     // 1) Niveles ENTRADA
                     // 2) Niveles SALIDA
@@ -2976,8 +3001,12 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     ];
                     tables.forEach((tableData) => {
                       if (!tableData.rows || !tableData.rows.length) return;
-                      const section = document.createElement('div');
-                      section.innerHTML = `<div class="section-title">${'$'}{tableData.title}</div>`;
+                      const details = document.createElement('details');
+                      details.className = 'collapse';
+                      details.open = true;
+                      const summary = document.createElement('summary');
+                      summary.textContent = tableData.title;
+                      details.appendChild(summary);
                       const table = document.createElement('table');
                       table.className = 'table';
                       const headers = Object.keys(tableData.rows[0]).filter((h) => h !== 'alert');
@@ -2997,18 +3026,41 @@ val assets = repository.getAssetsByReportId(report.id).first()
                       const body = table.querySelector('tbody');
                       tableData.rows.forEach((row) => {
                         const tr = document.createElement('tr');
+                        const freq = row.Frecuencia != null ? Number(row.Frecuencia) : null;
+                        const canalKey = normalizeCanalKey(row.Canal);
                         headers.forEach((h) => {
                           const td = document.createElement('td');
                           td.textContent = row[h] ?? '—';
                           if (row.alert && h === 'DIF') {
                             td.style.color = 'var(--bad)';
                           }
+                          const hasValue = row[h] != null && String(row[h]).trim() !== '';
+                          // Highlight inputs vs calculated:
+                          // - Entrada: user inputs are anchor points for Medido (inputLow/inputHigh) and Plano (planLow/planHigh).
+                          // - Salida: user inputs are Medido values (CH50/CH70/CH110/CH116/CH136).
+                          const isEntrada = tableData.title.includes('ENTRADA');
+                          const isSalida = tableData.title.includes('SALIDA');
+                          const isMedidoCol = h === 'Medido';
+                          const isPlanoCol = h === 'Plano';
+                          const isCalcCol = h === 'CALC';
+                          const isEnteredEntrada =
+                            isEntrada &&
+                            ((isMedidoCol && freq != null && (freq === inputLow || freq === inputHigh)) ||
+                              (isPlanoCol && freq != null && (freq === planLow || freq === planHigh)));
+                          const enteredOutputCanals = new Set(['CH50', 'CH70', 'CH110', 'CH116', 'CH136']);
+                          const isEnteredSalidaMedido = isSalida && isMedidoCol && enteredOutputCanals.has(canalKey);
+                          const isEnteredSalidaCalc = isSalida && isCalcCol && freq != null && (freq === outputPlanLow || freq === outputPlanHigh);
+                          if (hasValue && (isEnteredEntrada || isEnteredSalidaMedido || isEnteredSalidaCalc)) {
+                            td.classList.add('cell-entered');
+                          } else if (h === 'CALC' || h === 'DIF') {
+                            td.classList.add('cell-calculated');
+                          }
                           tr.appendChild(td);
                         });
                         body.appendChild(tr);
                       });
-                      section.appendChild(table);
-                      container.appendChild(section);
+                      details.appendChild(table);
+                      container.appendChild(details);
                     });
                     return container;
                   }
@@ -3905,7 +3957,13 @@ val assets = repository.getAssetsByReportId(report.id).first()
 
         return HtmlAmplifierAdjustmentExport(
             inputTable = inputTable,
-            outputTable = outputTable
+            outputTable = outputTable,
+            inputLowFreqMHz = adj.inputLowFreqMHz,
+            inputHighFreqMHz = adj.inputHighFreqMHz,
+            inputPlanLowFreqMHz = adj.inputPlanLowFreqMHz,
+            inputPlanHighFreqMHz = adj.inputPlanHighFreqMHz,
+            planLowFreqMHz = adj.planLowFreqMHz,
+            planHighFreqMHz = adj.planHighFreqMHz
         )
     }
 
@@ -4774,7 +4832,14 @@ data class HtmlNodeAdjustmentExport(
 data class HtmlAmplifierAdjustmentExport(
     // Match app structure: one table for ENTRADA and one for SALIDA.
     val inputTable: List<HtmlAmpInputTableRow>,
-    val outputTable: List<HtmlAmpOutputTableRow>
+    val outputTable: List<HtmlAmpOutputTableRow>,
+    // Anchor points that feed the calculations (used for HTML highlighting).
+    val inputLowFreqMHz: Int? = null,
+    val inputHighFreqMHz: Int? = null,
+    val inputPlanLowFreqMHz: Int? = null,
+    val inputPlanHighFreqMHz: Int? = null,
+    val planLowFreqMHz: Int? = null,
+    val planHighFreqMHz: Int? = null
 )
 
 data class HtmlAmpRow(
