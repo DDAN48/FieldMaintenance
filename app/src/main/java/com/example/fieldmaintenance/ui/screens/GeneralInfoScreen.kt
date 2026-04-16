@@ -63,6 +63,7 @@ fun GeneralInfoScreen(navController: NavController, reportId: String) {
     
     var eventName by remember { mutableStateOf(report?.eventName ?: "") }
     var nodeName by remember { mutableStateOf(report?.nodeName ?: "") }
+    var nodeTechnology by remember { mutableStateOf(report?.nodeTechnology ?: "Legacy") }
     var responsible by remember { mutableStateOf(report?.responsible ?: "") }
     var contractor by remember { mutableStateOf(report?.contractor ?: "") }
     var meterNumber by remember { mutableStateOf(report?.meterNumber ?: "") }
@@ -94,6 +95,7 @@ fun GeneralInfoScreen(navController: NavController, reportId: String) {
         report?.let {
             eventName = it.eventName
             nodeName = it.nodeName
+            nodeTechnology = it.nodeTechnology.ifBlank { "Legacy" }
             responsible = it.responsible
             contractor = it.contractor
             meterNumber = it.meterNumber
@@ -183,7 +185,12 @@ fun GeneralInfoScreen(navController: NavController, reportId: String) {
         if (hasPlan && key.isNotBlank() && findPlanRowByNode() == null && eventName.isBlank()) {
             scope.launch { snackbarHostState.showSnackbar("Nodo no encontrado en Plan. Completa 'Nombre del Evento'.") }
         }
-        val ok = eventName.isNotBlank() && nodeName.isNotBlank() && responsible.isNotBlank() && contractor.isNotBlank() && meterNumber.isNotBlank()
+        val ok = eventName.isNotBlank() &&
+            nodeName.isNotBlank() &&
+            nodeTechnology.isNotBlank() &&
+            responsible.isNotBlank() &&
+            contractor.isNotBlank() &&
+            meterNumber.isNotBlank()
         attemptedSave = true
         if (!ok) {
             scope.launch { snackbarHostState.showSnackbar("Completa todos los campos obligatorios") }
@@ -230,7 +237,7 @@ fun GeneralInfoScreen(navController: NavController, reportId: String) {
                         // Ensure latest lookup before validating/saving.
                         applyPlanToFields(findPlanRowByNode(), showNoMatchWarning = true)
                         if (validate()) {
-                            viewModel.saveGeneralInfo(eventName, nodeName, responsible, contractor, meterNumber, homesPassedHp, directPlantMHz)
+                            viewModel.saveGeneralInfo(eventName, nodeName, nodeTechnology, responsible, contractor, meterNumber, homesPassedHp, directPlantMHz)
                             val reportFolder = MaintenanceStorage.reportFolderName(eventName, reportId)
                             MaintenanceStorage.ensureReportDir(context, reportFolder)
                             scope.launch { snackbarHostState.showSnackbar("Guardado") }
@@ -272,6 +279,41 @@ fun GeneralInfoScreen(navController: NavController, reportId: String) {
                     if (attemptedSave && nodeName.isBlank()) Text("Obligatorio")
                 }
             )
+
+            var expandedTech by remember { mutableStateOf(false) }
+            val techOptions = listOf("Legacy", "RPHY", "VCCAP_Hibrido", "VCCAP_Completo")
+            ExposedDropdownMenuBox(
+                expanded = expandedTech,
+                onExpandedChange = { expandedTech = !expandedTech },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                OutlinedTextField(
+                    value = nodeTechnology.ifBlank { "Legacy" },
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("Tecnología del Nodo") },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .menuAnchor(),
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedTech) },
+                    singleLine = true,
+                    isError = attemptedSave && nodeTechnology.isBlank(),
+                    supportingText = {
+                        if (attemptedSave && nodeTechnology.isBlank()) Text("Obligatorio")
+                    }
+                )
+                ExposedDropdownMenu(expanded = expandedTech, onDismissRequest = { expandedTech = false }) {
+                    techOptions.forEach { opt ->
+                        DropdownMenuItem(
+                            text = { Text(opt) },
+                            onClick = {
+                                nodeTechnology = opt
+                                expandedTech = false
+                            }
+                        )
+                    }
+                }
+            }
 
             OutlinedTextField(
                 value = eventName,
@@ -429,7 +471,7 @@ fun GeneralInfoScreen(navController: NavController, reportId: String) {
                     // On continue, re-check plan. If no match, event/contractor may be cleared -> validation will show required error.
                     applyPlanToFields(findPlanRowByNode(), showNoMatchWarning = true)
                     if (validate()) {
-                        viewModel.saveGeneralInfo(eventName, nodeName, responsible, contractor, meterNumber, homesPassedHp, directPlantMHz)
+                        viewModel.saveGeneralInfo(eventName, nodeName, nodeTechnology, responsible, contractor, meterNumber, homesPassedHp, directPlantMHz)
                         val reportFolder = MaintenanceStorage.reportFolderName(eventName, reportId)
                         MaintenanceStorage.ensureReportDir(context, reportFolder)
                         navController.navigate(Screen.AssetSummary.createRoute(reportId))

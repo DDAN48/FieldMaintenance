@@ -21,7 +21,7 @@ import com.example.fieldmaintenance.data.model.ReportPhoto
 
 @Database(
     entities = [MaintenanceReport::class, Asset::class, Photo::class, AmplifierAdjustment::class, PassiveItem::class, ReportPhoto::class, NodeAdjustment::class],
-    version = 19,
+    version = 20,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -299,6 +299,20 @@ abstract class AppDatabase : RoomDatabase() {
                     // La columna ya existe, continuar
                 }
                 db.execSQL("UPDATE amplifier_adjustments SET entradaConfirmed = 0 WHERE entradaConfirmed IS NULL")
+            }
+        }
+
+        val MIGRATION_19_20 = object : Migration(19, 20) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                try {
+                    db.execSQL("ALTER TABLE maintenance_reports ADD COLUMN nodeTechnology TEXT NOT NULL DEFAULT 'Legacy'")
+                } catch (e: Exception) {
+                    // La columna ya existe, continuar
+                }
+                db.execSQL(
+                    "UPDATE maintenance_reports SET nodeTechnology = 'Legacy' " +
+                        "WHERE nodeTechnology IS NULL OR TRIM(nodeTechnology) = ''"
+                )
             }
         }
     }

@@ -48,6 +48,7 @@ class ReportViewModel(
     fun saveGeneralInfo(
         eventName: String,
         nodeName: String,
+        nodeTechnology: String,
         responsible: String,
         contractor: String,
         meterNumber: String,
@@ -59,6 +60,7 @@ class ReportViewModel(
             val updatedReport = currentReport.copy(
                 eventName = eventName,
                 nodeName = nodeName,
+                nodeTechnology = nodeTechnology.trim().ifBlank { "Legacy" },
                 responsible = responsible,
                 contractor = contractor,
                 meterNumber = meterNumber,

@@ -23,6 +23,12 @@ data class MaintenanceReport @JvmOverloads constructor(
      * Allowed values: 750, 870, 1000. Defaults to 1000.
      */
     val directPlantMHz: Int = 1000,
+    /**
+     * Tecnología del Nodo del mantenimiento.
+     * Allowed values: Legacy, RPHY, VCCAP_Hibrido, VCCAP_Completo.
+     * This is the single source of truth for node-related flows (adjustment/photos/measurements).
+     */
+    val nodeTechnology: String = "Legacy",
     val executionDate: Long = System.currentTimeMillis(),
     val status: ReportStatus = ReportStatus.DRAFT,
     val createdAt: Long = System.currentTimeMillis(),
