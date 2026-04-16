@@ -2403,7 +2403,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     <div class="info-grid" id="header-info"></div>
                   </div>
                   <div class="card">
-                    <div class="title">Resumen del Mantenimiento Preventivo</div>
+                    <div class="title">Resumen del Mantenimiento</div>
                     <div class="summary-grid" style="margin-top:16px;">
                       <div>
                         <div class="section-title">Información General</div>
