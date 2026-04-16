@@ -2902,18 +2902,13 @@ val assets = repository.getAssetsByReportId(report.id).first()
                       container.append(document.createTextNode('Sin datos de ajuste.'));
                       return container;
                     }
+                    // Keep the same structure and names as the app:
+                    // 1) Niveles ENTRADA
+                    // 2) Niveles SALIDA
                     const tables = [
-                      { title: 'FWD IN PAD/ EQ /AGC PAD', rows: amp.pads },
-                      { title: 'Niveles ENTRADA medido vs plano', rows: amp.inputMeasured },
-                      { title: 'Niveles ENTRADA calculados', rows: amp.inputCalculated },
-                      { title: 'Niveles SALIDA por plano', rows: amp.outputPlan },
-                      { title: 'Niveles SALIDA calculados', rows: amp.outputCalculated },
-                      { title: 'Niveles SALIDA calculado vs medido', rows: amp.outputMeasured }
+                      { title: 'Niveles ENTRADA', rows: amp.inputTable },
+                      { title: 'Niveles SALIDA', rows: amp.outputTable }
                     ];
-                    const collapsibleTitles = new Set([
-                      'Niveles ENTRADA calculados',
-                      'Niveles SALIDA calculados'
-                    ]);
                     tables.forEach((tableData) => {
                       if (!tableData.rows || !tableData.rows.length) return;
                       const section = document.createElement('div');
@@ -2921,7 +2916,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                       const table = document.createElement('table');
                       table.className = 'table';
                       const headers = Object.keys(tableData.rows[0]).filter((h) => h !== 'alert');
-                      const preferred = ['Canal', 'Frecuencia', 'Nivel', 'Medido', 'Plano', 'Calculado', 'DIF'];
+                      const preferred = ['Canal', 'Frecuencia', 'CALC', 'Medido', 'Plano', 'DIF'];
                       headers.sort((a, b) => {
                         const ia = preferred.indexOf(a);
                         const ib = preferred.indexOf(b);
@@ -2947,18 +2942,8 @@ val assets = repository.getAssetsByReportId(report.id).first()
                         });
                         body.appendChild(tr);
                       });
-                      if (collapsibleTitles.has(tableData.title)) {
-                        const details = document.createElement('details');
-                        details.className = 'collapse flat';
-                        const summary = document.createElement('summary');
-                        summary.textContent = tableData.title;
-                        details.appendChild(summary);
-                        details.appendChild(table);
-                        container.appendChild(details);
-                      } else {
-                        section.appendChild(table);
-                        container.appendChild(section);
-                      }
+                      section.appendChild(table);
+                      container.appendChild(section);
                     });
                     return container;
                   }
@@ -3272,6 +3257,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     const withUnits = {
                       Frecuencia: 'Frecuencia (MHz)',
                       Nivel: 'Nivel (dBmV)',
+                      CALC: 'CALC (dBmV)',
                       Medido: 'Medido (dBmV)',
                       Plano: 'Plano (dBmV)',
                       Calculado: 'Calculado (dBmV)',
@@ -3784,25 +3770,10 @@ val assets = repository.getAssetsByReportId(report.id).first()
         val entradaCalc = CiscoHfcAmpCalculator.nivelesEntradaCalculados(adj)
         val entradaPlanCalc = CiscoHfcAmpCalculator.nivelesEntradaPlanCalculados(adj)
         val salidaCalc = CiscoHfcAmpCalculator.nivelesSalidaCalculados(adj)
-        val pad = CiscoHfcAmpCalculator.fwdInPad(adj, bw, asset.amplifierMode)
-        val tilt = CiscoHfcAmpCalculator.fwdInEqTilt(adj, bw)
-        val agc = CiscoHfcAmpCalculator.agcPad(adj, bw, asset.amplifierMode)
-        val inputMeasured = listOf(
-            HtmlAmpRow(
-                Canal = CiscoHfcAmpCalculator.inputChannelLabelForFreq(adj.inputPlanLowFreqMHz ?: adj.inputLowFreqMHz ?: 379),
-                Frecuencia = adj.inputPlanLowFreqMHz ?: adj.inputLowFreqMHz ?: 379,
-                Medido = adj.inputCh50Dbmv?.let { CiscoHfcAmpCalculator.format1(it) },
-                Plano = adj.inputPlanCh50Dbmv?.let { CiscoHfcAmpCalculator.format1(it) }
-            ),
-            HtmlAmpRow(
-                Canal = CiscoHfcAmpCalculator.inputChannelLabelForFreq(adj.inputPlanHighFreqMHz ?: adj.inputHighFreqMHz ?: 870),
-                Frecuencia = adj.inputPlanHighFreqMHz ?: adj.inputHighFreqMHz ?: 870,
-                Medido = adj.inputCh116Dbmv?.let { CiscoHfcAmpCalculator.format1(it) },
-                Plano = adj.inputPlanHighDbmv?.let { CiscoHfcAmpCalculator.format1(it) }
-            )
-        )
-        val inputCalculated = listOf(
-            "L 54" to 54,
+        fun fmt1(v: Double?): String? = v?.let { CiscoHfcAmpCalculator.format1(it) }
+
+        val inputRowDefs = listOf(
+            "L54" to 54,
             "L102" to 102,
             "CH3" to 61,
             "CH50" to 379,
@@ -3810,27 +3781,32 @@ val assets = repository.getAssetsByReportId(report.id).first()
             "CH116" to 750,
             "CH136" to 870,
             "CH158" to 1000
-        ).map { (c, f) ->
-            HtmlAmpRow(
+        )
+        fun inputMedidoFor(freq: Int, key: String): String? {
+            val calc = entradaCalc?.get(key)
+            if (calc != null) return fmt1(calc)
+            if (adj.inputLowFreqMHz != null && freq == adj.inputLowFreqMHz) return fmt1(adj.inputCh50Dbmv)
+            if (adj.inputHighFreqMHz != null && freq == adj.inputHighFreqMHz) return fmt1(adj.inputCh116Dbmv)
+            return null
+        }
+        fun inputPlanoFor(freq: Int, key: String): String? {
+            val calc = entradaPlanCalc?.get(key)
+            if (calc != null) return fmt1(calc)
+            if (adj.inputPlanLowFreqMHz != null && freq == adj.inputPlanLowFreqMHz) return fmt1(adj.inputPlanCh50Dbmv)
+            if (adj.inputPlanHighFreqMHz != null && freq == adj.inputPlanHighFreqMHz) return fmt1(adj.inputPlanHighDbmv)
+            return null
+        }
+        val inputTable = inputRowDefs.map { (c, f) ->
+            val key = if (c == "L54") "L 54" else c
+            HtmlAmpInputTableRow(
                 Canal = c,
                 Frecuencia = f,
-                Calculado = entradaCalc?.get(c)?.let { CiscoHfcAmpCalculator.format1(it) },
-                Plano = entradaPlanCalc?.get(c)?.let { CiscoHfcAmpCalculator.format1(it) }
+                Medido = inputMedidoFor(f, key),
+                Plano = inputPlanoFor(f, key)
             )
         }
-        val outputPlan = listOf(
-            HtmlAmpRow(
-                Canal = "L output",
-                Frecuencia = adj.planLowFreqMHz ?: 54,
-                Plano = adj.planLowDbmv?.let { CiscoHfcAmpCalculator.format1(it) }
-            ),
-            HtmlAmpRow(
-                Canal = "H output",
-                Frecuencia = adj.planHighFreqMHz ?: 750,
-                Plano = adj.planHighDbmv?.let { CiscoHfcAmpCalculator.format1(it) }
-            )
-        )
-        val outputCalculated = listOf(
+
+        val outputRowDefs = listOf(
             "L54" to 54,
             "L102" to 102,
             "CH3" to 61,
@@ -3840,43 +3816,31 @@ val assets = repository.getAssetsByReportId(report.id).first()
             "CH116" to 750,
             "CH136" to 870,
             "CH158" to 1000
-        ).map { (c, f) ->
-            HtmlAmpRow(
-                Canal = c,
-                Frecuencia = f,
-                Calculado = salidaCalc?.get(c)?.let { CiscoHfcAmpCalculator.format1(it) }
-            )
-        }
-        val outputMeasured = listOf(
-            Triple("CH50", 379, adj.outCh50Dbmv),
-            Triple("CH70", 495, adj.outCh70Dbmv),
-            Triple("CH110", 711, adj.outCh110Dbmv),
-            Triple("CH116", 750, adj.outCh116Dbmv),
-            Triple("CH136", 870, adj.outCh136Dbmv),
-        ).map { (c, f, med) ->
+        )
+        val outputMeasuredByKey: Map<String, Double?> = mapOf(
+            "CH50" to adj.outCh50Dbmv,
+            "CH70" to adj.outCh70Dbmv,
+            "CH110" to adj.outCh110Dbmv,
+            "CH116" to adj.outCh116Dbmv,
+            "CH136" to adj.outCh136Dbmv,
+        )
+        val outputTable = outputRowDefs.map { (c, f) ->
             val calc = salidaCalc?.get(c)
+            val med = outputMeasuredByKey[c]
             val diff = if (calc != null && med != null) med - calc else null
-            HtmlAmpOutputRow(
+            HtmlAmpOutputTableRow(
                 Canal = c,
                 Frecuencia = f,
-                Calculado = calc?.let { CiscoHfcAmpCalculator.format1(it) },
-                Medido = med?.let { CiscoHfcAmpCalculator.format1(it) },
+                CALC = fmt1(calc),
+                Medido = fmt1(med),
                 DIF = diff?.let { (if (it >= 0) "+" else "") + CiscoHfcAmpCalculator.format1(it) },
                 alert = diff?.let { kotlin.math.abs(it) > 1.2 } == true
             )
         }
-        val pads = listOf(
-            HtmlAmpPadRow("FWD IN PAD", pad?.let { CiscoHfcAmpCalculator.format1(it) }),
-            HtmlAmpPadRow("FWD IN EQ (TILT)", tilt?.let { CiscoHfcAmpCalculator.format1(it) }),
-            HtmlAmpPadRow("AGC IN PAD", agc?.let { CiscoHfcAmpCalculator.format1(it) })
-        )
+
         return HtmlAmplifierAdjustmentExport(
-            inputMeasured = inputMeasured,
-            inputCalculated = inputCalculated,
-            outputPlan = outputPlan,
-            outputCalculated = outputCalculated,
-            outputMeasured = outputMeasured,
-            pads = pads
+            inputTable = inputTable,
+            outputTable = outputTable
         )
     }
 
@@ -4713,12 +4677,9 @@ data class HtmlNodeAdjustmentExport(
 )
 
 data class HtmlAmplifierAdjustmentExport(
-    val inputMeasured: List<HtmlAmpRow>,
-    val inputCalculated: List<HtmlAmpRow>,
-    val outputPlan: List<HtmlAmpRow>,
-    val outputCalculated: List<HtmlAmpRow>,
-    val outputMeasured: List<HtmlAmpOutputRow>,
-    val pads: List<HtmlAmpPadRow>
+    // Match app structure: one table for ENTRADA and one for SALIDA.
+    val inputTable: List<HtmlAmpInputTableRow>,
+    val outputTable: List<HtmlAmpOutputTableRow>
 )
 
 data class HtmlAmpRow(
@@ -4727,6 +4688,22 @@ data class HtmlAmpRow(
     val Medido: String? = null,
     val Plano: String? = null,
     val Calculado: String? = null
+)
+
+data class HtmlAmpInputTableRow(
+    val Canal: String,
+    val Frecuencia: Int,
+    val Medido: String? = null,
+    val Plano: String? = null
+)
+
+data class HtmlAmpOutputTableRow(
+    val Canal: String,
+    val Frecuencia: Int,
+    val CALC: String? = null,
+    val Medido: String? = null,
+    val DIF: String? = null,
+    val alert: Boolean = false
 )
 
 data class HtmlAmpOutputRow(
