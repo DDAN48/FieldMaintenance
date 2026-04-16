@@ -349,6 +349,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
         }
         
         val passives = repository.getPassivesByReportId(report.id).first()
+        val ingressOrigins = repository.getIngressOriginsByReportId(report.id).first()
         val reportPhotos = repository.getReportPhotosByReportId(report.id).first()
         val switchSelections = collectSwitchSelections(assets)
 
@@ -358,6 +359,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
             photos = photosMap,
             appVersionName = BuildConfig.VERSION_NAME,
             passives = passives,
+            ingressOrigins = ingressOrigins,
             reportPhotos = reportPhotos,
             nodeAdjustments = if (nodeAdjustmentsMap.isNotEmpty()) nodeAdjustmentsMap else null,
             adjustments = if (adjustmentsMap.isNotEmpty()) adjustmentsMap else null,
@@ -1410,6 +1412,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
         val assets = repository.getAssetsByReportId(report.id).first()
             .sortedBy { assetSortKey(it) }
         val passives = repository.getPassivesByReportId(report.id).first()
+        val ingressOrigins = repository.getIngressOriginsByReportId(report.id).first()
         val exportDir = File(context.cacheDir, "export_zip/${report.id}")
         if (exportDir.exists()) exportDir.deleteRecursively()
         exportDir.mkdirs()
@@ -1446,6 +1449,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
             adjustments = if (adjustmentsByAsset.isEmpty()) null else adjustmentsByAsset,
             nodeAdjustments = if (nodeAdjustmentsByAsset.isNotEmpty()) nodeAdjustmentsByAsset else null,
             passives = passives,
+            ingressOrigins = ingressOrigins,
             switchSelections = if (switchSelections.isNotEmpty()) switchSelections else null
         )
         File(exportDir, "report.json").writeText(gson.toJson(exportData))
@@ -1488,6 +1492,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
         val assets = repository.getAssetsByReportId(report.id).first()
             .sortedBy { assetSortKey(it) }
         val passives = repository.getPassivesByReportId(report.id).first()
+        val ingressOrigins = repository.getIngressOriginsByReportId(report.id).first()
         val exportDir = File(context.cacheDir, "export_zip_continue/${report.id}")
         if (exportDir.exists()) exportDir.deleteRecursively()
         exportDir.mkdirs()
@@ -1633,6 +1638,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
             adjustments = if (adjustmentsByAsset.isEmpty()) null else adjustmentsByAsset,
             nodeAdjustments = if (nodeAdjustmentsByAsset.isNotEmpty()) nodeAdjustmentsByAsset else null,
             passives = passives,
+            ingressOrigins = ingressOrigins,
             switchSelections = if (switchSelections.isNotEmpty()) switchSelections else null
         )
         File(exportDir, "report.json").writeText(gson.toJson(exportData))
@@ -1665,6 +1671,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
         report: MaintenanceReport,
         assets: List<Asset>,
         passives: List<PassiveItem>,
+        ingressOrigins: List<IngressOrigin>,
         adjustedCount: Int,
         photosByAsset: Map<String, List<Photo>>,
         adjustmentsByAsset: Map<String, AmplifierAdjustment>,
@@ -1777,6 +1784,16 @@ val assets = repository.getAssetsByReportId(report.id).first()
                     address = passive.address,
                     observation = passive.observation,
                     createdAt = passive.createdAt
+                )
+            },
+            ingressOrigins = ingressOrigins.map { ingress ->
+                HtmlIngressEntry(
+                    address = ingress.address,
+                    clientId = ingress.clientId,
+                    buildingId = ingress.buildingId,
+                    ticketGenerated = ingress.ticketGenerated,
+                    observation = ingress.observation,
+                    createdAt = ingress.createdAt
                 )
             }
         )
@@ -2454,6 +2471,13 @@ val assets = repository.getAssetsByReportId(report.id).first()
                       <div id="passive-section"></div>
                     </details>
                   </div>
+                  <div class="card">
+                    <div class="section-title">Detalle de origen ingress</div>
+                    <details class="collapse">
+                      <summary>Ver detalle</summary>
+                      <div id="ingress-section"></div>
+                    </details>
+                  </div>
                 </div>
                 <script
                   src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
@@ -2473,6 +2497,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                   const adjustmentPanel = document.getElementById('adjustment-panel');
                   const measurementSection = document.getElementById('measurement-section');
                   const passiveSection = document.getElementById('passive-section');
+                  const ingressSection = document.getElementById('ingress-section');
                   const themeToggle = document.getElementById('theme-toggle');
                   const mapSearchInput = document.getElementById('map-search-input');
                   const mapSearchButton = document.getElementById('map-search-button');
@@ -2741,6 +2766,46 @@ val assets = repository.getAssetsByReportId(report.id).first()
                         body.appendChild(tr);
                       });
                       passiveSection.appendChild(table);
+                    }
+                  }
+
+                  if (ingressSection) {
+                    if (!data.ingressOrigins || !data.ingressOrigins.length) {
+                      ingressSection.innerHTML = `<div class="muted">Sin orígenes ingress cargados.</div>`;
+                    } else {
+                      const table = document.createElement('table');
+                      table.className = 'table';
+                      table.innerHTML = `
+                        <thead>
+                          <tr>
+                            <th>Dirección</th>
+                            <th>ID cliente</th>
+                            <th>ID edificio</th>
+                            <th>Ticket generado</th>
+                            <th>Observación</th>
+                            <th>Fecha</th>
+                          </tr>
+                        </thead>
+                        <tbody></tbody>
+                      `;
+                      const body = table.querySelector('tbody');
+                      data.ingressOrigins.forEach((item) => {
+                        const tr = document.createElement('tr');
+                        const date = item.createdAt
+                          ? new Date(item.createdAt).toLocaleString()
+                          : '—';
+                        const ticket = item.ticketGenerated === true ? 'Sí' : 'No';
+                        tr.innerHTML = `
+                          <td>${'$'}{item.address || '—'}</td>
+                          <td>${'$'}{item.clientId || '—'}</td>
+                          <td>${'$'}{item.buildingId || '—'}</td>
+                          <td>${'$'}{ticket}</td>
+                          <td>${'$'}{item.observation || '—'}</td>
+                          <td>${'$'}{date}</td>
+                        `;
+                        body.appendChild(tr);
+                      });
+                      ingressSection.appendChild(table);
                     }
                   }
 
@@ -3862,6 +3927,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
         val assets = repository.getAssetsByReportId(report.id).first()
             .sortedBy { assetSortKey(it) }
         val passives = repository.getPassivesByReportId(report.id).first()
+        val ingressOrigins = repository.getIngressOriginsByReportId(report.id).first()
         val exportDir = File(context.cacheDir, "export_html_only/${report.id}")
         if (exportDir.exists()) exportDir.deleteRecursively()
         exportDir.mkdirs()
@@ -3891,6 +3957,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
             report = report,
             assets = assets,
             passives = passives,
+            ingressOrigins = ingressOrigins,
             adjustedCount = adjustedCount,
             photosByAsset = photosByAsset,
             adjustmentsByAsset = adjustmentsByAsset,
@@ -3917,6 +3984,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
         val assets = repository.getAssetsByReportId(report.id).first()
             .sortedBy { assetSortKey(it) }
         val passives = repository.getPassivesByReportId(report.id).first()
+        val ingressOrigins = repository.getIngressOriginsByReportId(report.id).first()
         val exportDir = File(context.cacheDir, "export_html_images/${report.id}")
         if (exportDir.exists()) exportDir.deleteRecursively()
         exportDir.mkdirs()
@@ -3946,6 +4014,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
             report = report,
             assets = assets,
             passives = passives,
+            ingressOrigins = ingressOrigins,
             adjustedCount = adjustedCount,
             photosByAsset = photosByAsset,
             adjustmentsByAsset = adjustmentsByAsset,
@@ -3981,6 +4050,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
         val allAssets = repository.getAssetsByReportId(report.id).first()
             .sortedBy { assetSortKey(it) }
         val passives = repository.getPassivesByReportId(report.id).first()
+        val ingressOrigins = repository.getIngressOriginsByReportId(report.id).first()
 
         val photosByAsset = mutableMapOf<String, List<Photo>>()
         val adjustmentsByAsset = mutableMapOf<String, AmplifierAdjustment>()
@@ -4034,6 +4104,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                 report = report,
                 assets = partAssets,
                 passives = passives,
+                ingressOrigins = ingressOrigins,
                 adjustedCount = adjustedCount,
                 photosByAsset = photosByAsset,
                 adjustmentsByAsset = adjustmentsByAsset,
@@ -4088,6 +4159,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
         val assets = repository.getAssetsByReportId(report.id).first()
             .sortedBy { assetSortKey(it) }
         val passives = repository.getPassivesByReportId(report.id).first()
+        val ingressOrigins = repository.getIngressOriginsByReportId(report.id).first()
         val exportDir = File(context.cacheDir, "export_zip_app/${report.id}")
         if (exportDir.exists()) exportDir.deleteRecursively()
         exportDir.mkdirs()
@@ -4194,6 +4266,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
             adjustments = if (adjustmentsByAsset.isEmpty()) null else adjustmentsByAsset,
             nodeAdjustments = if (nodeAdjustmentsByAsset.isNotEmpty()) nodeAdjustmentsByAsset else null,
             passives = passives,
+            ingressOrigins = ingressOrigins,
             switchSelections = if (switchSelections.isNotEmpty()) switchSelections else null
         )
         File(exportDir, "report.json").writeText(gson.toJson(exportData))
@@ -4256,6 +4329,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
         val assets = repository.getAssetsByReportId(report.id).first()
             .sortedBy { assetSortKey(it) }
         val passives = repository.getPassivesByReportId(report.id).first()
+        val ingressOrigins = repository.getIngressOriginsByReportId(report.id).first()
         val adjustmentsByAsset = mutableMapOf<String, AmplifierAdjustment>()
         val nodeAdjustmentsByAsset = mutableMapOf<String, NodeAdjustment>()
         val switchSelections = collectSwitchSelections(assets)
@@ -4280,6 +4354,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
             adjustments = if (adjustmentsByAsset.isEmpty()) null else adjustmentsByAsset,
             nodeAdjustments = if (nodeAdjustmentsByAsset.isNotEmpty()) nodeAdjustmentsByAsset else null,
             passives = passives,
+            ingressOrigins = ingressOrigins,
             switchSelections = if (switchSelections.isNotEmpty()) switchSelections else null
         )
         val tmp = File(context.getExternalFilesDir(null), "${exportBaseName(report)}_report.json")
@@ -4379,6 +4454,9 @@ val assets = repository.getAssetsByReportId(report.id).first()
             exportData.passives?.forEach { p ->
                 repository.insertPassive(p)
             }
+            exportData.ingressOrigins?.forEach { ingress ->
+                repository.insertIngressOrigin(ingress)
+            }
             exportData.reportPhotos?.forEach { rp ->
                 repository.upsertReportPhoto(rp)
             }
@@ -4457,6 +4535,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
                 }
                 repository.deleteReportPhotosByReportId(report.id)
                 repository.deletePassivesByReportId(report.id)
+                repository.deleteIngressOriginsByReportId(report.id)
             }
 
             // Insert report + assets
@@ -4475,6 +4554,10 @@ val assets = repository.getAssetsByReportId(report.id).first()
             // Restore passives
             exportData.passives?.forEach { p ->
                 repository.insertPassive(p.copy(reportId = report.id))
+            }
+            // Restore ingress origins
+            exportData.ingressOrigins?.forEach { ingress ->
+                repository.insertIngressOrigin(ingress.copy(reportId = report.id))
             }
 
             applySwitchSelections(exportData.switchSelections)
@@ -4568,6 +4651,7 @@ data class ExportData(
     val photos: Map<String, List<Photo>>,
     val appVersionName: String? = null,
     val passives: List<PassiveItem>? = null,
+    val ingressOrigins: List<IngressOrigin>? = null,
     val reportPhotos: List<ReportPhoto>? = null,
     val nodeAdjustments: Map<String, NodeAdjustment>? = null,
     val adjustments: Map<String, AmplifierAdjustment>? = null,
@@ -4599,6 +4683,7 @@ data class ExportDataV2(
     val adjustments: Map<String, AmplifierAdjustment>? = null,
     val nodeAdjustments: Map<String, NodeAdjustment>? = null,
     val passives: List<PassiveItem>? = null,
+    val ingressOrigins: List<IngressOrigin>? = null,
     val switchSelections: Map<String, Map<String, String>>? = null
 )
 
@@ -4613,7 +4698,8 @@ data class HtmlExportData(
     val info: HtmlInfoCounts,
     val assets: List<HtmlAssetExport>,
     val measurements: Map<String, HtmlMeasurementBundle>,
-    val passives: List<HtmlPassiveEntry> = emptyList()
+    val passives: List<HtmlPassiveEntry> = emptyList(),
+    val ingressOrigins: List<HtmlIngressEntry> = emptyList()
 )
 
 data class HtmlInfoCounts(
@@ -4628,6 +4714,15 @@ data class HtmlPassiveEntry(
     val type: String,
     val address: String,
     val observation: String,
+    val createdAt: Long
+)
+
+data class HtmlIngressEntry(
+    val address: String,
+    val clientId: String? = null,
+    val buildingId: String? = null,
+    val ticketGenerated: Boolean = false,
+    val observation: String? = null,
     val createdAt: Long
 )
 
