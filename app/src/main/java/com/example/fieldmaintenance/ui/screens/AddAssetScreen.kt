@@ -503,7 +503,8 @@ fun AddAssetScreen(
         restore = { if (it.isBlank()) null else Port.valueOf(it) }
     )
     var frequency by rememberSaveable(stateSaver = frequencySaver) { mutableStateOf<Frequency?>(null) }
-    var technology by rememberSaveable { mutableStateOf<String?>(null) }
+    // Node technology is defined at report level (Información General).
+    val technology = report?.nodeTechnology?.takeIf { it.isNotBlank() }
     var amplifierMode by rememberSaveable(stateSaver = amplifierModeSaver) { mutableStateOf<AmplifierMode?>(null) }
     var port by rememberSaveable(stateSaver = portSaver) { mutableStateOf<Port?>(null) }
     var portIndex by rememberSaveable { mutableStateOf<Int?>(null) }
@@ -537,7 +538,11 @@ fun AddAssetScreen(
     // Node adjustment (persisted per asset)
     val nodeAdjustment by repository.getNodeAdjustment(workingAssetId).collectAsState(initial = null)
 
-    val techNormalized = technology?.trim()?.lowercase(Locale.getDefault()) ?: ""
+    // Node technology is defined at report level (Información General) and should be the source of truth.
+    val reportNodeTechnology = report?.nodeTechnology?.trim()?.takeIf { it.isNotBlank() }
+    val techNormalized = reportNodeTechnology?.trim()?.lowercase(Locale.getDefault())
+        ?: technology?.trim()?.lowercase(Locale.getDefault())
+        ?: ""
     val techKey = techNormalized.replace(Regex("[^a-z0-9]"), "")
     // Backward compatibility: old "vccap" now maps to "vccap_hibrido".
     val isVccapHibrido = techKey == "vccap" || techKey == "vccaphibrido"
@@ -714,7 +719,6 @@ fun AddAssetScreen(
                     85 -> Frequency.MHz_85
                     else -> null
                 }
-                technology = asset.technology
                 meterType = asset.meterType?.takeIf { it.isNotBlank() } ?: "ONX"
                 amplifierMode = asset.amplifierMode
                 port = asset.port
@@ -727,22 +731,7 @@ fun AddAssetScreen(
         hasMissingAssets = hasIncompleteAssets(context, reportId, report, repository)
     }
 
-    // Auto-fill technology from plan if available and not already set
-    LaunchedEffect(planRowForNode, technology) {
-        if (assetType == AssetType.NODE && technology == null && planRowForNode != null) {
-            val planTech = planRowForNode.technology.trim()
-            if (planTech.isNotBlank()) {
-                val normalized = planTech.lowercase(Locale.getDefault())
-                val key = normalized.replace(Regex("[^a-z0-9]"), "")
-                when {
-                    normalized == "legacy" -> technology = "Legacy"
-                    normalized == "rphy" -> technology = "RPHY"
-                    key.contains("vccap") && key.contains("completo") -> technology = "VCCAP_Completo"
-                    key.contains("vccap") -> technology = "VCCAP_Hibrido"
-                }
-            }
-        }
-    }
+    // Node technology comes from General Info; do not infer it here.
     
     suspend fun validateAndShowErrors(): Boolean {
         attemptedSave = true
@@ -1034,44 +1023,17 @@ fun AddAssetScreen(
                         }
 
                         if (assetType == AssetType.NODE) {
-                            var expandedTech by remember { mutableStateOf(false) }
-                            val techOptions = listOf("Legacy", "RPHY", "VCCAP_Hibrido", "VCCAP_Completo")
-                            ExposedDropdownMenuBox(
-                                expanded = expandedTech,
-                                onExpandedChange = { expandedTech = !expandedTech },
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                OutlinedTextField(
-                                    value = technology ?: "Seleccionar",
-                                    onValueChange = {},
-                                    readOnly = true,
-                                    enabled = true,
-                                    label = { Text("Tecnología") },
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .menuAnchor(),
-                                    trailingIcon = {
-                                        ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedTech)
-                                    },
-                                    isError = attemptedSave && technology == null,
-                                    supportingText = {
-                                        if (attemptedSave && technology == null) Text("Obligatorio")
-                                    }
+                            Text(
+                                text = "Tecnología del Nodo: ${technology ?: "—"}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f)
+                            )
+                            if (attemptedSave && technology.isNullOrBlank()) {
+                                Text(
+                                    text = "Obligatorio: completa la Tecnología del Nodo en Información General",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error
                                 )
-                                ExposedDropdownMenu(
-                                    expanded = expandedTech,
-                                    onDismissRequest = { expandedTech = false }
-                                ) {
-                                    techOptions.forEach { tech ->
-                                        DropdownMenuItem(
-                                            text = { Text(tech) },
-                                            onClick = {
-                                                technology = tech
-                                                expandedTech = false
-                                            }
-                                        )
-                                    }
-                                }
                             }
                         }
 
