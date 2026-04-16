@@ -1459,6 +1459,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
             report = report,
             assets = assets,
             passives = passives,
+            ingressOrigins = ingressOrigins,
             adjustedCount = adjustedCount,
             photosByAsset = photosByAsset,
             adjustmentsByAsset = adjustmentsByAsset,
@@ -1649,6 +1650,7 @@ val assets = repository.getAssetsByReportId(report.id).first()
             report = report,
             assets = assets,
             passives = passives,
+            ingressOrigins = ingressOrigins,
             adjustedCount = adjustedCount,
             photosByAsset = photosByAsset,
             adjustmentsByAsset = adjustmentsByAsset,
@@ -2802,7 +2804,9 @@ val assets = repository.getAssetsByReportId(report.id).first()
                         const date = item.createdAt
                           ? new Date(item.createdAt).toLocaleString()
                           : '—';
-                        const ticket = item.ticketGenerated === true ? 'Sí' : 'No';
+                        const ticket = item.ticketGenerated != null && String(item.ticketGenerated).trim() !== ''
+                          ? String(item.ticketGenerated)
+                          : '—';
                         tr.innerHTML = `
                           <td>${'$'}{item.address || '—'}</td>
                           <td>${'$'}{item.clientId || '—'}</td>
@@ -4779,7 +4783,7 @@ data class HtmlIngressEntry(
     val address: String,
     val clientId: String? = null,
     val buildingId: String? = null,
-    val ticketGenerated: Boolean = false,
+    val ticketGenerated: String? = null,
     val observation: String? = null,
     val createdAt: Long
 )
