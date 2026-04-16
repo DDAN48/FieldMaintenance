@@ -14,6 +14,7 @@ import com.example.fieldmaintenance.ui.screens.ManualScreen
 import com.example.fieldmaintenance.ui.screens.MeasurementsTrashScreen
 import com.example.fieldmaintenance.ui.screens.MonitorQrScreen
 import com.example.fieldmaintenance.ui.screens.PassivesScreen
+import com.example.fieldmaintenance.ui.screens.IngressAbScreen
 import com.example.fieldmaintenance.ui.screens.ShareImportScreen
 import com.example.fieldmaintenance.ui.screens.SettingsScreen
 import com.example.fieldmaintenance.ui.screens.TrashScreen
@@ -50,6 +51,9 @@ sealed class Screen(val route: String) {
     }
     object Passives : Screen("passives/{reportId}") {
         fun createRoute(reportId: String) = "passives/$reportId"
+    }
+    object IngressAb : Screen("ingress_ab/{reportId}") {
+        fun createRoute(reportId: String) = "ingress_ab/$reportId"
     }
     object MonitorQr : Screen("monitor_qr/{reportId}") {
         fun createRoute(reportId: String) = "monitor_qr/$reportId"
@@ -116,6 +120,10 @@ fun NavGraph(
         composable(Screen.Passives.route) { backStackEntry ->
             val reportId = backStackEntry.arguments?.getString("reportId") ?: ""
             PassivesScreen(navController = navController, reportId = reportId)
+        }
+        composable(Screen.IngressAb.route) { backStackEntry ->
+            val reportId = backStackEntry.arguments?.getString("reportId") ?: ""
+            IngressAbScreen(navController = navController, reportId = reportId)
         }
         composable(Screen.MonitorQr.route) { backStackEntry ->
             val reportId = backStackEntry.arguments?.getString("reportId") ?: ""

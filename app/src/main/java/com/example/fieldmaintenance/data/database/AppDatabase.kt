@@ -11,6 +11,7 @@ import com.example.fieldmaintenance.data.dao.PhotoDao
 import com.example.fieldmaintenance.data.dao.PassiveItemDao
 import com.example.fieldmaintenance.data.dao.ReportPhotoDao
 import com.example.fieldmaintenance.data.dao.NodeAdjustmentDao
+import com.example.fieldmaintenance.data.dao.IngressOriginDao
 import com.example.fieldmaintenance.data.model.AmplifierAdjustment
 import com.example.fieldmaintenance.data.model.Asset
 import com.example.fieldmaintenance.data.model.MaintenanceReport
@@ -18,10 +19,11 @@ import com.example.fieldmaintenance.data.model.NodeAdjustment
 import com.example.fieldmaintenance.data.model.Photo
 import com.example.fieldmaintenance.data.model.PassiveItem
 import com.example.fieldmaintenance.data.model.ReportPhoto
+import com.example.fieldmaintenance.data.model.IngressOrigin
 
 @Database(
-    entities = [MaintenanceReport::class, Asset::class, Photo::class, AmplifierAdjustment::class, PassiveItem::class, ReportPhoto::class, NodeAdjustment::class],
-    version = 20,
+    entities = [MaintenanceReport::class, Asset::class, Photo::class, AmplifierAdjustment::class, PassiveItem::class, IngressOrigin::class, ReportPhoto::class, NodeAdjustment::class],
+    version = 21,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -30,6 +32,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun photoDao(): PhotoDao
     abstract fun amplifierAdjustmentDao(): AmplifierAdjustmentDao
     abstract fun passiveItemDao(): PassiveItemDao
+    abstract fun ingressOriginDao(): IngressOriginDao
     abstract fun reportPhotoDao(): ReportPhotoDao
     abstract fun nodeAdjustmentDao(): NodeAdjustmentDao
 
@@ -312,6 +315,26 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL(
                     "UPDATE maintenance_reports SET nodeTechnology = 'Legacy' " +
                         "WHERE nodeTechnology IS NULL OR TRIM(nodeTechnology) = ''"
+                )
+            }
+        }
+
+        val MIGRATION_20_21 = object : Migration(20, 21) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS ingress_origins (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        reportId TEXT NOT NULL,
+                        address TEXT NOT NULL,
+                        clientId TEXT NOT NULL DEFAULT '',
+                        buildingId TEXT NOT NULL DEFAULT '',
+                        ticketGenerated TEXT NOT NULL,
+                        observation TEXT NOT NULL,
+                        createdAt INTEGER NOT NULL,
+                        updatedAt INTEGER NOT NULL
+                    )
+                    """.trimIndent()
                 )
             }
         }

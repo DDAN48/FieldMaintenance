@@ -7,8 +7,10 @@ import com.example.fieldmaintenance.data.dao.PhotoDao
 import com.example.fieldmaintenance.data.dao.PassiveItemDao
 import com.example.fieldmaintenance.data.dao.ReportPhotoDao
 import com.example.fieldmaintenance.data.dao.NodeAdjustmentDao
+import com.example.fieldmaintenance.data.dao.IngressOriginDao
 import com.example.fieldmaintenance.data.model.AmplifierAdjustment
 import com.example.fieldmaintenance.data.model.Asset
+import com.example.fieldmaintenance.data.model.IngressOrigin
 import com.example.fieldmaintenance.data.model.MaintenanceReport
 import com.example.fieldmaintenance.data.model.NodeAdjustment
 import com.example.fieldmaintenance.data.model.Photo
@@ -25,6 +27,7 @@ class MaintenanceRepository(
     private val photoDao: PhotoDao,
     private val amplifierAdjustmentDao: AmplifierAdjustmentDao,
     private val passiveItemDao: PassiveItemDao,
+    private val ingressOriginDao: IngressOriginDao,
     private val reportPhotoDao: ReportPhotoDao,
     private val nodeAdjustmentDao: NodeAdjustmentDao
 ) {
@@ -63,6 +66,7 @@ class MaintenanceRepository(
         assetDao.deleteAssetsByReportId(report.id)
         deleteReportPhotosByReportId(report.id)
         passiveItemDao.deleteByReportId(report.id)
+        ingressOriginDao.deleteByReportId(report.id)
         reportDao.deleteReport(report)
     }
     
@@ -144,6 +148,21 @@ class MaintenanceRepository(
     suspend fun deletePassiveById(id: String) = passiveItemDao.deleteById(id)
 
     suspend fun deletePassivesByReportId(reportId: String) = passiveItemDao.deleteByReportId(reportId)
+
+    // Ingress origins (per report)
+    fun getIngressOriginsByReportId(reportId: String): Flow<List<IngressOrigin>> =
+        ingressOriginDao.getByReportId(reportId)
+
+    suspend fun listIngressOriginsByReportId(reportId: String): List<IngressOrigin> =
+        ingressOriginDao.listByReportId(reportId)
+
+    suspend fun insertIngressOrigin(item: IngressOrigin) = ingressOriginDao.insert(item)
+
+    suspend fun updateIngressOrigin(item: IngressOrigin) = ingressOriginDao.update(item)
+
+    suspend fun deleteIngressOriginById(id: String) = ingressOriginDao.deleteById(id)
+
+    suspend fun deleteIngressOriginsByReportId(reportId: String) = ingressOriginDao.deleteByReportId(reportId)
 
     // Report photos (Monitoria y QR) – per report
     fun getReportPhotosByReportId(reportId: String): Flow<List<ReportPhoto>> =

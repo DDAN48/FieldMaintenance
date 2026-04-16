@@ -6,6 +6,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.DonutSmall
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Summarize
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -21,7 +22,7 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.example.fieldmaintenance.ui.navigation.Screen
 
-enum class ReportTab { GENERAL, ACTIVOS, PASIVOS, MONITOR }
+enum class ReportTab { GENERAL, ACTIVOS, PASIVOS, INGRESS, MONITOR }
 
 @Composable
 fun ReportBottomBar(
@@ -80,6 +81,23 @@ fun ReportBottomBar(
                 },
                 icon = { Icon(Icons.Default.DonutSmall, contentDescription = "Pasivos") },
                 label = { Text("Pasivos") },
+                colors = NavigationBarItemDefaults.colors(
+                    selectedIconColor = MaterialTheme.colorScheme.primary,
+                    selectedTextColor = MaterialTheme.colorScheme.primary,
+                    unselectedIconColor = Color.Gray,
+                    unselectedTextColor = Color.Gray
+                )
+            )
+            NavigationBarItem(
+                selected = selected == ReportTab.INGRESS,
+                enabled = generalInfoComplete,
+                onClick = {
+                    navController.navigate(Screen.IngressAb.createRoute(reportId)) {
+                        launchSingleTop = true
+                    }
+                },
+                icon = { Icon(Icons.Default.GraphicEq, contentDescription = "Ingress Ab") },
+                label = { Text("Ingress Ab") },
                 colors = NavigationBarItemDefaults.colors(
                     selectedIconColor = MaterialTheme.colorScheme.primary,
                     selectedTextColor = MaterialTheme.colorScheme.primary,
