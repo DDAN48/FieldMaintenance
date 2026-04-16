@@ -1295,6 +1295,7 @@ fun AddAssetScreen(
                         assetId = workingAssetId,
                         bandwidth = frequency,
                         amplifierMode = amplifierMode,
+                        nodeTechnology = report?.nodeTechnology,
                         initial = amplifierAdjustment,
                         showRequiredErrors = attemptedSave,
                         onCurrentChange = { currentAmplifierAdjustment = it },

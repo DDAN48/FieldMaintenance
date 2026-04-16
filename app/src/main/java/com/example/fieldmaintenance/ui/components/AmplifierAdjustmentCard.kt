@@ -120,6 +120,7 @@ fun AmplifierAdjustmentCard(
     assetId: String,
     bandwidth: Frequency?,
     amplifierMode: AmplifierMode?,
+    nodeTechnology: String?,
     initial: AmplifierAdjustment?,
     showRequiredErrors: Boolean,
     onCurrentChange: (AmplifierAdjustment) -> Unit,
@@ -676,6 +677,11 @@ fun AmplifierAdjustmentCard(
 
                     Spacer(Modifier.height(10.dp))
                     Text("Espectro", fontWeight = FontWeight.SemiBold)
+                    val nodeTechKey = nodeTechnology
+                        ?.trim()
+                        ?.lowercase(java.util.Locale.getDefault())
+                        ?.replace(Regex("[^a-z0-9]"), "")
+                    val isRphyZone = nodeTechKey == "rphy"
                     val spectrumText = when (amplifierMode) {
                         AmplifierMode.LE -> when (bandwidth) {
                             Frequency.MHz_42 -> "Inyectar portadoras con el medidor de campo (DSAM 630 / ONX One Expert) a través del Test Point de entrada del retorno.\nEn nodos de 42Mhz: 2 (dos) portadoras ubicadas en 10Mhz y 42Mhz con una amplitud de 37 dBmv."
@@ -683,8 +689,16 @@ fun AmplifierAdjustmentCard(
                             else -> "Selecciona la Frecuencia para ver instrucciones de Espectro."
                         }
                         AmplifierMode.HGD, AmplifierMode.HGDT -> when (bandwidth) {
-                            Frequency.MHz_42 -> "En nodos de 42Mhz: 2 (dos) portadoras ubicadas en 10Mhz y 42Mhz con una amplitud de 20dBmv."
-                            Frequency.MHz_85 -> "En nodos de 85Mhz: 3(tres) portadoras ubicadas en 10 Mhz, 42 Mhz y 84,5Mhz con una amplitud de 15dBmv."
+                            Frequency.MHz_42 -> if (isRphyZone) {
+                                "En nodos de 42Mhz : se  inyectan 2  portadoras de 37dBmV en 10Mhz y 42Mhz para ver una amplitud o pico de 7dBm +-1"
+                            } else {
+                                "En nodos de 42Mhz : se  inyectan 2  portadoras de 37dBmV en 10Mhz y 42Mhz para ver una amplitud o pico de 20dBm +-1"
+                            }
+                            Frequency.MHz_85 -> if (isRphyZone) {
+                                "En nodos de 85Mhz : se  inyectan 3  portadoras de 35dBmV en 10Mhz, 42Mhz y 84,5Mhz para ver una amplitud o pico de 7dBm +-1"
+                            } else {
+                                "En nodos de 85Mhz : se  inyectan 3  portadoras de 35dBmV en 10Mhz, 42Mhz y 84,5Mhz para ver una amplitud o pico de 15dBm +-1"
+                            }
                             else -> "Selecciona la Frecuencia para ver instrucciones de Espectro."
                         }
                         else -> "Selecciona Tipo de Amplificador para ver instrucciones de Espectro."
